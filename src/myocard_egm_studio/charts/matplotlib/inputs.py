@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-__all__ = ["PredictionGroup"]
+__all__ = ["FeatureGroup", "PredictionGroup"]
 
 
 @dataclass(frozen=True)
@@ -44,3 +44,30 @@ class PredictionGroup:
     probs: NDArray[np.float64]
     labels: NDArray[np.int64] | None = None
     label_names: dict[int, str] | None = None
+
+
+@dataclass(frozen=True)
+class FeatureGroup:
+    """One named group's per-feature value arrays for ``feature-distribution-overlay``.
+
+    Attributes
+    ----------
+    name
+        Legend / source label (e.g. ``"Synthetic v1.5"``, ``"IAFDB"``).
+    values
+        ``{feature_name: (N,) float array}`` — one entry per egm-features bundle
+        column. Every group in a figure shares the same feature keys (the loader
+        builds them from ``view_model.FEATURE_COLUMNS``); ``N`` may differ across
+        groups (banks differ in size), which is why each panel is
+        density-normalized rather than count-based.
+    units
+        Optional ``{feature_name: unit}`` for the subset of features that carry a
+        unit (e.g. ``{"peak_to_peak": "mV", "spectral_centroid": "Hz"}``);
+        features absent are unitless. The loader fills it via
+        ``view_model.feature_units`` (so ``peak_to_peak`` tracks the bank's
+        ``amp_type``) and the recipe labels each panel's x-axis from it.
+    """
+
+    name: str
+    values: dict[str, NDArray[np.float64]]
+    units: dict[str, str] | None = None

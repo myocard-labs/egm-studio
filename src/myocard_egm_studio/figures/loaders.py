@@ -13,8 +13,8 @@ unchanged once the manifest lands; only the source of the path map changes.
 
 Loaders register per recipe (mirroring the ``charts/matplotlib`` recipe
 registry): :func:`resolve_recipe_data` dispatches on ``spec.recipe`` into
-:data:`LOADERS`. Today only ``prediction-histogram`` has a loader; more land as
-recipes gain real-data paths.
+:data:`LOADERS`. ``prediction-histogram`` and ``feature-distribution-overlay``
+have loaders so far; more land as recipes gain real-data paths.
 """
 
 from __future__ import annotations
@@ -26,7 +26,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from myocard_egm_data.banks import load_classifier_bank
 
-from myocard_egm_studio.charts.matplotlib.inputs import PredictionGroup
+from myocard_egm_studio.charts.matplotlib.inputs import FeatureGroup, PredictionGroup
+from myocard_egm_studio.view_model import FEATURE_COLUMNS, build_view_model, feature_units
 
 if TYPE_CHECKING:
     from myocard_egm_contracts._generated.python.figure_spec import FigureSpec
@@ -48,6 +49,7 @@ __all__ = [
     "LoaderNotRegisteredError",
     "RecipeLoaderFn",
     "UnmappedBankIdError",
+    "load_feature_groups",
     "load_group_banks",
     "load_prediction_groups",
     "prediction_group_from_bank",
@@ -215,3 +217,25 @@ def load_prediction_groups(spec: FigureSpec, bank_paths: BankPaths) -> list[Pred
         prediction_group_from_bank(bank, name=name, positive_label=positive_label)
         for name, bank in load_group_banks(spec, bank_paths)
     ]
+
+
+@register_loader("feature-distribution-overlay")
+def load_feature_groups(spec: FigureSpec, bank_paths: BankPaths) -> list[FeatureGroup]:
+    """Loader for ``feature-distribution-overlay``: each spec group -> its
+    per-feature egm-features distributions.
+
+    Resolves + loads each group's bank via :func:`load_group_banks`, builds the
+    per-trace view-model (which runs ``bundle.extract_all``), and pulls the 11
+    :data:`~myocard_egm_studio.view_model.FEATURE_COLUMNS` out as plain arrays —
+    one :class:`FeatureGroup` per spec group, in spec order. Feature-level, so it
+    works on labeled and unlabeled banks alike (it reads signals, not labels).
+    """
+    out: list[FeatureGroup] = []
+    for name, bank in load_group_banks(spec, bank_paths):
+        view_model = build_view_model(bank, source=name)
+        values = {col: view_model[col].to_numpy(dtype=np.float64) for col in FEATURE_COLUMNS}
+        # Units track the bank's amplitude convention (peak_to_peak is mV only for
+        # a raw-mV bank); a bank's traces are internally consistent in amp_type.
+        amp_type = bank.traces[0].amp_type if bank.traces else None
+        out.append(FeatureGroup(name=name, values=values, units=feature_units(amp_type)))
+    return out

@@ -31,6 +31,7 @@ __all__ = [
     "FEATURE_COLUMNS",
     "IDENTITY_COLUMNS",
     "build_view_model",
+    "feature_units",
 ]
 
 #: The 11 egm-features columns, in ``bundle.extract_all`` (docs/theory.md) order.
@@ -59,6 +60,39 @@ IDENTITY_COLUMNS: tuple[str, ...] = (
     "amp_type",
     "split",
 )
+
+#: Units for the feature columns whose unit is *independent* of amplitude
+#: calibration. Features absent here are unitless: counts (zero_crossings,
+#: sec_peak_count), the entropies + Lempel-Ziv complexity + Higuchi fractal
+#: dimension, and the [0, 1] fractional activation_position. The amplitude
+#: feature peak_to_peak is unit-dependent and resolved by :func:`feature_units`.
+#: Source of truth is egm-features' docs/theory.md; the labels live here because
+#: this package owns the view-model column contract.
+_STATIC_FEATURE_UNITS: dict[str, str] = {
+    "spectral_centroid": "Hz",
+    "dominant_frequency": "Hz",
+}
+
+#: ``amp_type`` -> the unit of an amplitude-derived feature (peak_to_peak). Only
+#: raw millivolts carry a unit; a z-scored or otherwise-normalized bank makes
+#: peak_to_peak unitless, so those amp_types are deliberately absent.
+_AMPLITUDE_UNITS: dict[str, str] = {"mv": "mV"}
+
+
+def feature_units(amp_type: str | None) -> dict[str, str]:
+    """``{feature: unit}`` for the FEATURE_COLUMNS that carry a unit at ``amp_type``.
+
+    Features not in the returned map are unitless. The only amplitude-dependent
+    feature is ``peak_to_peak``: millivolts for a raw-mV bank
+    (``amp_type="mv"``), unitless for a z-scored / normalized bank. The caller
+    (the figure loader) passes the bank's ``amp_type``, so a z-scored bank is
+    never mislabeled ``mV``.
+    """
+    units = dict(_STATIC_FEATURE_UNITS)
+    amplitude_unit = _AMPLITUDE_UNITS.get(amp_type or "")
+    if amplitude_unit is not None:
+        units["peak_to_peak"] = amplitude_unit
+    return units
 
 
 def _empty_view_model(*, source: str | None, with_features: bool) -> pd.DataFrame:

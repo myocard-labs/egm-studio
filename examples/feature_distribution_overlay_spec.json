@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "id": "fig_feature_distribution_overlay_synth_vs_iafdb",
+  "description": "Phase-1.5 sim-realism diagnostic (F-1.5.2): per-feature distribution overlay of the synthetic bank vs unlabeled IAFDB, one panel per egm-features bundle feature, each annotated with the synthetic-vs-IAFDB KS distance. Shows where the synthetic feature distributions misalign with real recordings. Label-free (signal-level features only). Renders via the 'feature-distribution-overlay' recipe.",
+  "recipe": "feature-distribution-overlay",
+  "inputs": {
+    "groups": [
+      { "name": "Synthetic", "bank_id": "lpred_v1_baseline_bin_2026-06-29" },
+      { "name": "IAFDB", "bank_id": "upred_v1_baseline_bin_2026-06-29" }
+    ]
+  },
+  "styling": { "kind": "kde", "annotate": "ks", "bins": 40 },
+  "output": { "format": "pdf", "path": "out/fig_feature_distribution_overlay_synth_vs_iafdb.pdf" }
+}

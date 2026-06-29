@@ -19,10 +19,12 @@ from myocard_egm_studio.view_model.builder import (
     FEATURE_COLUMNS,
     IDENTITY_COLUMNS,
     build_view_model,
+    feature_units,
 )
 
 __all__ = [
     "FEATURE_COLUMNS",
     "IDENTITY_COLUMNS",
     "build_view_model",
+    "feature_units",
 ]
