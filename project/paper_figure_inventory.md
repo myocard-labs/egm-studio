@@ -203,6 +203,9 @@ its figures get full implementation in egm-studio v0.1.
 - **Data sources:** Phase 1 predictions bank for synthetic val
   + Phase 1 predictions bank for IAFDB.
 - **Priority:** P0
+- **Status:** Shipped — egm-studio `prediction-histogram` recipe
+  (Block 3): panels (per-class synthetic + single-distribution IAFDB)
+  + overlay modes, snapshot test, `examples/prediction_histogram_spec.json`.
 - **Notes:** The "problem statement" figure. The framing in the
   paper text matters: this is a *decision-function-collapse*
   observation, not a *misclassification rate*. We don't know how
@@ -219,10 +222,15 @@ its figures get full implementation in egm-studio v0.1.
 - **Data sources:** synthetic hybrid bank features
   (via `bundle.extract_all`) + IAFDB bank features.
 - **Priority:** P0
+- **Status:** Shipped — egm-studio `feature-distribution-overlay`
+  recipe (Block 3): per-feature shared-x KDE / histogram density
+  overlay, per-panel KS / Wasserstein annotation, per-feature axis
+  units, `layout.features` curation, framed panels, snapshot test,
+  `examples/feature_distribution_overlay_spec.json` (+ `_curated`).
 - **Notes:** Critical figure. **Label-free** — uses only signal-
-  level egm-features. KS-distance or Wasserstein annotation per
-  subplot would be a strong addition. This is the primary sim-
-  realism diagnostic across the whole project.
+  level egm-features. The per-subplot KS / Wasserstein annotation is
+  implemented (KS default). This is the primary sim-realism
+  diagnostic across the whole project.
 
 ### F-1.5.3: Sim-realism distance reduction per intervention
 
@@ -1204,7 +1212,7 @@ land last.
   ```
    PHASE 1 (2D):                       PHASE 7 (3D):
    ────────────                        ─────────────
-                                       
+
    SimulationSpec                      SimulationSpec
        │                                   │
        ▼                                   ▼

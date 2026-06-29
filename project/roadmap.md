@@ -121,11 +121,14 @@ spec JSON files.
 > `color_for`), the prepared-input dataclasses (`inputs.py`), the
 > `render(spec, *, data, overwrite)` contract + existing-output skip, and the
 > figure-data loaders (`loaders.py` + `egm-studio-render --bank/--banks`,
-> brought forward from Block 7). The first recipe — **`prediction-histogram`** —
-> is shipped with a snapshot test + example spec. Remaining P0 recipes land
-> **one at a time** (each its own review — including a deep look at the recipe's
-> math — plus snapshot + commit), so the block closes incrementally rather than
-> in one big drop.
+> brought forward from Block 7). Two recipes have shipped so far —
+> **`prediction-histogram`** and **`feature-distribution-overlay`** (the
+> primary sim-realism diagnostic, F-1.5.2: per-feature density overlay with
+> KS/Wasserstein annotation, axis units, and `layout.features` curation) —
+> each with a snapshot test + example spec. Remaining P0 recipes land **one at
+> a time** (each its own review — including a deep look at the recipe's math —
+> plus snapshot + commit), so the block closes incrementally rather than in one
+> big drop.
 
 **Scope:**
 
@@ -546,6 +549,7 @@ condition for when it becomes priority work.
 | Item | Trigger | Approx. effort |
 |---|---|---|
 | P1 / P2 / P3 recipes (Phase 2+ paper figures) | Each paper enters writing phase | ~1-2 days per paper-worth |
+| Feature-extraction progress feedback | Feature-based recipes (feature-distribution-overlay, trace-pair-gallery, ...) are slow on real banks — the view-model build runs `bundle.extract_all` over every trace (the O(T^2) sample-entropy pass dominates) | Small — thread a `tqdm` / callback through `build_view_model` -> `extract_all`; possibly an egm-features param. Parallels the egm-classifier eval progress bar |
 | Joint similarity metric [ADR-020 follow-up] | v0.1 usage clarifies the trade-offs | Small ADR + 1-2 day impl |
 | Live-preview perf revision [ADR-019] | Real-bank perf forces a strategy change | ADR-NNN supersedes ADR-019 + impl |
 | Bottom panel (JupyterLab "down area") [ADR-025 deferred] | Use case emerges that the column layout doesn't accommodate | Small impl |
