@@ -12,7 +12,26 @@ from myocard_egm_studio.view_model import (
     FEATURE_COLUMNS,
     IDENTITY_COLUMNS,
     build_view_model,
+    feature_units,
 )
+
+
+def test_feature_units_mv_bank() -> None:
+    """A raw-mV bank labels peak_to_peak in mV and the spectral features in Hz."""
+    units = feature_units("mv")
+    assert units["peak_to_peak"] == "mV"
+    assert units["spectral_centroid"] == "Hz"
+    assert units["dominant_frequency"] == "Hz"
+    # Counts / entropies / fractal dimension / [0,1] position are unitless.
+    assert "zero_crossings" not in units
+    assert "higuchi_fractal_dimension" not in units
+
+
+def test_feature_units_zscore_drops_amplitude_unit() -> None:
+    """A z-scored bank makes peak_to_peak unitless; the Hz features are unchanged."""
+    units = feature_units("z_score")
+    assert "peak_to_peak" not in units
+    assert units["spectral_centroid"] == "Hz"
 
 
 def test_columns_and_shape(tiny_classifier_bank: ClassifierBank) -> None:

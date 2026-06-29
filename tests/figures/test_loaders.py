@@ -25,6 +25,7 @@ from myocard_egm_data.phases import FigureSpec
 from myocard_egm_studio.figures.loaders import (
     LoaderNotRegisteredError,
     UnmappedBankIdError,
+    load_feature_groups,
     load_group_banks,
     load_prediction_groups,
     prediction_group_from_bank,
@@ -206,9 +207,34 @@ def test_resolve_recipe_data_no_loader_raises() -> None:
             "schema_version": "1",
             "id": "fig_no_loader",
             "description": "no loader for this recipe yet",
-            "recipe": "feature-distribution-overlay",
+            "recipe": "roc-curve-multi-line",
             "output": {"format": "png", "path": "out.png"},
         }
     )
-    with pytest.raises(LoaderNotRegisteredError, match="feature-distribution-overlay"):
+    with pytest.raises(LoaderNotRegisteredError, match="roc-curve-multi-line"):
         resolve_recipe_data(spec, {})
+
+
+# --- feature-distribution-overlay loader ---------------------------------- #
+
+
+def test_load_feature_groups_builds_feature_arrays(
+    tiny_predictions_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    """The feature-distribution-overlay loader yields one FeatureGroup per spec
+    group, each carrying the 11 FEATURE_COLUMNS as arrays sized to the bank."""
+    from myocard_egm_studio.view_model import FEATURE_COLUMNS
+
+    path = tmp_path / "preds.h5"
+    write_classifier_bank(tiny_predictions_bank, path)
+    # Only inputs.groups matters to the loader; the recipe field is irrelevant here.
+    spec = _ph_spec(("Synthetic", _FIXTURE_PRED_ID))
+    groups = load_feature_groups(spec, {_FIXTURE_PRED_ID: str(path)})
+    assert [g.name for g in groups] == ["Synthetic"]
+    assert set(groups[0].values) == set(FEATURE_COLUMNS)
+    n = tiny_predictions_bank.n_traces
+    assert all(arr.shape == (n,) for arr in groups[0].values.values())
+    # amp_type="mv" fixture -> peak_to_peak in mV, spectral features in Hz.
+    assert groups[0].units is not None
+    assert groups[0].units["peak_to_peak"] == "mV"
+    assert groups[0].units["spectral_centroid"] == "Hz"

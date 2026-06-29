@@ -35,7 +35,7 @@ def test_stub_spec_returns_unknown_recipe(capsys: pytest.CaptureFixture[str]) ->
     assert rc == 3
     err = capsys.readouterr().err
     assert "unknown figure recipe" in err
-    assert "feature-distribution-overlay" in err
+    assert "unregistered-stub-recipe" in err
 
 
 def test_missing_spec_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
