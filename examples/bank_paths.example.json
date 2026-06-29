@@ -1,0 +1,4 @@
+{
+  "lpred_v1_baseline_bin_2026-06-29": "banks/lpred_synth_small.classifier.h5",
+  "upred_v1_baseline_bin_2026-06-29": "banks/upred_iafdb_sanchez.classifier.h5"
+}

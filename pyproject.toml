@@ -10,10 +10,12 @@
 #   PyPI dist    : myocard-egm-studio             (myocard- prefix)
 #   Import name  : myocard_egm_studio             (underscore)
 #
-# Implementation in progress (Block 2 — the headless analysis + figure-render
-# foundation). The interactive Qt stack (PySide6 + pyqtgraph) lands in Block 4;
-# until then only the framework-agnostic core (analysis / view_model / figures /
-# the egm-studio-render CLI) is wired. See project/roadmap.md for the block plan.
+# Implementation in progress (Block 3 — matplotlib figure recipes). The headless
+# core is wired: analysis / view_model / charts.matplotlib (recipe registry +
+# paper style) / figures (render + bank loaders) / the egm-studio-render CLI.
+# The first recipe (prediction-histogram) ships here; the rest land one at a
+# time. The interactive Qt stack (PySide6 + pyqtgraph) lands in Block 4. See
+# project/roadmap.md for the block plan.
 # ---------------------------------------------------------------------------
 
 [build-system]
@@ -80,6 +82,8 @@ dependencies = [
 dev = [
   "pytest>=8.0",
   "pytest-cov>=5.0",
+  # Snapshot-test rendered figures against committed baseline PNGs.
+  "pytest-mpl>=0.17",
   "ruff>=0.6.0",
   "mypy>=1.10",
   "pre-commit>=3.7",

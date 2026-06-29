@@ -1,31 +1,36 @@
-"""``render(spec) -> Path`` — dispatch a FigureSpec to its matplotlib recipe.
+"""``render(spec, *, data) -> Path`` — dispatch a FigureSpec to its recipe.
 
 The keystone of the headless path: look up ``spec.recipe`` in the
-``charts/matplotlib`` registry, call it to get a ``Figure``, write the file at
-``spec.output.path`` (or an override), return the path. The drawing lives in
-``charts/``; the data prep in ``analysis/``; this module is just the wiring.
+``charts/matplotlib`` registry, call it with the prepared ``data`` to get a
+``Figure``, write the file at ``spec.output.path`` (or an override) under the
+paper style, return the path. The drawing lives in ``charts/``; the data prep
+in ``analysis/``; this module is just the wiring.
 
-Block 2 ships the dispatch + the clear empty-registry error. Block 3 registers
-the P0 recipes and wires the data-loading step (resolving ``inputs.groups``
-bank ids), which may add a loaded-data argument to the recipe call — that
-refinement lands with the recipes.
+``data`` is the recipe's prepared input (see ``charts/matplotlib/inputs``).
+``data=None`` means "load it from the spec" — turning ``spec.inputs.groups``
+bank ids into recipe data is the renderer's loading step, which lands with the
+egm-data bank loaders in Block 7. Until then ``render`` with ``data=None``
+raises :class:`FigureDataNotLoadedError`; callers pass ``data=`` explicitly
+(the snapshot tests + notebook callers do).
 
 Import boundary: matplotlib is reached only *through* a registered recipe (the
-``Figure`` it returns), never imported here, and PySide6 / pyqtgraph never at
-all — so this runs in CI + notebooks without a display. [ADR-005, architecture.md]
+``Figure`` it returns) plus the shared style context, never PySide6 / pyqtgraph
+— so this runs in CI + notebooks without a display. [ADR-005, architecture.md]
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from myocard_egm_studio.charts.matplotlib import RECIPES
+from myocard_egm_studio.charts.matplotlib.style import paper_style
 
 if TYPE_CHECKING:
     from myocard_egm_contracts._generated.python.figure_spec import FigureSpec
 
 __all__ = [
+    "FigureDataNotLoadedError",
     "UnknownRecipeError",
     "render",
 ]
@@ -42,15 +47,35 @@ class UnknownRecipeError(LookupError):
     def __init__(self, recipe: str, known: list[str]) -> None:
         self.recipe = recipe
         self.known = known
-        hint = (
-            "known recipes: " + ", ".join(known)
-            if known
-            else "no recipes are registered yet (Block 3 adds the P0 recipes)"
-        )
+        hint = "known recipes: " + ", ".join(known) if known else "no recipes are registered"
         super().__init__(f"unknown figure recipe {recipe!r}; {hint}.")
 
 
-def render(spec: FigureSpec, *, output_path: Path | str | None = None) -> Path:
+class FigureDataNotLoadedError(NotImplementedError):
+    """``render`` was asked to load a spec's data, which isn't wired yet.
+
+    Resolving a spec's ``inputs.groups`` bank ids into recipe data goes through
+    the egm-data bank loaders + the phase manifest, both scheduled for Blocks
+    6-7. Until then, build the recipe's data and pass it as
+    ``render(spec, data=...)`` (the snapshot tests + notebook callers do).
+    """
+
+    def __init__(self, recipe: str) -> None:
+        self.recipe = recipe
+        super().__init__(
+            f"render() can't yet load data for recipe {recipe!r} from a spec — "
+            "spec data loading (bank_id -> bank) lands with the egm-data "
+            "loaders in Block 7. Pass data= explicitly for now."
+        )
+
+
+def render(
+    spec: FigureSpec,
+    *,
+    data: Any = None,
+    output_path: Path | str | None = None,
+    overwrite: bool = False,
+) -> Path:
     """Render ``spec`` to disk and return the output :class:`~pathlib.Path`.
 
     Parameters
@@ -58,22 +83,41 @@ def render(spec: FigureSpec, *, output_path: Path | str | None = None) -> Path:
     spec
         A validated :class:`FigureSpec` (load it via
         ``myocard_egm_data.phases.load_figure_spec`` per ADR-001).
+    data
+        The recipe's prepared input (see ``charts/matplotlib/inputs``). When
+        ``None``, ``render`` would load it from ``spec`` — not wired until
+        Block 7, so it raises :class:`FigureDataNotLoadedError`.
     output_path
         Optional override for ``spec.output.path`` (the CLI's ``-o`` flag).
+    overwrite
+        If False (default) and the resolved output path already exists, raise
+        :class:`FileExistsError` *before* drawing, so a good figure isn't
+        silently clobbered. (The CLI surfaces this as ``--overwrite`` and skips
+        even earlier — before loading any data.)
 
     Raises
     ------
     UnknownRecipeError
-        If ``spec.recipe`` is not in the matplotlib recipe registry. At Block 2
-        the registry is empty, so this always raises — the plumbing is in
-        place for Block 3 to fill.
+        If ``spec.recipe`` is not in the matplotlib recipe registry.
+    FigureDataNotLoadedError
+        If ``data`` is ``None`` (spec-driven data loading lands in Block 7).
+    FileExistsError
+        If the resolved output path exists and ``overwrite`` is False.
     """
     recipe = RECIPES.get(spec.recipe)
     if recipe is None:
         raise UnknownRecipeError(spec.recipe, sorted(RECIPES))
+    if data is None:
+        raise FigureDataNotLoadedError(spec.recipe)
 
-    figure = recipe(spec)
     path = Path(output_path) if output_path is not None else Path(spec.output.path)
+    if path.exists() and not overwrite:
+        raise FileExistsError(
+            f"{path} already exists; pass overwrite=True (CLI: --overwrite) to replace."
+        )
+
+    figure = recipe(data, spec)
     path.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(path, format=spec.output.format.value)
+    with paper_style():
+        figure.savefig(path, format=spec.output.format.value)
     return path
