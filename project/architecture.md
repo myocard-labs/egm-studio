@@ -1,0 +1,344 @@
+# egm-studio — architecture
+
+The post-Block-0 "current state" reference for egm-studio. Distilled
+from the 25 ADRs in `project/design.md` — read this for *what we're
+building*; read `design.md` for *why we picked it*. ADR pointers
+(`[ADR-N]`) appear inline so you can drill down on any decision.
+
+> Block 1+ implementation work and forward-looking follow-ups live in
+> `project/roadmap.md`.
+
+> **As-shipped reconciliation (egm-contracts v0.5.0, 2026-06-27).** The
+> cross-artifact-linkage formats shipped with surface changes from what this
+> doc describes — the high-level architecture is unaffected, but read these
+> deltas in (full list: `intracardiac-platform/project/cross_artifact_linkage_design.md`
+> → Amendments):
+> - **JSON, not YAML** (`manifest.json`, `observations/<id>.json`,
+>   `figure_specs/<id>.json`; the render CLI reads a `.json` spec).
+> - Observation prose field is **`description`** (not `body`); observations +
+>   figure specs carry **no `phase` field**.
+> - **`figure_spec`** requires a `description` and dropped `inventory_ref`.
+> - The manifest stores banks as **`egm_banks` + `noise_banks`** (predictions
+>   fold into `egm_banks`).
+> - **Figure specs live in the meta repo** at `phases/figure_specs/<id>.json`
+>   (decision 2026-06-27); only the rendered image goes to the paper repo. Any
+>   "spec in the paper repo" wording below is superseded. Also: `recipe` is a
+>   free-form string in the contract (egm-studio owns the recipe vocabulary),
+>   not a schema enum.
+
+## Living-document commitment
+
+This file is the as-built reference and stays in lock-step with
+the code. Update it whenever an implementation block surfaces an
+architectural change (new module boundary, dependency shift, pattern
+that didn't exist at design time). Roadmap Block 11
+("Design-phase doc updates") runs late in the v0.1 sequence to do a
+sweep before the tag, but **don't wait** for that block — fix-on-
+contact while building. The final pre-tag pass also fills in the
+deeper detail that's intentionally not in v0.1 of this doc (more
+concrete examples, expanded data-flow diagrams, module-internals
+discussion).
+
+## What egm-studio is
+
+A desktop GUI for **signal exploration, ML diagnostics, and paper-
+figure prep** over intracardiac EGM data. Consumes banks produced by
+the upstream pipelines (synthetic-egm-pipeline, iafdb-pipeline,
+egm-classifier), surfaces them through a filter-driven analysis UI,
+and writes observations + paper-figure specs back into the phase-
+organized meta repo (intracardiac-platform).
+
+It ships **two console scripts** from one Python package
+(`myocard-egm-studio`):
+
+- **`egm-studio`** — the interactive Qt shell.
+- **`egm-studio-render <spec.json>`** — the headless figure renderer.
+
+Both wrap the same framework-agnostic `figures` module; the GUI
+shell adds the interactive frontend. [ADR-004, ADR-005, ADR-015]
+
+## Core invariants
+
+The eight decisions everything else hangs off. Change any of these
+and the architecture changes.
+
+1. **All data I/O goes through egm-data + egm-contracts.** egm-studio
+   never opens an HDF5 / JSON / CSV directly. New file types require
+   coordinated schema → reader → consumer PRs across the three
+   repos. [ADR-001, [[feedback-use-contracts-at-boundaries]]]
+2. **Filter-and-sort-first analysis, not browse-and-scroll.** Every
+   view is "traces matching this query, ordered by this metric."
+   Filters compose across trace-features, ML outcomes, bank
+   metadata, similarity, and manual sets. [ADR-002, ADR-011]
+3. **Two frontends sharing one core.** The headless figure path is a
+   framework-agnostic Python module; the GUI is a thin Qt shell on
+   top. Same `render(spec)` function powers both. [ADR-004, ADR-005]
+4. **PySide6 + pyqtgraph + matplotlib.** Desktop Qt for the shell;
+   pyqtgraph for interactive trace plots; matplotlib for publication-
+   quality figures (Agg backend for headless). [ADR-016]
+5. **Resizable columns + collapsible side panels** for the layout
+   shell. Not a fixed 4-quadrant grid, not free-form drag-anywhere
+   dock. One-or-two main columns; optional left + right sidebars
+   that collapse to icon strips. [ADR-025]
+6. **Composable trace widget.** One `TraceWidget` per trace; N
+   instances stack inside a `GraphicsLayoutWidget` container with a
+   shared X-axis. Default N=1 at v0.1; scales to N=64+ for later
+   phases without rewriting plumbing. [ADR-024]
+7. **Observations + figure specs persist in the meta repo, not in
+   egm-studio.** Unified Save schema writes observation YAMLs into
+   `intracardiac-platform/project/phases/phase_X/observations/` (or
+   scratch dir when no phase is loaded). [ADR-017, cross-artifact
+   linkage design]
+8. **egm-studio is the canonical curator of the per-phase manifest.**
+   The right-rail Phase GUI updates `phase_manifest.yaml` as the
+   user saves observations, trace sets, and figure specs. Producers
+   never touch the manifest — they just stamp stable IDs on their
+   outputs. [ADR-021, ADR-022]
+
+## Module map
+
+```
+myocard_egm_studio/
+├── analysis/             # Pure data computation. NO rendering, NO Qt.
+│   ├── distributions.py  #   CDFs, KS / Wasserstein distance, histogram, KDE
+│   ├── aggregation.py    #   between-group feature distance + aggregate roll-up
+│   ├── similarity.py     #   per-feature nearest-trace lookup        [ADR-020]
+│   └── ...               #   one module per analytical concern
+├── charts/               # Chart-building primitives, dual backend.
+│   ├── matplotlib/       #   matplotlib renderers (publication-quality static)
+│   └── pyqtgraph/        #   pyqtgraph renderers (interactive, GUI-embedded)
+├── figures/              # Thin headless layer over charts/matplotlib/.
+│   └── render.py         #   render(spec: FigureSpec) -> Path
+├── gui/                  # Qt shell — imports PySide6 + pyqtgraph.
+│   ├── app.py            #   QApplication entry point
+│   ├── shell.py          #   Resizable-column layout shell  [ADR-025]
+│   ├── widgets/
+│   │   ├── trace.py      #   TraceWidget + container        [ADR-024]
+│   │   ├── filter.py     #   Filter / query UI              [ADR-002]
+│   │   ├── phase_tree.py #   Right-rail Phase artifact tree
+│   │   └── ...           #   Other shared widgets
+│   ├── views/
+│   │   ├── signal_exploration.py   # Flow A — uses charts/pyqtgraph
+│   │   ├── ml_diagnostics.py       # Flow B — uses charts/pyqtgraph
+│   │   └── paper_figure_prep.py    # Flow C — wraps figures/
+│   └── theme/            #   QSS for dark + light            [ADR-012]
+├── cli/
+│   ├── studio.py         #   `egm-studio` entry point
+│   └── render.py         #   `egm-studio-render` entry point
+├── loaders/              # Thin wrappers over egm-data.
+├── save/                 # Observation + manifest writers   [ADR-017, ADR-021]
+└── view_model/           # Unified per-trace view-model      [ADR-002]
+```
+
+### The three-layer rendering split
+
+The single most important structural decision after the 25 ADRs:
+**no chart logic is duplicated between the GUI and the headless
+renderer.** Three layers make this work:
+
+1. **`analysis/`** — pure data computation. Statistical primitives
+   (CDFs, KS-distance, distribution comparisons), feature aggregation
+   queries, similarity computations. Pure functions over numpy /
+   pandas / scipy / egm-features. No rendering, no Qt, fully unit-
+   testable.
+2. **`charts/`** — chart-building primitives with **two rendering
+   backends**: `charts/matplotlib/` for static / publication, and
+   `charts/pyqtgraph/` for interactive / GUI-embedded. Both
+   backends consume `analysis/` for data prep, so the same
+   computation feeds both presentations.
+3. **`figures/`** — thin headless dispatch layer. `render(spec)`
+   parses the figure_spec JSON, calls the matching
+   `charts/matplotlib/` recipe with the right kwargs, writes the
+   output file. ~50 lines.
+
+GUI views (`gui/views/`) import `charts/pyqtgraph/` for live
+display. Headless renderer (`figures/`) imports `charts/matplotlib/`
+for static export. Both reuse `analysis/` for data prep. Adding a
+new chart means: implement once in `analysis/`, implement twice in
+`charts/` (one per backend), expose via `figures/` if it needs
+headless export.
+
+### Import boundaries (hard rules)
+
+- `analysis/` MUST NOT import matplotlib, pyqtgraph, or PySide6.
+- `figures/` and `charts/matplotlib/` MUST NOT import PySide6 or
+  pyqtgraph.
+- `charts/pyqtgraph/` MUST NOT import matplotlib.
+- `gui/` imports `charts/pyqtgraph/` and `figures/`; never the
+  reverse.
+
+This keeps the headless path working — `figures/` and everything
+underneath it runs in notebooks, CI, and `egm-studio-render` without
+a display. [ADR-005, ADR-013]
+
+## Cross-repo dependencies
+
+| Repo | What egm-studio uses | Trigger |
+|---|---|---|
+| `myocard-egm-contracts` (v0.5.1+) | Schemas: `classifier_bank`, `iafdb_bank`, `noise_bank`, `epoch_record`, `model_metadata`, `predictions`, `observation`, `phase_manifest`, `figure_spec` | Runtime dep; all schemas land in v0.5.0 [ADR-014, ADR-017, ADR-021] |
+| `myocard-egm-data` (v0.4.1+) | Bank readers/writers; record + phase-artifact I/O (`phases.load_figure_spec`); `ClassifierBank.uniform_fs_hz()` (added v0.4.1) | Runtime dep [ADR-001] |
+| `myocard-egm-features` (v0.1.1+) | `bundle.extract_all` for the unified view-model (v0.1.1 added the py.typed marker) | Runtime dep [ADR-002] |
+| `myocard-egm-signal` (v0.2.0+) | Filter primitives; activation-peak helpers (likely Block 3+) | Runtime dep |
+| `intracardiac-platform` (workspace, not a Python dep) | Reads + writes the phase manifest, observations, and figure specs (JSON) when egm-studio saves | File-system contract via cross-artifact linkage design |
+| `intracardiac-papers` (workspace) | Receives the rendered figure image (gitignored) at `papers/<paper-slug>/figures/`; the figure spec itself lives in the meta repo | File-system contract via figure_spec schema |
+
+egm-studio depends on **all five myocard-labs library repos**. It
+does NOT depend on producers (egm-classifier, synthetic-egm-pipeline,
+iafdb-pipeline) at the Python level — only at the data level, via
+the banks they write.
+
+**The egm-features boundary** is extract-vs-analyze: egm-features owns
+per-trace *extraction* (one trace → scalar features); egm-studio's
+`analysis/` owns *analysis over* those features (distribution distances,
+KDEs, similarity). The KS / Wasserstein / KDE primitives operate on arrays
+of already-extracted feature values, never on raw traces, so they live in
+egm-studio — per the Refactor Step 6 decision that egm-features stays a
+library-only extractor (no analysis workflows).
+
+## Layout and interaction patterns
+
+### Layout shell [ADR-025]
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ Menu bar                                                       │
+├──┬───────────────────────────────────┬──┬──────────────────┬─┤
+│L │                                   │  │                    │R│
+│e │   Main work area                  │  │  Phase artifact    │S│
+│f │   ─ One full-width column OR      │  │  tree              │i│
+│t │   ─ Two side-by-side columns      │  │                    │d│
+│  │                                   │  │  (right sidebar)   │e│
+│S │   Within each column, vertical    │  │                    │b│
+│i │   stacking is allowed (e.g.       │  │  Collapses to      │a│
+│d │   traces on top + table below).   │  │  icon strip.       │r│
+│e │                                   │  │                    │ │
+│b │                                   │  │                    │ │
+│a │                                   │  │                    │ │
+│r │                                   │  │                    │ │
+└──┴───────────────────────────────────┴──┴──────────────────┴─┘
+```
+
+- Sidebars collapse to a thin Activity-Bar-style icon column
+  (JupyterLab convention from `reference_apps.md`).
+- All column / sidebar separators are draggable.
+- Traces always have full window width available (collapse both
+  sidebars + use one main column).
+- Pair-comparison views use the two-column main area [ADR-002].
+
+### Interaction patterns
+
+- **Filter-and-sort-first** as the universal entry: every view
+  opens with the query / filter bar [ADR-002].
+- **Pair-comparison** is a first-class UI pattern — Δfeature pairs
+  and similarity-driven pairs both supported [ADR-002, ADR-020].
+- **Live-preview** via `@interact`-equivalent: Qt sliders bound to
+  PyQtGraph redraw callbacks with debouncing; manual-trigger button
+  for expensive operations [ADR-019].
+- **Multi-monitor**: views can tear out into separate windows
+  (Qt's `QMdiArea` / detached windows).
+- **Time-axis navigation** on traces: pan + zoom via PyQtGraph mouse
+  defaults; time-scale slider as a discoverability aid.
+- **Theme**: dark default with light toggle via QSS [ADR-012].
+
+## Data flow
+
+The architectural keystone is the **unified per-trace view-model**.
+For any loaded combination of banks + predictions, egm-studio
+constructs one composite table:
+
+```
+Per-trace view-model columns
+├── Identity:   bank_id, trace_idx, stable_artifact_id
+├── Metadata:   label, patient_id, sim_id, electrode_pair_id, source, ...
+├── Features:   peak_to_peak, zero_crossings, activation_position,
+│               sec_peak_count, spectral_centroid, spectral_entropy,
+│               dominant_frequency, sample_entropy, shannon_entropy,
+│               lempel_ziv_complexity, higuchi_fractal_dimension
+│               (from egm-features.bundle.extract_all)
+├── ML outcomes (when a predictions bank is loaded):
+│               predicted_prob, predicted_class, correctness_bucket,
+│               per_trace_loss, calibration_residual
+├── Similarity (computed on demand, per ADR-020):
+│               similarity_to_<target_id>_along_<feature>
+└── Set membership (manual / saved trace sets):
+                in_set_<set_name>: bool
+```
+
+All filter / sort / pair-comparison operations run against this
+composite. Storage backend is in-memory pandas; performance scales
+with result-set size, not bank size, because nothing renders all
+rows [ADR-011].
+
+## Save / persistence model
+
+egm-studio v0.1 has **no generic session persistence** [ADR-003].
+But **partial persistence of meaningful work** is supported via the
+unified save schema [ADR-017]:
+
+- **Observations** — prose `description` (required) + optional trace list +
+  optional `view_state` for reload. Saved as JSON in
+  `intracardiac-platform/project/phases/phase_X/observations/<obs-id>.json`.
+- **Trace sets** — embedded inside observations; a pure trace list
+  without prose is not a thing (the discovery IS the observation).
+- **Figure specs** — JSON in the meta repo at
+  `intracardiac-platform/project/phases/phase_X/figure_specs/<fig-id>.json`,
+  reproducible via `egm-studio-render`. Only the rendered image is written to
+  the paper repo (gitignored there).
+- **Phase manifest** — egm-studio appends to / updates
+  `intracardiac-platform/project/phases/phase_X/manifest.json` (banks split
+  into `egm_banks` + `noise_banks`) as observations and figure specs are
+  saved [ADR-021].
+- **Stable IDs** — every saved artifact gets a role-prefixed +
+  date-stamped ID: `obs_my_observation_2026-06-25`,
+  `fig_F-1-5-2_2026-06-25`, etc. [ADR-022]
+- **Scratch mode** — when no phase is loaded, saves go to
+  `intracardiac-platform/project/scratch/`. "Promote to Phase"
+  action moves + indexes into the proper phase.
+
+## Test strategy [ADR-013]
+
+Three-layer pyramid:
+
+1. **Unit tests (pytest)** — data-prep, figure recipes, query/filter
+   logic, save-state serialization. Pure functions; no GUI; runs
+   without a display. The bulk of the surface area lives here.
+2. **Integration tests (pytest-qt)** — "data flows through the views
+   correctly." `xvfb-run` in CI. Small, contract-shaped.
+3. **Snapshot tests (pytest-mpl)** — rendered-figure regressions.
+   Snapshots live in `tests/snapshots/`; regenerate explicitly with
+   `--mpl-generate-path`.
+
+**Avoid:** pixel-coordinate assertions, click-here-see-that tests,
+font-availability assumptions beyond what pytest-mpl handles.
+
+## Distribution [ADR-007]
+
+- `pip install myocard-egm-studio`
+- Two console scripts declared in `pyproject.toml`: `egm-studio` and
+  `egm-studio-render`.
+- No PyInstaller bundle, no Docker image, no web deploy for v0.1.
+- Future web frontend (if ever needed) reuses `figures/` and
+  `loaders/`; only `gui/` would be a from-scratch rewrite.
+
+## Documentation [ADR-008, ADR-009]
+
+- No in-app help / tour in v0.1; documentation is external.
+- `docs/usage.md` is the user manual.
+- Markdown in repo for v0.1; MkDocs Material is the upgrade path
+  when content density justifies it.
+
+## Forward-looking items
+
+Concrete open follow-ups with trigger conditions (full text in the
+"Open questions" section of `design.md`):
+
+- **Joint similarity metric** — ADR-020 follow-up; trigger: v0.1
+  usage clarifies the trade-offs.
+- **ADR-019 live-preview perf tuning** — trigger: real-bank perf
+  forces a strategy change at implementation time.
+- **Bottom panel** (JupyterLab "down area") — trigger: a use case
+  emerges that the resizable-column layout doesn't accommodate.
+- **Phase 8+ live playback mode** (task #311) — animated time
+  cursor sweep; rides on ADR-024's composable trace widget substrate.
+- **Plugin architecture** [ADR-006] — trigger: external contributors
+  want to extend egm-studio with new views / chart types.
