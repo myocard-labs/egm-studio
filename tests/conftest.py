@@ -19,6 +19,7 @@ import pytest
 from myocard_egm_data.banks import (
     ClassifierBank,
     ClassifierBankMetaData,
+    ClassifierPrediction,
     ClassifierTrace,
 )
 
@@ -90,3 +91,45 @@ def tiny_unlabeled_bank(tiny_classifier_bank: ClassifierBank) -> ClassifierBank:
         for t in tiny_classifier_bank.traces
     ]
     return dataclasses.replace(tiny_classifier_bank, traces=traces, id=None)
+
+
+@pytest.fixture
+def tiny_predictions_bank(tiny_classifier_bank: ClassifierBank) -> ClassifierBank:
+    """The labeled fixture with a deterministic prediction per trace (an lpred_ bank).
+
+    Each trace gets a ``ClassifierPrediction`` whose logits are pushed toward the
+    truth class (+/- 1.5 plus small noise), so P(fibrotic) separates — low for
+    healthy, high for fibrotic. The bank carries a predictions-bank id so it
+    round-trips through ``write_classifier_bank`` / ``load_classifier_bank``.
+    """
+    rng = np.random.default_rng(3)
+    traces: list[ClassifierTrace] = []
+    for t in tiny_classifier_bank.traces:
+        logit_pos = (1.5 if t.label_truth == 1 else -1.5) + float(rng.normal(0.0, 0.4))
+        logits = {0: -logit_pos, 1: logit_pos}
+        z = np.array([logits[0], logits[1]], dtype=np.float64)
+        soft = np.exp(z - z.max())
+        soft /= soft.sum()
+        label_pred = int(soft[1] >= soft[0])
+        prediction = ClassifierPrediction(
+            label_pred=label_pred,
+            label_prob=float(soft[label_pred]),
+            pred_logits={0: float(logits[0]), 1: float(logits[1])},
+        )
+        traces.append(dataclasses.replace(t, prediction=prediction))
+    return dataclasses.replace(
+        tiny_classifier_bank, traces=traces, id="lpred_studio_fixture_2026-06-28"
+    )
+
+
+@pytest.fixture
+def tiny_unlabeled_predictions_bank(tiny_predictions_bank: ClassifierBank) -> ClassifierBank:
+    """The predictions fixture with every ``label_truth`` cleared (a upred_ bank).
+
+    The IAFDB shape: predictions present, no ground truth — the adapter yields a
+    single distribution (``labels=None``), no per-class split.
+    """
+    traces = [dataclasses.replace(t, label_truth=None) for t in tiny_predictions_bank.traces]
+    return dataclasses.replace(
+        tiny_predictions_bank, traces=traces, id="upred_studio_fixture_2026-06-28"
+    )

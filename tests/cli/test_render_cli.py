@@ -1,14 +1,17 @@
 """End-to-end tests for the egm-studio-render CLI (load -> validate -> dispatch).
 
-At Block 2 the recipe registry is empty, so the shipped examples/stub_spec.json
-exercises the whole path and exits with the clear unknown-recipe error.
+The shipped examples/stub_spec.json names a recipe that isn't registered, so it
+exercises the whole load -> validate -> dispatch path and exits with the clear
+unknown-recipe error.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
+from myocard_egm_data.banks import ClassifierBank, write_classifier_bank
 
 from myocard_egm_studio.cli.render import main
 
@@ -61,3 +64,124 @@ def test_malformed_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
     rc = main([str(bad)])
     assert rc == 2
     assert "malformed" in capsys.readouterr().err.lower()
+
+
+# --- real-data rendering via --bank / --banks ---------------------------- #
+
+_FIXTURE_PRED_ID = "lpred_studio_fixture_2026-06-28"
+
+
+def _write_ph_spec(path: Path, *, bank_id: str, out: Path) -> None:
+    """Write a minimal prediction-histogram figure_spec JSON to ``path``."""
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "id": "fig_cli_real_data",
+                "description": "CLI real-data render test spec",
+                "recipe": "prediction-histogram",
+                "inputs": {"groups": [{"name": "Synthetic val", "bank_id": bank_id}]},
+                "layout": {"mode": "panels"},
+                "output": {"format": "png", "path": str(out)},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_render_with_bank_flag(
+    tiny_predictions_bank: ClassifierBank,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--bank ID=PATH resolves the spec's bank, renders real data, exits 0."""
+    bank_path = tmp_path / "preds.h5"
+    write_classifier_bank(tiny_predictions_bank, bank_path)
+    spec_path = tmp_path / "spec.json"
+    out = tmp_path / "fig.png"
+    _write_ph_spec(spec_path, bank_id=_FIXTURE_PRED_ID, out=out)
+    rc = main([str(spec_path), "--bank", f"{_FIXTURE_PRED_ID}={bank_path}"])
+    assert rc == 0
+    assert out.exists()
+    assert "Wrote" in capsys.readouterr().out
+
+
+def test_render_with_banks_json(tiny_predictions_bank: ClassifierBank, tmp_path: Path) -> None:
+    """--banks MAP.json (the proto-manifest) resolves the bank and renders."""
+    bank_path = tmp_path / "preds.h5"
+    write_classifier_bank(tiny_predictions_bank, bank_path)
+    out = tmp_path / "fig.png"
+    spec_path = tmp_path / "spec.json"
+    _write_ph_spec(spec_path, bank_id=_FIXTURE_PRED_ID, out=out)
+    banks_json = tmp_path / "banks.json"
+    banks_json.write_text(json.dumps({_FIXTURE_PRED_ID: str(bank_path)}), encoding="utf-8")
+    rc = main([str(spec_path), "--banks", str(banks_json)])
+    assert rc == 0
+    assert out.exists()
+
+
+def test_render_no_bank_map_exits_4(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A known recipe with no --bank/--banks exits 4 asking for a map."""
+    spec_path = tmp_path / "spec.json"
+    _write_ph_spec(spec_path, bank_id=_FIXTURE_PRED_ID, out=tmp_path / "fig.png")
+    rc = main([str(spec_path)])
+    assert rc == 4
+    assert "--bank" in capsys.readouterr().err
+
+
+def test_render_unmapped_bank_exits_5(
+    tiny_predictions_bank: ClassifierBank,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A --bank for a different id than the spec needs exits 5, naming the gap."""
+    bank_path = tmp_path / "preds.h5"
+    write_classifier_bank(tiny_predictions_bank, bank_path)
+    spec_path = tmp_path / "spec.json"
+    _write_ph_spec(spec_path, bank_id="lpred_needed_2026-06-28", out=tmp_path / "fig.png")
+    rc = main([str(spec_path), "--bank", f"lpred_other_2026-06-28={bank_path}"])
+    assert rc == 5
+    assert "lpred_needed_2026-06-28" in capsys.readouterr().err
+
+
+def test_bank_flag_bad_format_exits_2(tmp_path: Path) -> None:
+    """A --bank value without '=' is an argparse usage error (exit 2)."""
+    spec_path = tmp_path / "spec.json"
+    _write_ph_spec(spec_path, bank_id="lpred_x_2026-06-28", out=tmp_path / "fig.png")
+    with pytest.raises(SystemExit) as excinfo:
+        main([str(spec_path), "--bank", "no-equals-sign"])
+    assert excinfo.value.code == 2
+
+
+def test_render_skips_existing_output(
+    tiny_predictions_bank: ClassifierBank,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An existing output is skipped (exit 0) without loading data or
+    overwriting it — even with a valid --bank map supplied."""
+    bank_path = tmp_path / "preds.h5"
+    write_classifier_bank(tiny_predictions_bank, bank_path)
+    out = tmp_path / "fig.png"
+    out.write_bytes(b"SENTINEL")
+    spec_path = tmp_path / "spec.json"
+    _write_ph_spec(spec_path, bank_id=_FIXTURE_PRED_ID, out=out)
+    rc = main([str(spec_path), "--bank", f"{_FIXTURE_PRED_ID}={bank_path}"])
+    assert rc == 0
+    assert "skipping" in capsys.readouterr().out.lower()
+    assert out.read_bytes() == b"SENTINEL"  # untouched
+
+
+def test_render_overwrite_replaces_existing(
+    tiny_predictions_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    """--overwrite re-renders over an existing output (a real PNG replaces it)."""
+    bank_path = tmp_path / "preds.h5"
+    write_classifier_bank(tiny_predictions_bank, bank_path)
+    out = tmp_path / "fig.png"
+    out.write_bytes(b"SENTINEL")
+    spec_path = tmp_path / "spec.json"
+    _write_ph_spec(spec_path, bank_id=_FIXTURE_PRED_ID, out=out)
+    rc = main([str(spec_path), "--bank", f"{_FIXTURE_PRED_ID}={bank_path}", "--overwrite"])
+    assert rc == 0
+    assert out.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"  # real PNG header, not the sentinel
