@@ -72,7 +72,7 @@ and the architecture changes.
    metadata, similarity, and manual sets. [ADR-002, ADR-011]
 3. **Two frontends sharing one core.** The headless figure path is a
    framework-agnostic Python module; the GUI is a thin Qt shell on
-   top. Same `render(spec)` function powers both. [ADR-004, ADR-005]
+   top. Same `render()` function powers both. [ADR-004, ADR-005]
 4. **PySide6 + pyqtgraph + matplotlib.** Desktop Qt for the shell;
    pyqtgraph for interactive trace plots; matplotlib for publication-
    quality figures (Agg backend for headless). [ADR-016]
@@ -105,10 +105,15 @@ myocard_egm_studio/
 │   ├── similarity.py     #   per-feature nearest-trace lookup        [ADR-020]
 │   └── ...               #   one module per analytical concern
 ├── charts/               # Chart-building primitives, dual backend.
-│   ├── matplotlib/       #   matplotlib renderers (publication-quality static)
+│   ├── matplotlib/       #   static recipes + the recipe registry
+│   │   ├── registry.py   #     RECIPES dict + @register decorator
+│   │   ├── style.py      #     Okabe-Ito palette + paper rcParams + color_for
+│   │   ├── inputs.py     #     prepared recipe-input dataclasses
+│   │   └── <recipe>.py   #     one self-registering recipe per module
 │   └── pyqtgraph/        #   pyqtgraph renderers (interactive, GUI-embedded)
 ├── figures/              # Thin headless layer over charts/matplotlib/.
-│   └── render.py         #   render(spec: FigureSpec) -> Path
+│   ├── render.py         #   render(spec, *, data, overwrite) -> Path
+│   └── loaders.py        #   bank-id -> recipe-input adapters + LOADERS registry
 ├── gui/                  # Qt shell — imports PySide6 + pyqtgraph.
 │   ├── app.py            #   QApplication entry point
 │   ├── shell.py          #   Resizable-column layout shell  [ADR-025]
@@ -146,10 +151,12 @@ renderer.** Three layers make this work:
    `charts/pyqtgraph/` for interactive / GUI-embedded. Both
    backends consume `analysis/` for data prep, so the same
    computation feeds both presentations.
-3. **`figures/`** — thin headless dispatch layer. `render(spec)`
-   parses the figure_spec JSON, calls the matching
-   `charts/matplotlib/` recipe with the right kwargs, writes the
-   output file. ~50 lines.
+3. **`figures/`** — thin headless dispatch layer. `render(spec, *, data)`
+   dispatches `spec.recipe` to the matching `charts/matplotlib/` recipe,
+   passing the prepared `data` (built by `figures/loaders.py` from the
+   spec's bank ids), and writes the output file — skipping an existing
+   one unless `overwrite=True`. The spec is parsed + validated upstream
+   by egm-data's `load_figure_spec`, not here.
 
 GUI views (`gui/views/`) import `charts/pyqtgraph/` for live
 display. Headless renderer (`figures/`) imports `charts/matplotlib/`
@@ -157,6 +164,58 @@ for static export. Both reuse `analysis/` for data prep. Adding a
 new chart means: implement once in `analysis/`, implement twice in
 `charts/` (one per backend), expose via `figures/` if it needs
 headless export.
+
+### The registry pattern (recipes + loaders)
+
+Two places in egm-studio use a **registry**: a module-level dict mapping a
+string key to a function, populated by a decorator at import time and looked up
+by a dispatcher at call time. It is what keeps `render()` tiny and ignorant of
+individual figures, and what lets a new recipe (or loader) be added without
+editing any dispatch code — you add a module, not a branch.
+
+There are two registries, one per direction of a render:
+
+- **Recipe registry** — `charts/matplotlib/registry.py` holds
+  `RECIPES: dict[str, RecipeFn]` and the `@register("<recipe-name>")`
+  decorator. Each recipe module (e.g. `charts/matplotlib/prediction_histogram.py`)
+  decorates its drawing function, inserting it into `RECIPES` keyed by the
+  `figure_spec.recipe` string. `figures/render.py` then does
+  `RECIPES[spec.recipe]` — a dict lookup, not an `if/elif` chain.
+- **Loader registry** — `figures/loaders.py` holds
+  `LOADERS: dict[str, RecipeLoaderFn]` and `@register_loader("<recipe-name>")`.
+  A loader turns a spec's bank ids into the prepared input its recipe draws;
+  `resolve_recipe_data(spec, bank_paths)` dispatches on `spec.recipe` the same way.
+
+Three mechanics make it work:
+
+1. **Decorator = self-registration.** `@register("prediction-histogram")` runs
+   at import and adds the function to the dict. The author writes one decorator
+   line; nothing central changes. Adding the 8th recipe touches only its own
+   new module. A duplicate name raises at import rather than silently shadowing.
+2. **Import for side effect.** A registry is only populated once the modules
+   carrying the decorators have been imported. `charts/matplotlib/__init__.py`
+   imports each recipe module precisely so their decorators run; importing the
+   package therefore fills `RECIPES`. (This is why those recipe imports look
+   "unused" in `__init__` — they exist for the registration side effect, and
+   `F401` is per-file-ignored there.)
+3. **Registry in its own module.** `RECIPES` / `register` live in `registry.py`,
+   *not* the package `__init__`, so a recipe can `from .registry import register`
+   without importing the `__init__` that imports the recipe — which would be a
+   circular import. The `__init__` is the only place that imports the recipe
+   modules; the recipe modules import only the registry.
+
+The trade-off is the import-for-side-effect indirection (mechanic 2), which is
+contained to the `__init__` + `registry.py` modules. In exchange the recipe and
+loader vocabularies stay open (the contract treats `recipe` as a free-form
+string owned by egm-studio), and recipes remain independent and individually
+snapshot-tested.
+
+> **`figures/loaders.py` vs the top-level `loaders/`:** the figure-data adapters
+> (bank → recipe input) live in `figures/loaders.py`, next to the renderer that
+> consumes them. The planned top-level `loaders/` (Blocks 6–7) is for the
+> GUI's bank-reading wrappers + the phase-manifest reader. Whether the
+> figure-data adapters fold into that package once it exists is an open question
+> tracked in `project/roadmap.md` (Block 7).
 
 ### Import boundaries (hard rules)
 

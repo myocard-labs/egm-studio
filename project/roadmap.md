@@ -115,16 +115,35 @@ The first end-to-end vertical slice through the pipeline. Picks up
 where Block 2 leaves off; ends with real figures rendering from
 spec JSON files.
 
+> **Status (in progress):** the matplotlib foundation has shipped — the recipe
+> registry (`registry.py`, split out of `__init__` to avoid import cycles), the
+> paper style (`style.py`: Okabe-Ito palette + embedded-font rcParams +
+> `color_for`), the prepared-input dataclasses (`inputs.py`), the
+> `render(spec, *, data, overwrite)` contract + existing-output skip, and the
+> figure-data loaders (`loaders.py` + `egm-studio-render --bank/--banks`,
+> brought forward from Block 7). The first recipe — **`prediction-histogram`** —
+> is shipped with a snapshot test + example spec. Remaining P0 recipes land
+> **one at a time** (each its own review — including a deep look at the recipe's
+> math — plus snapshot + commit), so the block closes incrementally rather than
+> in one big drop.
+
 **Scope:**
 
 - `charts/matplotlib/` package — implement all P0 recipes from
-  `paper_figure_inventory.md` (Phase 1.5 paper, ~7-8 recipes).
+  `paper_figure_inventory.md` (Phase 1.5 paper, ~7-8 recipes), one per
+  review cycle.
 - Wire recipes into the `figures/render.py` dispatch registry.
 - pytest-mpl snapshot tests for each recipe.
 - Set matplotlib rcParams for vector PDF export with embedded
   TrueType fonts (`pdf.fonttype = 42`) per the paper-figure
   inventory.
 - Sample spec JSON files in `examples/` that exercise each recipe.
+- `figures/loaders.py` — bank → recipe-input adapters (e.g.
+  `prediction_group_from_bank`), the renderer's data-loading step.
+  Brought forward from Block 7 so real banks render *now*: the CLI
+  `--bank ID=PATH` / `--banks map.json` flags supply a hand-written
+  `{bank_id: path}` map (a proto-manifest). The adapters are permanent;
+  Block 7 only swaps the map source for the phase manifest.
 
 **Deps:**
 
@@ -132,8 +151,9 @@ spec JSON files.
 
 **Exit:**
 
-- `egm-studio-render examples/<recipe>_spec.json -o out.pdf` works
-  for each P0 recipe.
+- `egm-studio-render examples/<recipe>_spec.json --banks banks.json -o out.pdf`
+  renders real banks for each P0 recipe (the `--banks` map stands in for
+  the Block 7 phase-manifest resolution).
 - pytest-mpl snapshot tests pass for all P0 recipes.
 - Output PDFs have embedded vector text (verified by opening in a PDF
   reader + selecting text).
@@ -256,6 +276,12 @@ filter UI + TraceContainer into the signal-exploration view per
 
 - `loaders/bank.py` — wrappers over egm-data bank readers
   (ClassifierBank, IAFDBBank, etc.).
+- Manifest-driven figure rendering: resolve a figure_spec's
+  `inputs.groups` bank ids to paths through the phase manifest and feed
+  `figures/loaders.py` (seeded in Block 3), retiring the hand-supplied
+  `--bank` / `--banks` map. (Open: whether the figure-input adapters in
+  `figures/loaders.py` should fold into the top-level `loaders/` package
+  here, leaving `figures/` pure rendering.)
 - view_model construction joining bank metadata + features
   (`analysis/` from Block 2).
 - `gui/widgets/filter.py` — composable filter UI per ADR-002 (trace
