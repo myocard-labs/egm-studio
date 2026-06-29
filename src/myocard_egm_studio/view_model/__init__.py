@@ -1,0 +1,28 @@
+"""The unified per-trace view-model (ADR-002).
+
+The architectural keystone: for any loaded bank, egm-studio builds one
+composite per-trace table that joins identity + bank metadata + egm-features
+columns. Every filter / sort / pair-comparison / distribution operation runs
+against this table, so performance scales with result-set size, not bank size
+[ADR-011].
+
+Block 2 builds the features + metadata join (:func:`build_view_model`). ML
+outcomes (predicted_prob, correctness_bucket, ...) join in Block 8 when a
+predictions bank is loaded; similarity columns are computed on demand
+(:mod:`..analysis.similarity`). This package owns the column contract; the
+GUI loaders (Block 7) feed it typed egm-data banks.
+"""
+
+from __future__ import annotations
+
+from myocard_egm_studio.view_model.builder import (
+    FEATURE_COLUMNS,
+    IDENTITY_COLUMNS,
+    build_view_model,
+)
+
+__all__ = [
+    "FEATURE_COLUMNS",
+    "IDENTITY_COLUMNS",
+    "build_view_model",
+]

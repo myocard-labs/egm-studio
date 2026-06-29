@@ -1,16 +1,19 @@
 # ---------------------------------------------------------------------------
-# pyproject.toml — myocard-labs python template
+# pyproject.toml — myocard-egm-studio
 #
-# Find/replace before publishing:
-#   myocard-package-name   → PyPI distribution name (dash-separated, with myocard- prefix)
-#   myocard_package_name   → Python import name (underscore-separated)
-#   PACKAGE_DESCRIPTION    → one-line summary used by PyPI
-#   GITHUB_REPO_NAME       → bare repo name (no myocard- prefix)
+# Desktop application for the myocard-labs intracardiac-EGM stack: signal
+# exploration, ML training-result diagnostics, and paper-figure generation.
+# Reads data exclusively via egm-data / egm-contracts.
 #
 # Convention recap (LOCKED-IN 2026-06-13, see intracardiac-platform/project/refactor_checklist.md):
-#   GitHub repo  : egm-contracts                  (bare)
-#   PyPI dist    : myocard-egm-contracts          (myocard- prefix)
-#   Import name  : myocard_egm_contracts          (underscore)
+#   GitHub repo  : egm-studio                     (bare)
+#   PyPI dist    : myocard-egm-studio             (myocard- prefix)
+#   Import name  : myocard_egm_studio             (underscore)
+#
+# Implementation in progress (Block 2 — the headless analysis + figure-render
+# foundation). The interactive Qt stack (PySide6 + pyqtgraph) lands in Block 4;
+# until then only the framework-agnostic core (analysis / view_model / figures /
+# the egm-studio-render CLI) is wired. See project/roadmap.md for the block plan.
 # ---------------------------------------------------------------------------
 
 [build-system]
@@ -18,18 +21,25 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "myocard-package-name"
+name = "myocard-egm-studio"
 version = "0.1.0"
-description = "PACKAGE_DESCRIPTION"
+description = "Desktop application for intracardiac EGM signal analysis, ML diagnostics, and paper-figure generation."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 authors = [
   { name = "Daniel Klein", email = "daniel.anthony.klein.88@gmail.com" },
 ]
-keywords = ["cardiac", "electrophysiology", "signal-processing", "egm"]
+keywords = [
+  "cardiac",
+  "electrophysiology",
+  "signal-processing",
+  "egm",
+  "gui",
+  "visualization",
+]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 2 - Pre-Alpha",
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
@@ -39,12 +49,31 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering",
   "Topic :: Scientific/Engineering :: Medical Science Apps.",
+  "Topic :: Scientific/Engineering :: Visualization",
 ]
 
 dependencies = [
-  # Runtime deps go here. Keep this lean. Common floor: numpy + h5py.
-  # "numpy>=1.26",
-  # "h5py>=3.10",
+  # Schemas + typed models for every cross-component format (figure_spec,
+  # phase_manifest, observation, bank/record schemas); the ArtifactId /
+  # FigureId patterns live here. [ADR-001, ADR-014]
+  "myocard-egm-contracts @ git+https://github.com/myocard-labs/egm-contracts.git@v0.5.1",
+  # All bank + phase-artifact I/O: load_classifier_bank, phases.load_figure_spec,
+  # etc. egm-studio never opens an HDF5/JSON directly [ADR-001]. No [torch]
+  # extra — egm-studio neither trains nor runs models.
+  "myocard-egm-data @ git+https://github.com/myocard-labs/egm-data.git@v0.4.1",
+  # Per-trace feature extractors (bundle.extract_all) for the unified
+  # per-trace view-model. [ADR-002]
+  "myocard-egm-features @ git+https://github.com/myocard-labs/egm-features.git@v0.1.1",
+  # Publication figure rendering via the headless Agg backend [ADR-016]. The
+  # interactive Qt plotting stack (PySide6 + pyqtgraph) is added in Block 4.
+  "matplotlib>=3.8",
+  # Imported by name in analysis/ + view_model/, so declared directly even
+  # though they also arrive transitively via egm-features / egm-data.
+  # numpy 2.5+ ships PEP 695 type-alias stubs mypy won't parse under
+  # python_version="3.10"; cap below 2.5 to match the rest of the stack.
+  "numpy>=1.26,<2.5",
+  "pandas>=2.0",
+  "scipy>=1.11",
 ]
 
 [project.optional-dependencies]
@@ -58,21 +87,28 @@ dev = [
 ]
 
 [project.urls]
-Homepage      = "https://github.com/myocard-labs/GITHUB_REPO_NAME"
-Repository    = "https://github.com/myocard-labs/GITHUB_REPO_NAME"
-Issues        = "https://github.com/myocard-labs/GITHUB_REPO_NAME/issues"
+Homepage      = "https://github.com/myocard-labs/egm-studio"
+Repository    = "https://github.com/myocard-labs/egm-studio"
+Issues        = "https://github.com/myocard-labs/egm-studio/issues"
 Organization  = "https://github.com/myocard-labs"
 
-# Optional CLI entry points — uncomment + edit when the package ships commands.
-# [project.scripts]
-# myocard-foo = "myocard_package_name.cli:main"
+[project.scripts]
+# Headless figure renderer (Block 2). The interactive `egm-studio` GUI
+# console script is added in Block 4.
+egm-studio-render = "myocard_egm_studio.cli.render:main"
 
 # ---------------------------------------------------------------------------
 # Hatch
 # ---------------------------------------------------------------------------
 
+# Hatchling refuses direct URL references in dependencies by default; we
+# need it during pre-1.0 iteration so we can pin the egm-* siblings to
+# git tags. Drop this once everything ships on (Test)PyPI.
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
-packages = ["src/myocard_package_name"]
+packages = ["src/myocard_egm_studio"]
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -137,7 +173,7 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["src/myocard_package_name"]
+source = ["src/myocard_egm_studio"]
 branch = true
 
 [tool.coverage.report]
@@ -163,15 +199,17 @@ no_implicit_optional = true
 show_error_codes = true
 files = ["src", "tests"]
 
-# Per-module overrides for libraries without type stubs.
-# Uncomment + edit when the package starts importing one of these.
-# Listing them here when the imports aren't present triggers
-# `warn_unused_configs` and clutters the mypy output.
-#
-# [[tool.mypy.overrides]]
-# module = [
-#   "h5py.*",
-#   "scipy.*",
-#   "matplotlib.*",
-# ]
-# ignore_missing_imports = true
+# matplotlib + scipy + pandas ship without complete py.typed support;
+# ignore-missing silences these third-party hops without losing strict
+# checking on our own code. (pandas has a pandas-stubs package; like
+# egm-features we don't pin it yet — a natural add when the DataFrame
+# ergonomics get richer.) The myocard siblings (egm-contracts / egm-data /
+# egm-features) ship py.typed and are deliberately NOT in this list. PySide6 +
+# pyqtgraph join here in Block 4.
+[[tool.mypy.overrides]]
+module = [
+  "matplotlib.*",
+  "scipy.*",
+  "pandas.*",
+]
+ignore_missing_imports = true

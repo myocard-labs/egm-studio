@@ -1,0 +1,15 @@
+{
+  "schema_version": "1",
+  "id": "fig_block2_render_plumbing_stub",
+  "description": "Block 2 plumbing stub. The spec validates against the figure_spec schema, but its recipe is not registered yet (Block 3 adds the P0 recipes), so egm-studio-render exercises the full load -> validate -> dispatch path and returns the clear empty-registry error. Not a real paper figure.",
+  "recipe": "feature-distribution-overlay",
+  "inputs": {
+    "groups": [
+      { "name": "Synthetic v1.5 (Courtemanche)", "bank_id": "tbank_synthetic_courtemanche_v1_5_2026-06-25" },
+      { "name": "IAFDB", "bank_id": "tbank_iafdb_v1_2026-06-15" }
+    ]
+  },
+  "layout": { "grid": [4, 3], "panel_size_in": [1.5, 1.2] },
+  "styling": { "palette": "colorblind", "font_size_pt": 9, "annotate_distance": "ks" },
+  "output": { "format": "pdf", "path": "out/fig_block2_render_plumbing_stub.pdf" }
+}
