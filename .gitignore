@@ -77,6 +77,8 @@ logs/
 mlruns/
 wandb/
 artifacts/
+out/
+tests/charts/baseline
 
 # Allow tiny fixtures committed under tests/fixtures/ if needed:
 !tests/fixtures/**
