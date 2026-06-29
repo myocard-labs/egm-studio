@@ -1,21 +1,92 @@
-"""Pytest fixtures shared across the package's test suite.
+"""Pytest fixtures shared across the egm-studio test suite.
 
 Conventions:
 - Pure-Python fixtures live here.
-- File-backed fixtures (synthetic HDF5 banks, mini CSVs, etc.) go in
-  `tests/fixtures/` and are constructed via `tmp_path` factories below.
-- No real data files in the repo.
+- File-backed fixtures use ``tmp_path``; no real data files in the repo.
 
-Delete this docstring and the placeholder fixture below once the package
-has real tests.
+The fixtures build tiny in-memory :class:`ClassifierBank` objects (the egm-data
+v0.4.0 stable-id API: bank ids are ``ArtifactId`` strings, not integer
+indices). Sized small (12 traces, T=128) so the ~O(T^2) sample-entropy pass in
+``bundle.extract_all`` stays fast in the view-model tests.
 """
 
 from __future__ import annotations
 
+import dataclasses
+
+import numpy as np
 import pytest
+from myocard_egm_data.banks import (
+    ClassifierBank,
+    ClassifierBankMetaData,
+    ClassifierTrace,
+)
+
+#: Stable id for the fixture's single source bank (egm-contracts ArtifactId).
+_FIXTURE_BANK_ID = "tbank_studio_fixture_2026-06-27"
+
+
+def _trace_signal(rng: np.random.Generator, n_samples: int, label: int) -> np.ndarray:
+    """Deterministic per-label trace with enough variance for feature stats.
+
+    Healthy (0) is a low-frequency sine; fibrotic (1) adds a high-frequency
+    burst — separable in the spectral + complexity features so per-class
+    distribution distances are non-zero. Per-trace noise gives within-class
+    spread (KDE needs >= 2 distinct values).
+    """
+    t = np.arange(n_samples, dtype=np.float64) / n_samples
+    base = np.sin(2.0 * np.pi * 5.0 * t)
+    if label == 1:
+        base = base + 0.3 * np.sin(2.0 * np.pi * 40.0 * t)
+    noise = rng.standard_normal(n_samples) * 0.02
+    return (base + noise).astype(np.float32)
 
 
 @pytest.fixture
-def example_fixture() -> dict[str, int]:
-    """Placeholder fixture — delete once real tests land."""
-    return {"answer": 42}
+def tiny_classifier_bank() -> ClassifierBank:
+    """A 12-trace, 2-class, 6-patient labeled ClassifierBank (T=128, 1 kHz)."""
+    rng = np.random.default_rng(0)
+    n_samples = 128
+    n_patients = 6
+    traces_per_patient = 2
+    traces: list[ClassifierTrace] = []
+    for p in range(n_patients):
+        label = p % 2
+        for k in range(traces_per_patient):
+            traces.append(
+                ClassifierTrace(
+                    bank_id=_FIXTURE_BANK_ID,
+                    signal=_trace_signal(rng, n_samples, label),
+                    freq_hz=1000.0,
+                    amp_type="mv",
+                    split=None,
+                    label_truth=label,
+                    prediction=None,
+                    trace_metadata={
+                        "patient_id": f"P{p:02d}",
+                        "sim_id": p,
+                        "electrode_pair_id": k,
+                    },
+                )
+            )
+    bank_md = ClassifierBankMetaData(
+        bank_id=_FIXTURE_BANK_ID,
+        bank_type="synthetic",
+        bank_path="<in-memory fixture>",
+        bank_metadata={"fixture": "tiny_classifier_bank"},
+    )
+    return ClassifierBank(
+        banks=[bank_md],
+        traces=traces,
+        labels={0: "healthy", 1: "fibrotic"},
+    )
+
+
+@pytest.fixture
+def tiny_unlabeled_bank(tiny_classifier_bank: ClassifierBank) -> ClassifierBank:
+    """The labeled fixture with every ``label_truth`` cleared (the IAFDB shape)."""
+    traces = [
+        dataclasses.replace(t, label_truth=None, prediction=None)
+        for t in tiny_classifier_bank.traces
+    ]
+    return dataclasses.replace(tiny_classifier_bank, traces=traces, id=None)
