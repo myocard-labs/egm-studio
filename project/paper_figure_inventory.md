@@ -291,6 +291,15 @@ its figures get full implementation in egm-studio v0.1.
 - **Data sources:** Per-intervention model + synthetic val
   predictions bank.
 - **Priority:** P0
+- **Status:** Shipped — egm-studio `calibration-reliability-diagram` recipe
+  (Block 3): overlaid per-model reliability curves (binned mean predicted
+  probability vs observed positive fraction) over the y=x line, each annotated
+  with its ECE. The binning + ECE math extends the pure-numpy/scipy
+  `analysis/metrics` (`reliability_curve` + `expected_calibration_error`); the
+  recipe reuses `PredictionGroup` + the `prediction-histogram` loader (stacked
+  registration), rejecting unlabeled groups. `styling.n_bins` (default 10) sets
+  the bins; `inputs.positive_label` the positive class. Snapshot test +
+  examples/calibration_reliability_diagram_spec.json.
 - **Notes:** **Synthetic-only.** Same reframing as F-1.5.4. The
   Phase 1 result already established that temperature scaling fixed
   in-distribution calibration but didn't help the IAFDB saturation

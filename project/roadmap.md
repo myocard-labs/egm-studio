@@ -121,7 +121,7 @@ spec JSON files.
 > `color_for`), the prepared-input dataclasses (`inputs.py`), the
 > `render(spec, *, data, overwrite)` contract + existing-output skip, and the
 > figure-data loaders (`loaders.py` + `egm-studio-render --bank/--banks`,
-> brought forward from Block 7). Four recipes have shipped so far —
+> brought forward from Block 7). Five recipes have shipped so far —
 > **`prediction-histogram`**, **`feature-distribution-overlay`** (the primary
 > sim-realism diagnostic, F-1.5.2: per-feature density overlay with
 > KS/Wasserstein annotation, axis units, `layout.features` curation),
@@ -129,9 +129,12 @@ spec JSON files.
 > IAFDB reference with baseline-relative deltas; a generic bar recipe), and
 > **`roc-curve-multi-line`** (F-1.5.4: overlaid synthetic-val ROC curves +
 > AUROC, on a new pure-numpy/scipy `analysis/metrics`; reuses the
-> `prediction-histogram` loader via stacked registration) — each with a snapshot
-> test + example spec, and a shared `select_layout_features` helper backing the
-> `layout.features` curation. Remaining P0 recipes land **one
+> `prediction-histogram` loader via stacked registration), and
+> **`calibration-reliability-diagram`** (F-1.5.5: per-model reliability curves +
+> ECE, extending `analysis/metrics`; same loader reuse) — each with a snapshot
+> test + example spec, plus shared helpers `select_layout_features`
+> (`layout.features` curation) and `spec_fields.positive_label` (read identically
+> by the loader and the ROC / calibration recipes). Remaining P0 recipes land **one
 > at a time** (each its own review — including a deep look at the recipe's math —
 > plus snapshot + commit), so the block closes incrementally rather than in one
 > big drop.
@@ -555,6 +558,7 @@ condition for when it becomes priority work.
 | Item | Trigger | Approx. effort |
 |---|---|---|
 | P1 / P2 / P3 recipes (Phase 2+ paper figures) | Each paper enters writing phase | ~1-2 days per paper-worth |
+| Figure-math theory doc (per recipe / spec) | All P0 recipes shipped (Block 3 done) — Daniel wants the math behind each spec written up in one place | Medium — covers what each recipe + `analysis` fn computes (ROC / AUROC, reliability / ECE, KS / Wasserstein / KDE distances, aggregate distance). Honor the theory-docs split: egm-classifier `docs/theory.md` owns the eval-metric derivations + operational guidance, egm-studio owns visual interpretation — so egm-studio documents the analysis-layer implementations and cross-links to egm-classifier for the ML-eval theory |
 | Feature-extraction progress feedback | Feature-based recipes (feature-distribution-overlay, trace-pair-gallery, ...) are slow on real banks — the view-model build runs `bundle.extract_all` over every trace (the O(T^2) sample-entropy pass dominates) | Small — thread a `tqdm` / callback through `build_view_model` -> `extract_all`; possibly an egm-features param. Parallels the egm-classifier eval progress bar |
 | Joint similarity metric [ADR-020 follow-up] | v0.1 usage clarifies the trade-offs | Small ADR + 1-2 day impl |
 | Live-preview perf revision [ADR-019] | Real-bank perf forces a strategy change | ADR-NNN supersedes ADR-019 + impl |
