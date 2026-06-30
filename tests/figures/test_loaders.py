@@ -201,17 +201,21 @@ def test_resolve_recipe_data_dispatches(
 
 
 def test_resolve_recipe_data_no_loader_raises() -> None:
-    """A recipe with no registered loader raises LoaderNotRegisteredError."""
+    """A recipe with no registered loader raises LoaderNotRegisteredError.
+
+    Uses a sentinel recipe name (never a real recipe) so this stays valid as
+    real recipes gain loaders — every recipe shipped so far has one.
+    """
     spec = FigureSpec.model_validate(
         {
             "schema_version": "1",
             "id": "fig_no_loader",
             "description": "no loader for this recipe yet",
-            "recipe": "roc-curve-multi-line",
+            "recipe": "unregistered-stub-recipe",
             "output": {"format": "png", "path": "out.png"},
         }
     )
-    with pytest.raises(LoaderNotRegisteredError, match="roc-curve-multi-line"):
+    with pytest.raises(LoaderNotRegisteredError, match="unregistered-stub-recipe"):
         resolve_recipe_data(spec, {})
 
 
