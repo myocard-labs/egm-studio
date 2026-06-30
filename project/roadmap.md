@@ -121,7 +121,7 @@ spec JSON files.
 > `color_for`), the prepared-input dataclasses (`inputs.py`), the
 > `render(spec, *, data, overwrite)` contract + existing-output skip, and the
 > figure-data loaders (`loaders.py` + `egm-studio-render --bank/--banks`,
-> brought forward from Block 7). Six recipes have shipped so far —
+> brought forward from Block 7). Seven recipes have shipped so far —
 > **`prediction-histogram`**, **`feature-distribution-overlay`** (the primary
 > sim-realism diagnostic, F-1.5.2: per-feature density overlay with
 > KS/Wasserstein annotation, axis units, `layout.features` curation),
@@ -134,10 +134,13 @@ spec JSON files.
 > ECE, extending `analysis/metrics`; same loader reuse), and
 > **`trace-pair-gallery`** (F-1.5.7: an N x 2 synthetic-vs-IAFDB matched-trace
 > grid — new `TracePair` / `TracePairGallery` inputs + a dedicated loader, the
-> first consumer of `analysis/similarity`) — each with a snapshot
-> test + example spec, plus shared helpers `select_layout_features`
-> (`layout.features` curation) and `spec_fields.positive_label` (read identically
-> by the loader and the ROC / calibration recipes). Beyond the six recipes,
+> first consumer of `analysis/similarity`), and **`summary-table`** (F-1.5.10:
+> generic `TableData` -> matplotlib table; the curation loader reads the
+> `noise_bank_run_record` sidecar — the first non-bank loader — with
+> `layout.fields` field curation) — each with a snapshot test + example spec, plus
+> shared helpers `select_from_available` (backing the `layout.features` +
+> `layout.fields` curation) and `spec_fields.positive_label` (read identically by
+> the loader and the ROC / calibration recipes). Beyond the seven recipes,
 > **F-1.5.6** (per-intervention IAFDB de-saturation overlay) is also wired — it
 > needed no new recipe, reusing `prediction-histogram`'s overlay mode with its own
 > example spec + a multi-unlabeled-overlay test. Remaining P0 recipes land **one
@@ -568,7 +571,7 @@ condition for when it becomes priority work.
 | Feature-extraction progress feedback | Feature-based recipes (feature-distribution-overlay, trace-pair-gallery, ...) are slow on real banks — the view-model build runs `bundle.extract_all` over every trace (the O(T^2) sample-entropy pass dominates) | Small — thread a `tqdm` / callback through `build_view_model` -> `extract_all`; possibly an egm-features param. Parallels the egm-classifier eval progress bar |
 | Joint similarity metric [ADR-020 follow-up] | v0.1 usage clarifies the trade-offs | Small ADR + 1-2 day impl |
 | Single-activation IAFDB windows for sim-vs-real comparison | Sim-vs-IAFDB feature / trace comparisons (F-1.5.2, F-1.5.7, ...) are confounded — IAFDB segments carry multiple activation waves, Phase-1 synthetic is single-beat (surfaced 2026-06-30 from F-1.5.7). See the inventory "Sim-real comparability prerequisite" | Medium — segment IAFDB to one-activation windows before feature extraction (a curation / windowing step; fix-location TBD: producer iafdb-pipeline segmentation vs an egm-studio comparison-loader hook). Resolves once multibeat synthetic lands (Phase 4) |
-| Single-activation IAFDB windows for sim-vs-real comparison | Sim-vs-IAFDB feature / trace comparisons (F-1.5.2, F-1.5.7, ...) are confounded — IAFDB segments carry multiple activation waves, Phase-1 synthetic is single-beat (surfaced 2026-06-30 from F-1.5.7). See the inventory "Sim-real comparability prerequisite" | Medium — segment IAFDB to one-activation windows before feature extraction (a curation / windowing step; fix-location TBD: producer iafdb-pipeline segmentation vs an egm-studio comparison-loader hook). Resolves once multibeat synthetic lands (Phase 4) |
+| LaTeX / markdown text export for summary-table | A paper wants an editable table (not an embedded image) — surfaced 2026-06-30 building F-1.5.10; the figure_spec `output.format` enum is pdf/png/svg only, so summary-table renders an image today | Medium — add a `tex` / `md` output format to egm-contracts' figure_spec (coordinated bump) + a text branch in `figures/render` (write `pandas.to_latex` / `to_markdown` of the TableData instead of `savefig`). egm-studio-side once the contract lands |
 | Live-preview perf revision [ADR-019] | Real-bank perf forces a strategy change | ADR-NNN supersedes ADR-019 + impl |
 | Bottom panel (JupyterLab "down area") [ADR-025 deferred] | Use case emerges that the column layout doesn't accommodate | Small impl |
 | Multi-trace UI (TraceContainer used with N > 1) | Phase 4 multi-beat work begins | Small — substrate already in place |

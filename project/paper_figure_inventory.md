@@ -419,6 +419,20 @@ its figures get full implementation in egm-studio v0.1.
   from a noise_bank_run_record or iafdb_bank_run_record)
 - **Data sources:** IAFDB bank run record.
 - **Priority:** P0 (low effort — small CSV-to-LaTeX exporter)
+- **Status:** Shipped — egm-studio `summary-table` recipe + curation loader
+  (Block 3). Generic `TableData` -> matplotlib table figure (bold / shaded
+  header, sized to content); the curation loader reads the
+  `noise_bank_run_record` JSON via egm-data's `load_noise_bank_run_record` — the
+  first loader that reads a run-record sidecar, not a ClassifierBank — and builds
+  a key/value provenance summary: source, record / patient / segment counts,
+  sampling + window / hop, band, calibration, threshold. Fields default to a
+  static order, overridable + reorderable via `layout.fields` (validated by the
+  shared `select_from_available`). Aggregate only — per-record / per-channel
+  breakdowns aren't in the run record, so a finer table would need a schema
+  field. Output is PDF / PNG / SVG (the figure_spec format enum); true LaTeX /
+  markdown *text* export is a tracked follow-up. The F-2.9 metrics-comparison
+  instance is a future internal dispatch on this loader. Snapshot test +
+  examples/iafdb_curation_summary_spec.json.
 - **Notes:** Could be reused across all phase papers that use IAFDB.
 
 ### F-1.5.11: Training-curve panel

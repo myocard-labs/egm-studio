@@ -14,9 +14,10 @@
 # core is wired: analysis / view_model / charts.matplotlib (recipe registry +
 # paper style) / figures (render + bank loaders) / the egm-studio-render CLI.
 # prediction-histogram, feature-distribution-overlay, bar-chart-with-deltas,
-# roc-curve-multi-line, calibration-reliability-diagram, and trace-pair-gallery
-# have shipped; the rest land one at a time. The interactive Qt stack (PySide6 +
-# pyqtgraph) lands in Block 4. See project/roadmap.md for the block plan.
+# roc-curve-multi-line, calibration-reliability-diagram, trace-pair-gallery, and
+# summary-table have shipped; the rest land one at a time. The interactive Qt
+# stack (PySide6 + pyqtgraph) lands in Block 4. See project/roadmap.md for the
+# block plan.
 # ---------------------------------------------------------------------------
 
 [build-system]
