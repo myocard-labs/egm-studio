@@ -6,8 +6,9 @@ this package runs each recipe module's :func:`.registry.register` decorator, so
 :func:`..figures.render.render` dispatches into it. Block 3 fills the registry
 with the P0 recipes from ``project/paper_figure_inventory.md``
 (``prediction-histogram``, ``feature-distribution-overlay``,
-``bar-chart-with-deltas``, ``roc-curve-multi-line``, and
-``calibration-reliability-diagram`` so far; the rest follow one at a time).
+``bar-chart-with-deltas``, ``roc-curve-multi-line``,
+``calibration-reliability-diagram``, and ``trace-pair-gallery`` so far; the rest
+follow one at a time).
 
 Import rule: this backend imports matplotlib (Agg backend, headless) but never
 PySide6 or pyqtgraph — the interactive variants live in ``charts/pyqtgraph/``.
@@ -30,6 +31,7 @@ from myocard_egm_studio.charts.matplotlib import (
     feature_distribution_overlay,
     prediction_histogram,
     roc_curve_multi_line,
+    trace_pair_gallery,
 )
 from myocard_egm_studio.charts.matplotlib.registry import RECIPES, RecipeFn, register
 
@@ -42,4 +44,5 @@ __all__ = [
     "prediction_histogram",
     "register",
     "roc_curve_multi_line",
+    "trace_pair_gallery",
 ]

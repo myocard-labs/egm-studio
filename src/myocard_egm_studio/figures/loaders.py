@@ -28,13 +28,17 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from myocard_egm_data.banks import load_classifier_bank
+from numpy.typing import NDArray
 
 from myocard_egm_studio.analysis.aggregation import aggregate_distance, feature_distances
+from myocard_egm_studio.analysis.similarity import nearest_along_feature
 from myocard_egm_studio.charts.matplotlib import spec_fields
 from myocard_egm_studio.charts.matplotlib.inputs import (
     BarChartData,
     FeatureGroup,
     PredictionGroup,
+    TracePair,
+    TracePairGallery,
 )
 from myocard_egm_studio.charts.matplotlib.selection import select_layout_features
 from myocard_egm_studio.view_model import FEATURE_COLUMNS, build_view_model, feature_units
@@ -63,6 +67,7 @@ __all__ = [
     "load_feature_groups",
     "load_group_banks",
     "load_prediction_groups",
+    "load_trace_pair_gallery",
     "prediction_group_from_bank",
     "register_loader",
     "resolve_recipe_data",
@@ -324,4 +329,97 @@ def load_bar_chart_distances(spec: FigureSpec, bank_paths: BankPaths) -> BarChar
         values=np.array(values, dtype=np.float64),
         baseline_index=baseline_index,
         value_label=f"mean {metric.upper()} distance to {reference_name}",
+    )
+
+
+#: Default gallery row count when ``styling.n_pairs`` is unset.
+_DEFAULT_N_PAIRS = 8
+
+
+def _spread_indices(values: NDArray[np.float64], n: int) -> NDArray[np.intp]:
+    """Positional indices of ``n`` rows spread evenly across the finite ``values``.
+
+    Sorts by the (finite) feature value and samples ``n`` evenly along it, so the
+    gallery spans the feature's range rather than whatever order the bank is in.
+    Non-finite values are dropped and the picks de-duplicated, so fewer than ``n``
+    rows can come back for a small bank.
+    """
+    finite_pos = np.flatnonzero(np.isfinite(values))
+    if finite_pos.size == 0:
+        raise ValueError("no source traces have a finite feature value to match on.")
+    order = finite_pos[np.argsort(values[finite_pos], kind="stable")]
+    k = min(n, order.size)
+    picks = order[np.linspace(0, order.size - 1, k).round().astype(np.intp)]
+    return np.unique(picks)
+
+
+@register_loader("trace-pair-gallery")
+def load_trace_pair_gallery(spec: FigureSpec, bank_paths: BankPaths) -> TracePairGallery:
+    """Loader for ``trace-pair-gallery`` (F-1.5.7): pair source traces to their
+    nearest pool-bank match along one egm-feature.
+
+    Exactly two ``inputs.groups`` are required: the **first** is the source (left
+    column, e.g. synthetic), the **second** the match pool (right column, e.g.
+    IAFDB). ``styling.feature`` (required — the per-feature similarity axis is
+    ADR-020's open question, so there is no default) names the egm-features column
+    to match on; ``styling.n_pairs`` (default 8) sets the row count.
+
+    Builds the per-trace view-model for both banks, selects a spread of source
+    traces along ``feature``, finds each one's nearest pool trace along the same
+    feature (:func:`...analysis.similarity.nearest_along_feature`), and pulls the
+    raw signals (``bank.signal_array()``) for both — feature- + signal-level, so
+    it works on labeled and unlabeled banks alike.
+
+    Note: building the pool view-model runs ``bundle.extract_all`` over every pool
+    trace, which is slow on a full IAFDB bank (the O(T^2) sample-entropy pass) —
+    see the roadmap's feature-extraction progress-feedback item.
+    """
+    styling = spec.styling or {}
+    feature = styling.get("feature")
+    if not feature:
+        raise ValueError(
+            "trace-pair-gallery needs styling.feature — the egm-features column to match "
+            "traces on (per-feature similarity, ADR-020; no default since the metric is open)."
+        )
+    feature = str(feature)
+    if feature not in FEATURE_COLUMNS:
+        raise ValueError(
+            f"styling.feature {feature!r} is not an egm-features column; "
+            f"choose one of {list(FEATURE_COLUMNS)}."
+        )
+    n_pairs = int(styling.get("n_pairs", _DEFAULT_N_PAIRS))
+    if n_pairs < 1:
+        raise ValueError(f"styling.n_pairs must be >= 1, got {n_pairs}.")
+
+    groups = (spec.inputs.groups if spec.inputs else None) or []
+    if len(groups) != 2:
+        raise ValueError(
+            f"trace-pair-gallery needs exactly 2 inputs.groups (source, pool); got {len(groups)}."
+        )
+    (source_name, source_bank), (pool_name, pool_bank) = load_group_banks(spec, bank_paths)
+
+    source_values = build_view_model(source_bank)[feature].to_numpy(dtype=np.float64)
+    pool_vm = build_view_model(pool_bank)
+    pool_values = pool_vm[feature].to_numpy(dtype=np.float64)
+    source_signals = source_bank.signal_array()
+    pool_signals = pool_bank.signal_array()
+
+    pairs: list[TracePair] = []
+    for src_idx in _spread_indices(source_values, n_pairs):
+        target = float(source_values[src_idx])
+        pool_idx = nearest_along_feature(pool_vm, feature=feature, target_value=target)
+        pairs.append(
+            TracePair(
+                left=np.asarray(source_signals[src_idx], dtype=np.float64).copy(),
+                right=np.asarray(pool_signals[pool_idx], dtype=np.float64).copy(),
+                annotation=f"{feature} {target:.3g} → {float(pool_values[pool_idx]):.3g}",
+            )
+        )
+
+    return TracePairGallery(
+        pairs=pairs,
+        left_title=source_name,
+        right_title=pool_name,
+        left_fs_hz=source_bank.uniform_fs_hz(),
+        right_fs_hz=pool_bank.uniform_fs_hz(),
     )

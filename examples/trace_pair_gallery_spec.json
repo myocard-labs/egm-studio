@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "id": "fig_synth_vs_iafdb_trace_gallery",
+  "description": "Phase-1.5 realism gallery (F-1.5.7): an N×2 grid of paired raw EGM traces — each row a synthetic trace (left) beside its most-similar IAFDB trace (right) — letting a reader eyeball realism. Label-free: pairing is over a signal-level egm-feature, not labels. The FIRST group is the source (left column, synthetic), the SECOND is the match pool (right column, IAFDB). 'styling.feature' is REQUIRED — it names the egm-features column the per-feature nearest-neighbour match runs on (the joint multi-feature similarity metric is the deferred open question, ADR-020), so there is no default; pick one of the 11 bundle columns (peak_to_peak, zero_crossings, activation_position, sec_peak_count, spectral_centroid, spectral_entropy, dominant_frequency, sample_entropy, shannon_entropy, lempel_ziv_complexity, higuchi_fractal_dimension). 'styling.n_pairs' (default 8) sets the number of rows; the loader samples that many source traces spread across the feature's range. Note: building the IAFDB pool view-model runs feature extraction over every pool trace, which is slow on the full bank (the O(T^2) sample-entropy pass). Renders via the 'trace-pair-gallery' recipe. Swap in your own synthetic + IAFDB banks when wiring real data.",
+  "recipe": "trace-pair-gallery",
+  "inputs": {
+    "groups": [
+      { "name": "Synthetic", "bank_id": "lpred_v1_baseline_1_noise_2026-06-30" },
+      { "name": "IAFDB", "bank_id": "upred_v1_baseline_bin_2026-06-29" }
+    ]
+  },
+  "styling": { "feature": "dominant_frequency", "n_pairs": 8 },
+  "output": { "format": "pdf", "path": "out/fig_synth_vs_iafdb_trace_gallery_df.pdf" }
+}

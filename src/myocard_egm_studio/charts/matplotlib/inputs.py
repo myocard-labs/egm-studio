@@ -18,7 +18,13 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-__all__ = ["BarChartData", "FeatureGroup", "PredictionGroup"]
+__all__ = [
+    "BarChartData",
+    "FeatureGroup",
+    "PredictionGroup",
+    "TracePair",
+    "TracePairGallery",
+]
 
 
 @dataclass(frozen=True)
@@ -102,3 +108,56 @@ class BarChartData:
     errors: NDArray[np.float64] | None = None
     baseline_index: int | None = None
     value_label: str = ""
+
+
+@dataclass(frozen=True)
+class TracePair:
+    """One row of the ``trace-pair-gallery``: a source trace beside its match.
+
+    Attributes
+    ----------
+    left
+        ``(L,)`` raw waveform samples of the source trace (e.g. a synthetic EGM).
+    right
+        ``(R,)`` raw waveform samples of the matched trace (e.g. its nearest
+        IAFDB EGM). ``L`` and ``R`` may differ — the two banks need not share a
+        sample count — but within a column every trace shares the bank's length.
+    annotation
+        Optional per-row label (e.g. the matched feature value + the gap to it),
+        drawn in the row's left panel.
+    """
+
+    left: NDArray[np.float64]
+    right: NDArray[np.float64]
+    annotation: str = ""
+
+
+@dataclass(frozen=True)
+class TracePairGallery:
+    """Prepared input for ``trace-pair-gallery`` — an Nx2 grid of paired traces.
+
+    Attributes
+    ----------
+    pairs
+        One :class:`TracePair` per gallery row. The loader selects a spread of
+        source traces (along the match feature) and pairs each with its nearest
+        trace in the pool bank.
+    left_title
+        Header for the left (source) column — the source group name (e.g.
+        ``"Synthetic"``).
+    right_title
+        Header for the right (pool) column — the pool group name (e.g.
+        ``"IAFDB"``).
+    left_fs_hz
+        Sample rate of the left column's bank, for a seconds x-axis; ``None``
+        plots against sample index.
+    right_fs_hz
+        Sample rate of the right column's bank. Separate from ``left_fs_hz``
+        because the two banks can differ in sample rate.
+    """
+
+    pairs: list[TracePair]
+    left_title: str = "left"
+    right_title: str = "right"
+    left_fs_hz: float | None = None
+    right_fs_hz: float | None = None
