@@ -13,9 +13,9 @@
 # Implementation in progress (Block 3 — matplotlib figure recipes). The headless
 # core is wired: analysis / view_model / charts.matplotlib (recipe registry +
 # paper style) / figures (render + bank loaders) / the egm-studio-render CLI.
-# prediction-histogram + feature-distribution-overlay have shipped; the rest
-# land one at a time. The interactive Qt stack (PySide6 + pyqtgraph) lands in
-# Block 4. See project/roadmap.md for the block plan.
+# prediction-histogram, feature-distribution-overlay, and bar-chart-with-deltas
+# have shipped; the rest land one at a time. The interactive Qt stack (PySide6 +
+# pyqtgraph) lands in Block 4. See project/roadmap.md for the block plan.
 # ---------------------------------------------------------------------------
 
 [build-system]

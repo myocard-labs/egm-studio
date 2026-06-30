@@ -244,6 +244,15 @@ its figures get full implementation in egm-studio v0.1.
   bank features. Distance metric is per-feature Wasserstein
   averaged with weights TBD (open question — see bottom of doc).
 - **Priority:** P0
+- **Status:** Shipped — egm-studio `bar-chart-with-deltas` recipe (generic)
+  + F-1.5.3 distance loader (Block 3): per-group aggregate distance to a named
+  IAFDB reference, optional baseline-relative deltas, and `layout.features` to
+  restrict which columns define the distance. The aggregate metric defaults to
+  KS (unitless — sound to average across the heterogeneous features; raw
+  Wasserstein-across-units is not); `styling.metric` overrides. The per-feature
+  *weighting* remains the open question below. Validated end to end on
+  synthetic-pipeline variant banks (IAFDB-noise on/off, density) ahead of the
+  real Phase-1.5 intervention banks.
 - **Notes:** **Label-free.** Headline result figure. Want a clear
   win/no-win read at a glance.
 
