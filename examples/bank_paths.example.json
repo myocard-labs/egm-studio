@@ -5,5 +5,10 @@
   "tbank_synthetic_aliev_panfilov_2_2026-06-29": "banks/synthegm_v1_baseline_2.classifier.h5",
   "tbank_synthetic_aliev_panfilov_3_2026-06-29": "banks/synthegm_v1_baseline_3.classifier.h5",
   "tbank_synthetic_aliev_panfilov_4_2026-06-29": "banks/synthegm_v1_baseline_4.classifier.h5",
-  "tbank_synthetic_aliev_panfilov_noise_mixed_1_2026-06-29": "banks/synthegm_v1_noise_mixed_1.classifier.h5"
+  "tbank_synthetic_aliev_panfilov_noise_mixed_1_2026-06-29": "banks/synthegm_v1_noise_mixed_1.classifier.h5",
+  "lpred_v1_baseline_1_2026-06-30": "banks/v1_baseline_1_test_pred.classifier.h5",
+  "lpred_v1_baseline_1_noise_2026-06-30": "banks/v1_baseline_1_noise_test_pred.classifier.h5",
+  "lpred_v1_baseline_2_2026-06-30": "banks/v1_baseline_2_test_pred.classifier.h5",
+  "lpred_v1_baseline_3_2026-06-30": "banks/v1_baseline_3_test_pred.classifier.h5",
+  "lpred_v1_baseline_4_2026-06-30": "banks/v1_baseline_4_test_pred.classifier.h5"
 }

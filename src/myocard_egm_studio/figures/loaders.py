@@ -13,9 +13,10 @@ unchanged once the manifest lands; only the source of the path map changes.
 
 Loaders register per recipe (mirroring the ``charts/matplotlib`` recipe
 registry): :func:`resolve_recipe_data` dispatches on ``spec.recipe`` into
-:data:`LOADERS`. ``prediction-histogram``, ``feature-distribution-overlay``, and
-``bar-chart-with-deltas`` have loaders so far; more land as recipes gain
-real-data paths.
+:data:`LOADERS`. ``prediction-histogram``, ``feature-distribution-overlay``,
+``bar-chart-with-deltas``, and ``roc-curve-multi-line`` have loaders so far (the
+last reuses ``prediction-histogram``'s — both build the same per-trace
+P(positive) + truth); more land as recipes gain real-data paths.
 """
 
 from __future__ import annotations
@@ -206,11 +207,15 @@ def prediction_group_from_bank(
 
 
 @register_loader("prediction-histogram")
+@register_loader("roc-curve-multi-line")
 def load_prediction_groups(spec: FigureSpec, bank_paths: BankPaths) -> list[PredictionGroup]:
-    """Loader for ``prediction-histogram``: each spec group -> a PredictionGroup.
+    """Loader for ``prediction-histogram`` and ``roc-curve-multi-line``: each spec
+    group -> a PredictionGroup.
 
-    Resolves + loads each group's bank via :func:`load_group_banks`, then adapts
-    it with :func:`prediction_group_from_bank`.
+    Both recipes need the same per-trace P(positive) + truth, so they share this
+    loader (``roc-curve-multi-line`` additionally *requires* truth, which it
+    enforces at draw time). Resolves + loads each group's bank via
+    :func:`load_group_banks`, then adapts it with :func:`prediction_group_from_bank`.
 
     ``positive_label`` — which class's probability the histogram shows —
     defaults to 1 (the fibrotic / positive class of the binary v1 model), but a

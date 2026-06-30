@@ -20,6 +20,8 @@ Submodules (one per analytical concern):
 - :mod:`.similarity` — per-feature nearest-trace lookup (ADR-020); the
   richer nearest-correct-pair / within-class-neighborhood diagnostics land
   in Block 8.
+- :mod:`.metrics` — ROC curve + AUROC for the synthetic-val classifier
+  figures (labeled data only; IAFDB has no truth to score against).
 """
 
 from __future__ import annotations
