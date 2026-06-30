@@ -109,6 +109,31 @@ def test_overlay_single_axis() -> None:
     assert len(fig.axes) == 1
 
 
+def test_overlay_multiple_unlabeled_groups() -> None:
+    """F-1.5.6: several unlabeled IAFDB groups overlay as one outline each, all in the legend.
+
+    Overlay mode histograms ``probs`` directly and ignores labels, so a figure of
+    several *unlabeled* IAFDB prediction banks — the per-intervention de-saturation
+    view — flows through the same path as the synthetic-vs-real overlay, with no
+    recipe change.
+    """
+    data = [
+        _unlabeled_group(name="Baseline", seed=1),
+        _unlabeled_group(name="Intervention A", seed=2),
+        _unlabeled_group(name="Intervention B", seed=3),
+    ]
+    fig = prediction_histogram(data, _spec(layout={"mode": "overlay"}, styling={"density": True}))
+    ax = fig.axes[0]
+    assert len(ax.patches) == 3  # one stairs outline per group
+    legend = ax.get_legend()
+    assert legend is not None
+    assert {t.get_text() for t in legend.get_texts()} == {
+        "Baseline",
+        "Intervention A",
+        "Intervention B",
+    }
+
+
 def test_defaults_to_panels() -> None:
     """An absent ``layout.mode`` defaults to panels (one axis per group)."""
     data = [_labeled_group(), _unlabeled_group()]
