@@ -238,3 +238,125 @@ def test_load_feature_groups_builds_feature_arrays(
     assert groups[0].units is not None
     assert groups[0].units["peak_to_peak"] == "mV"
     assert groups[0].units["spectral_centroid"] == "Hz"
+
+
+# --- bar-chart-with-deltas loader ----------------------------------------- #
+
+
+def _feature_bank(bank_id: str, *, scale: float, seed: int) -> ClassifierBank:
+    """A small unlabeled bank of random-signal traces (distinct scale/seed ->
+    distinct egm-features distributions, so inter-bank distances are non-zero)."""
+    rng = np.random.default_rng(seed)
+    meta = ClassifierBankMetaData(
+        bank_id=bank_id, bank_type="synthetic", bank_path="<mem>", bank_metadata={}
+    )
+    traces = [
+        ClassifierTrace(
+            bank_id=bank_id,
+            signal=(rng.standard_normal(128) * scale).astype(np.float32),
+            freq_hz=1000.0,
+            amp_type="mv",
+            split=None,
+            label_truth=None,
+            prediction=None,
+            trace_metadata={},
+        )
+        for _ in range(12)
+    ]
+    return ClassifierBank(id=bank_id, banks=[meta], traces=traces, labels={})
+
+
+def _bar_spec(
+    reference: str, baseline: str | None = None, features: list[str] | None = None
+) -> FigureSpec:
+    """A bar-chart-with-deltas spec over three named groups (IAFDB + two synth)."""
+    payload: dict[str, object] = {
+        "schema_version": "1",
+        "id": "fig_bar_loader_test",
+        "description": "bar-chart loader test spec",
+        "recipe": "bar-chart-with-deltas",
+        "inputs": {
+            "groups": [
+                {"name": "IAFDB", "bank_id": "upred_iafdb_2026-06-29"},
+                {"name": "Synthetic (clean)", "bank_id": "tbank_clean_2026-06-29"},
+                {"name": "Synthetic (+noise)", "bank_id": "tbank_noise_2026-06-29"},
+            ],
+            "reference": reference,
+        },
+        "styling": {"metric": "ks"},
+        "output": {"format": "png", "path": "out.png"},
+    }
+    layout: dict[str, object] = {}
+    if baseline is not None:
+        layout["baseline"] = baseline
+    if features is not None:
+        layout["features"] = features
+    if layout:
+        payload["layout"] = layout
+    return FigureSpec.model_validate(payload)
+
+
+def test_load_bar_chart_distances(tmp_path: Path) -> None:
+    """The loader excludes the reference group and emits one bar per other group,
+    with the aggregate distance as the height + the named baseline index."""
+    banks = {
+        "upred_iafdb_2026-06-29": _feature_bank("upred_iafdb_2026-06-29", scale=1.5, seed=1),
+        "tbank_clean_2026-06-29": _feature_bank("tbank_clean_2026-06-29", scale=1.0, seed=2),
+        "tbank_noise_2026-06-29": _feature_bank("tbank_noise_2026-06-29", scale=1.4, seed=3),
+    }
+    paths: dict[str, str] = {}
+    for bank_id, bank in banks.items():
+        p = tmp_path / f"{bank_id}.h5"
+        write_classifier_bank(bank, p)
+        paths[bank_id] = str(p)
+
+    data = resolve_recipe_data(_bar_spec("IAFDB", baseline="Synthetic (clean)"), paths)
+    assert data.categories == ["Synthetic (clean)", "Synthetic (+noise)"]  # reference excluded
+    assert data.values.shape == (2,)
+    assert (data.values >= 0).all()
+    assert data.baseline_index == 0
+    assert "KS distance to IAFDB" in data.value_label
+
+    # layout.features restricts which columns feed the distance -> a different
+    # aggregate over the same banks (proves the subset reaches feature_distances).
+    subset = resolve_recipe_data(_bar_spec("IAFDB", features=["peak_to_peak"]), paths)
+    assert subset.categories == data.categories
+    assert not np.allclose(subset.values, data.values)
+
+
+def test_bar_chart_missing_reference_raises() -> None:
+    """A spec without inputs.reference is a config error."""
+    spec = FigureSpec.model_validate(
+        {
+            "schema_version": "1",
+            "id": "fig_bar_no_ref",
+            "description": "no reference",
+            "recipe": "bar-chart-with-deltas",
+            "inputs": {"groups": [{"name": "A", "bank_id": "tbank_x_2026-06-29"}]},
+            "output": {"format": "png", "path": "out.png"},
+        }
+    )
+    with pytest.raises(ValueError, match=r"inputs\.reference"):
+        resolve_recipe_data(spec, {})
+
+
+def test_bar_chart_reference_not_in_groups_raises(tmp_path: Path) -> None:
+    """inputs.reference must name one of the groups."""
+    bank = _feature_bank("tbank_x_2026-06-29", scale=1.0, seed=1)
+    path = tmp_path / "x.h5"
+    write_classifier_bank(bank, path)
+    spec = FigureSpec.model_validate(
+        {
+            "schema_version": "1",
+            "id": "fig_bar_bad_ref",
+            "description": "bad reference",
+            "recipe": "bar-chart-with-deltas",
+            "inputs": {
+                "groups": [{"name": "A", "bank_id": "tbank_x_2026-06-29"}],
+                "reference": "NOPE",
+            },
+            "output": {"format": "png", "path": "out.png"},
+        }
+    )
+    with pytest.raises(ValueError, match="not among the groups"):
+        resolve_recipe_data(spec, {"tbank_x_2026-06-29": str(path)})
