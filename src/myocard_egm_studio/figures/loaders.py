@@ -13,8 +13,9 @@ unchanged once the manifest lands; only the source of the path map changes.
 
 Loaders register per recipe (mirroring the ``charts/matplotlib`` recipe
 registry): :func:`resolve_recipe_data` dispatches on ``spec.recipe`` into
-:data:`LOADERS`. ``prediction-histogram`` and ``feature-distribution-overlay``
-have loaders so far; more land as recipes gain real-data paths.
+:data:`LOADERS`. ``prediction-histogram``, ``feature-distribution-overlay``, and
+``bar-chart-with-deltas`` have loaders so far; more land as recipes gain
+real-data paths.
 """
 
 from __future__ import annotations
@@ -26,7 +27,13 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from myocard_egm_data.banks import load_classifier_bank
 
-from myocard_egm_studio.charts.matplotlib.inputs import FeatureGroup, PredictionGroup
+from myocard_egm_studio.analysis.aggregation import aggregate_distance, feature_distances
+from myocard_egm_studio.charts.matplotlib.inputs import (
+    BarChartData,
+    FeatureGroup,
+    PredictionGroup,
+)
+from myocard_egm_studio.charts.matplotlib.selection import select_layout_features
 from myocard_egm_studio.view_model import FEATURE_COLUMNS, build_view_model, feature_units
 
 if TYPE_CHECKING:
@@ -49,6 +56,7 @@ __all__ = [
     "LoaderNotRegisteredError",
     "RecipeLoaderFn",
     "UnmappedBankIdError",
+    "load_bar_chart_distances",
     "load_feature_groups",
     "load_group_banks",
     "load_prediction_groups",
@@ -239,3 +247,74 @@ def load_feature_groups(spec: FigureSpec, bank_paths: BankPaths) -> list[Feature
         amp_type = bank.traces[0].amp_type if bank.traces else None
         out.append(FeatureGroup(name=name, values=values, units=feature_units(amp_type)))
     return out
+
+
+@register_loader("bar-chart-with-deltas")
+def load_bar_chart_distances(spec: FigureSpec, bank_paths: BankPaths) -> BarChartData:
+    """Loader for ``bar-chart-with-deltas`` (F-1.5.3): per-group aggregate
+    sim-realism distance to a reference bank.
+
+    ``inputs.groups`` lists every bank; ``inputs.reference`` names which group is
+    the comparison reference (the IAFDB bank). One bar per *other* group, its
+    height the aggregate per-feature distance between that group's features and
+    the reference's (``analysis/aggregation``). ``styling.metric`` is ``"ks"``
+    (default — unitless, so averaging across the heterogeneous features is sound)
+    or ``"wasserstein"``; ``layout.features`` optionally restricts which
+    egm-features columns define the distance (default: all); ``layout.baseline``
+    optionally names the bar to use as the delta reference.
+
+    Until the Phase-1.5 intervention banks exist, the "groups" are synthetic-
+    pipeline variants we can already generate (IAFDB-noise on/off, fraction-
+    healthy / density-range tweaks) — enough to prove the distance->bar pipeline
+    end to end.
+    """
+    extra = (spec.inputs.model_extra if spec.inputs else None) or {}
+    reference_name = extra.get("reference")
+    if not reference_name:
+        raise ValueError(
+            "bar-chart-with-deltas needs inputs.reference — the name of the group every "
+            "other group's distance is measured against (e.g. the IAFDB bank)."
+        )
+    metric = str((spec.styling or {}).get("metric", "ks"))
+    feature_cols = select_layout_features(spec, FEATURE_COLUMNS)
+
+    banks = load_group_banks(spec, bank_paths)
+    names = [name for name, _ in banks]
+    if reference_name not in names:
+        raise ValueError(f"inputs.reference {reference_name!r} is not among the groups {names}.")
+
+    frames = {name: build_view_model(bank) for name, bank in banks}
+    reference_frame = frames[reference_name]
+
+    categories: list[str] = []
+    values: list[float] = []
+    for name in names:
+        if name == reference_name:
+            continue
+        distances = feature_distances(
+            frames[name], reference_frame, feature_cols=feature_cols, metric=metric
+        )
+        categories.append(name)
+        values.append(aggregate_distance(distances))
+    if not categories:
+        raise ValueError(
+            f"bar-chart-with-deltas needs at least one group besides the reference "
+            f"{reference_name!r}."
+        )
+
+    baseline_index: int | None = None
+    baseline_name = (spec.layout or {}).get("baseline")
+    if baseline_name:
+        if baseline_name not in categories:
+            raise ValueError(
+                f"layout.baseline {baseline_name!r} is not one of the bar categories "
+                f"{categories} (it can't be the reference group)."
+            )
+        baseline_index = categories.index(baseline_name)
+
+    return BarChartData(
+        categories=categories,
+        values=np.array(values, dtype=np.float64),
+        baseline_index=baseline_index,
+        value_label=f"mean {metric.upper()} distance to {reference_name}",
+    )

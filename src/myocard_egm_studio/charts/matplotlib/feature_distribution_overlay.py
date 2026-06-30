@@ -55,6 +55,7 @@ from matplotlib.lines import Line2D
 from myocard_egm_studio.analysis import distributions
 from myocard_egm_studio.charts.matplotlib.inputs import FeatureGroup
 from myocard_egm_studio.charts.matplotlib.registry import register
+from myocard_egm_studio.charts.matplotlib.selection import select_layout_features
 from myocard_egm_studio.charts.matplotlib.style import color_for, paper_style
 
 if TYPE_CHECKING:
@@ -127,38 +128,6 @@ def _styling(spec: FigureSpec) -> tuple[str, int, str]:
 
     bins = int(styling.get("bins", _DEFAULT_BINS))
     return kind, bins, annotate
-
-
-def _select_features(available: list[str], spec: FigureSpec) -> list[str]:
-    """The features (panels) to draw, from ``spec.layout["features"]``.
-
-    A spec may name an explicit subset — rendered in that order — to curate a
-    paper figure down to the informative features; unknown names warn and are
-    skipped. With the key absent, every available feature is shown (in the
-    loader's FEATURE_COLUMNS order).
-    """
-    requested = (spec.layout or {}).get("features")
-    if requested is None:
-        return available
-    if not isinstance(requested, list):
-        raise ValueError(
-            "feature-distribution-overlay: layout.features must be a list of feature names."
-        )
-    present = set(available)
-    selected = [f for f in requested if f in present]
-    if not selected:  # all-unknown is an error, not a warn-and-continue
-        raise ValueError(
-            "feature-distribution-overlay: none of the requested layout.features are "
-            f"available ({sorted(present)})."
-        )
-    unknown = [f for f in requested if f not in present]
-    if unknown:  # partial miss: keep the valid ones, but surface the typo
-        warnings.warn(
-            f"feature-distribution-overlay: unknown layout.features {unknown}; "
-            f"available: {sorted(present)}. Skipping them.",
-            stacklevel=2,
-        )
-    return selected
 
 
 def _finite(values: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -257,7 +226,7 @@ def feature_distribution_overlay(data: list[FeatureGroup], spec: FigureSpec) -> 
             "all FeatureGroups must share the same feature keys; the loader builds "
             "them from view_model.FEATURE_COLUMNS."
         )
-    features = _select_features(all_features, spec)
+    features = select_layout_features(spec, all_features)
     kind, bins, annotate = _styling(spec)
     units = data[0].units or {}  # all groups share features; first group's units suffice
 

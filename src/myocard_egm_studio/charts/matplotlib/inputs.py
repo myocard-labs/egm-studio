@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-__all__ = ["FeatureGroup", "PredictionGroup"]
+__all__ = ["BarChartData", "FeatureGroup", "PredictionGroup"]
 
 
 @dataclass(frozen=True)
@@ -71,3 +71,34 @@ class FeatureGroup:
     name: str
     values: dict[str, NDArray[np.float64]]
     units: dict[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class BarChartData:
+    """A single bar series for the ``bar-chart-with-deltas`` recipe.
+
+    Generic by design — the F-1.5.3 loader fills it with per-intervention
+    aggregate sim-realism distances, but the same recipe is reused for counts,
+    accuracies, etc. (one value per category).
+
+    Attributes
+    ----------
+    categories
+        One label per bar (e.g. the intervention / synthetic-variant names).
+    values
+        ``(K,)`` bar heights, aligned with ``categories``.
+    errors
+        Optional ``(K,)`` symmetric error-bar magnitudes, aligned with values.
+    baseline_index
+        Optional index into ``categories`` whose value is the delta reference.
+        When set, the recipe draws a reference line at that value and annotates
+        every other bar with its signed change from it (the "deltas").
+    value_label
+        y-axis label for the bar heights (e.g. ``"mean KS distance to IAFDB"``).
+    """
+
+    categories: list[str]
+    values: NDArray[np.float64]
+    errors: NDArray[np.float64] | None = None
+    baseline_index: int | None = None
+    value_label: str = ""
