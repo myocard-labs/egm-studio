@@ -95,6 +95,15 @@ to approximate the IAFDB recording conditions on at least:
   fibrotic tissue. The synthetic "healthy" class should target a
   density distribution consistent with what histology / imaging
   literature reports for healthy adult atria, rather than 0%.
+- **Activation count per segment** — IAFDB segments span enough time
+  to contain *multiple* activation waves, whereas Phase-1 synthetic
+  traces carry a *single* activation. Comparing them directly
+  confounds morphology with beat count, so until multibeat synthetic
+  lands (Phase 4) the fair comparison is against **single-activation
+  IAFDB windows** — segment / shorten each IAFDB signal to one
+  activation before feature extraction. Surfaced 2026-06-30 while
+  reviewing the F-1.5.7 gallery (synthetic single-beat vs multi-beat
+  IAFDB traces).
 - **Whatever else recording-physics literature recommends.**
 
 **Research item (Phase 1.5 planning):** survey the catheter +
@@ -338,6 +347,17 @@ its figures get full implementation in egm-studio v0.1.
 - **Data sources:** Synthetic bank + IAFDB bank + similarity-index
   computed on egm-features bundle.
 - **Priority:** P0 (qualitative; conditional)
+- **Status:** Shipped — egm-studio `trace-pair-gallery` recipe (Block 3): an
+  N x 2 grid pairing each of N source (synthetic) traces with its nearest pool
+  (IAFDB) trace. New `TracePair` / `TracePairGallery` inputs + a dedicated
+  `load_trace_pair_gallery` (the first consumer of `analysis/similarity`) that
+  builds both view-models, spread-samples N source traces along the match
+  feature, and pairs each via `nearest_along_feature`. The "TBD similarity
+  metric" is deferred to the spec: `styling.feature` is required (one
+  egm-features column; per-feature / ADR-020), `styling.n_pairs` defaults to 8.
+  Snapshot test + examples/trace_pair_gallery_spec.json. Comparison caveat: see
+  the "Sim-real comparability prerequisite" above (single- vs multi-activation
+  IAFDB windows).
 - **Notes:** Realism qualitative check. **Label-free** — similarity
   is computed over signal-level features. Probably 8-12 pairs in
   the paper body, more in supplementary.
