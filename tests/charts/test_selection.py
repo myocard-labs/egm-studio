@@ -10,7 +10,10 @@ from __future__ import annotations
 import pytest
 from myocard_egm_data.phases import FigureSpec
 
-from myocard_egm_studio.charts.matplotlib.selection import select_layout_features
+from myocard_egm_studio.charts.matplotlib.selection import (
+    select_from_available,
+    select_layout_features,
+)
 
 _AVAILABLE = ["alpha", "beta", "gamma"]
 
@@ -54,3 +57,33 @@ def test_non_list_raises() -> None:
     """layout.features must be a list (a bare string is rejected)."""
     with pytest.raises(ValueError, match="must be a list"):
         select_layout_features(_spec("alpha"), _AVAILABLE)
+
+
+# --- generic core (used by layout.features + layout.fields) --------------- #
+
+
+def test_select_from_available_defaults_to_all() -> None:
+    """None -> all of available, in order."""
+    assert select_from_available(None, _AVAILABLE, what="layout.fields") == _AVAILABLE
+
+
+def test_select_from_available_subset_in_order() -> None:
+    """A subset is returned in the requested order."""
+    assert select_from_available(["gamma", "alpha"], _AVAILABLE, what="layout.fields") == [
+        "gamma",
+        "alpha",
+    ]
+
+
+def test_select_from_available_unknown_warns_with_what() -> None:
+    """The `what` label appears in the unknown-name warning."""
+    with pytest.warns(UserWarning, match=r"unknown layout\.fields"):
+        assert select_from_available(["alpha", "zzz"], _AVAILABLE, what="layout.fields") == [
+            "alpha"
+        ]
+
+
+def test_select_from_available_non_list_uses_what() -> None:
+    """The `what` label appears in the non-list error."""
+    with pytest.raises(ValueError, match=r"layout\.fields must be a list"):
+        select_from_available("alpha", _AVAILABLE, what="layout.fields")

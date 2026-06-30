@@ -21,6 +21,11 @@ from myocard_egm_data.banks import (
     write_classifier_bank,
 )
 from myocard_egm_data.phases import FigureSpec
+from myocard_egm_data.records import (
+    NoiseBankRunRecord,
+    build_noise_bank_run_record,
+    write_noise_bank_run_record,
+)
 
 from myocard_egm_studio.figures.loaders import (
     LoaderNotRegisteredError,
@@ -445,4 +450,86 @@ def test_trace_pair_gallery_needs_two_groups() -> None:
     """Exactly two groups (source, pool) are required."""
     spec = _tpg_spec(("only", "tbank_src_2026-06-29"), feature="peak_to_peak")
     with pytest.raises(ValueError, match="exactly 2"):
+        resolve_recipe_data(spec, {})
+
+
+# --- summary-table (IAFDB curation) loader -------------------------------- #
+
+
+def _curation_record() -> NoiseBankRunRecord:
+    """A small noise-bank run record covering every curation field."""
+    return build_noise_bank_run_record(
+        source="iafdb v1.0.0",
+        fs_hz=1000.0,
+        window_ms=200.0,
+        window_samples=200,
+        hop_ms=100.0,
+        band_hz=[30.0, 300.0],
+        calibration_method="none",
+        calibration_target_qrs_pp_mv=None,
+        threshold_mode="percentile",
+        threshold_value=20.0,
+        source_records=["iaf1_svc", "iaf1_ivc", "iaf2_svc"],
+        bank_id="nbank_iafdb_2026-06-29",
+        per_trace_provenance={
+            "patient_id": ["iaf1", "iaf1", "iaf2"],
+            "start_sample": [0, 100, 0],
+            "peak_to_peak_mv": [0.1, 0.2, 0.15],
+            "calibration_scalar": [1.0, 1.0, 1.0],
+        },
+    )
+
+
+def _curation_spec(*ids: str, fields: list[str] | None = None) -> FigureSpec:
+    """A summary-table spec over named noise-bank-run-record ids."""
+    payload: dict[str, object] = {
+        "schema_version": "1",
+        "id": "fig_curation_loader_test",
+        "description": "curation summary loader test",
+        "recipe": "summary-table",
+        "inputs": {"groups": [{"name": f"g{i}", "bank_id": b} for i, b in enumerate(ids)]},
+        "output": {"format": "png", "path": "out.png"},
+    }
+    if fields is not None:
+        payload["layout"] = {"fields": fields}
+    return FigureSpec.model_validate(payload)
+
+
+def test_load_curation_summary_table(tmp_path: Path) -> None:
+    """A noise-bank run record resolves to the key/value curation summary rows."""
+    path = tmp_path / "rec.json"
+    write_noise_bank_run_record(path, _curation_record())
+
+    data = resolve_recipe_data(
+        _curation_spec("nbank_iafdb_2026-06-29"), {"nbank_iafdb_2026-06-29": str(path)}
+    )
+    pairs = {(row[0], row[1]) for row in data.rows}
+    assert ("Source", "iafdb v1.0.0") in pairs
+    assert ("Source records", "3") in pairs
+    assert ("Patients", "2") in pairs  # iaf1, iaf2 distinct
+    assert ("Segments (post-curation)", "3") in pairs
+    assert ("Band-pass", "30-300 Hz") in pairs
+    assert ("Threshold", "percentile (bottom 20%)") in pairs
+
+
+def test_curation_summary_field_override(tmp_path: Path) -> None:
+    """layout.fields selects + reorders which curation fields appear."""
+    path = tmp_path / "rec.json"
+    write_noise_bank_run_record(path, _curation_record())
+    spec = _curation_spec("nbank_iafdb_2026-06-29", fields=["threshold", "source"])
+    data = resolve_recipe_data(spec, {"nbank_iafdb_2026-06-29": str(path)})
+    assert [row[0] for row in data.rows] == ["Threshold", "Source"]
+
+
+def test_curation_summary_needs_one_group() -> None:
+    """Exactly one inputs.groups entry (the run record id) is required."""
+    spec = _curation_spec("nbank_alpha_2026-06-29", "nbank_beta_2026-06-29")
+    with pytest.raises(ValueError, match="exactly one"):
+        resolve_recipe_data(spec, {})
+
+
+def test_curation_summary_unmapped_id_raises() -> None:
+    """An unmapped run-record id surfaces the standard UnmappedBankIdError."""
+    spec = _curation_spec("nbank_absent_2026-06-29")
+    with pytest.raises(UnmappedBankIdError, match="nbank_absent_2026-06-29"):
         resolve_recipe_data(spec, {})
