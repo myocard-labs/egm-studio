@@ -316,6 +316,13 @@ its figures get full implementation in egm-studio v0.1.
 - **Recipe:** `prediction-histogram` (multi-line / faceted variant)
 - **Data sources:** Per-intervention model + IAFDB predictions bank.
 - **Priority:** P0
+- **Status:** Shipped — no new recipe. Reuses egm-studio `prediction-histogram`
+  in overlay mode, which histograms `probs` directly and ignores labels, so N
+  unlabeled IAFDB `upred_` banks overlay as one outline each (list the baseline
+  first so it reads as the reference). Added
+  examples/iafdb_desaturation_overlay_spec.json (overlay, density-normalized) + a
+  `test_overlay_multiple_unlabeled_groups` hook test; verified end to end on the
+  real IAFDB bank (73k segments, ~99.8% with P>0.9 — the saturation).
 - **Notes:** **Qualitative — no labels involved.** The observation
   "model output is less pointy at 1.0" is meaningful without ground
   truth. Pairs with F-1.5.1 (problem statement) to show whether

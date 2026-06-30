@@ -134,7 +134,10 @@ spec JSON files.
 > ECE, extending `analysis/metrics`; same loader reuse) — each with a snapshot
 > test + example spec, plus shared helpers `select_layout_features`
 > (`layout.features` curation) and `spec_fields.positive_label` (read identically
-> by the loader and the ROC / calibration recipes). Remaining P0 recipes land **one
+> by the loader and the ROC / calibration recipes). Beyond the five recipes,
+> **F-1.5.6** (per-intervention IAFDB de-saturation overlay) is also wired — it
+> needed no new recipe, reusing `prediction-histogram`'s overlay mode with its own
+> example spec + a multi-unlabeled-overlay test. Remaining P0 recipes land **one
 > at a time** (each its own review — including a deep look at the recipe's math —
 > plus snapshot + commit), so the block closes incrementally rather than in one
 > big drop.
