@@ -158,9 +158,9 @@ Pre-v0.1.0; built across 13 blocks (see
 [`project/roadmap.md`](project/roadmap.md)). **Block 3 is in progress:** the
 `charts/matplotlib/` foundation (recipe registry + paper style), the
 `render(spec, *, data)` contract, and the figure-data loaders
-(`egm-studio-render --bank/--banks`) have shipped, and the first three recipes —
-`prediction-histogram`, `feature-distribution-overlay`, and
-`bar-chart-with-deltas` — render real banks with snapshot tests. The remaining
+(`egm-studio-render --bank/--banks`) have shipped, and the first four recipes —
+`prediction-histogram`, `feature-distribution-overlay`, `bar-chart-with-deltas`,
+and `roc-curve-multi-line` — render real banks with snapshot tests. The remaining
 P0 recipes land one at a time; the
 interactive Qt GUI (Block 4+) is still ahead, so the app is not yet
 end-user-runnable. Pins

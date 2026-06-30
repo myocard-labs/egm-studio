@@ -103,6 +103,7 @@ myocard_egm_studio/
 │   ├── distributions.py  #   CDFs, KS / Wasserstein distance, histogram, KDE
 │   ├── aggregation.py    #   between-group feature distance + aggregate roll-up
 │   ├── similarity.py     #   per-feature nearest-trace lookup        [ADR-020]
+│   ├── metrics.py        #   ROC curve + AUROC (labeled synthetic-val only)
 │   └── ...               #   one module per analytical concern
 ├── charts/               # Chart-building primitives, dual backend.
 │   ├── matplotlib/       #   static recipes + the recipe registry
@@ -143,7 +144,8 @@ renderer.** Three layers make this work:
 
 1. **`analysis/`** — pure data computation. Statistical primitives
    (CDFs, KS-distance, distribution comparisons), feature aggregation
-   queries, similarity computations. Pure functions over numpy /
+   queries, similarity computations, ROC / AUROC metrics. Pure functions
+   over numpy /
    pandas / scipy / egm-features. No rendering, no Qt, fully unit-
    testable.
 2. **`charts/`** — chart-building primitives with **two rendering

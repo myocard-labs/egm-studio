@@ -121,14 +121,17 @@ spec JSON files.
 > `color_for`), the prepared-input dataclasses (`inputs.py`), the
 > `render(spec, *, data, overwrite)` contract + existing-output skip, and the
 > figure-data loaders (`loaders.py` + `egm-studio-render --bank/--banks`,
-> brought forward from Block 7). Three recipes have shipped so far —
+> brought forward from Block 7). Four recipes have shipped so far —
 > **`prediction-histogram`**, **`feature-distribution-overlay`** (the primary
 > sim-realism diagnostic, F-1.5.2: per-feature density overlay with
-> KS/Wasserstein annotation, axis units, `layout.features` curation), and
+> KS/Wasserstein annotation, axis units, `layout.features` curation),
 > **`bar-chart-with-deltas`** (F-1.5.3: per-variant aggregate distance to the
-> IAFDB reference with baseline-relative deltas; a generic bar recipe) — each
-> with a snapshot test + example spec, and a shared `select_layout_features`
-> helper backing the `layout.features` curation. Remaining P0 recipes land **one
+> IAFDB reference with baseline-relative deltas; a generic bar recipe), and
+> **`roc-curve-multi-line`** (F-1.5.4: overlaid synthetic-val ROC curves +
+> AUROC, on a new pure-numpy/scipy `analysis/metrics`; reuses the
+> `prediction-histogram` loader via stacked registration) — each with a snapshot
+> test + example spec, and a shared `select_layout_features` helper backing the
+> `layout.features` curation. Remaining P0 recipes land **one
 > at a time** (each its own review — including a deep look at the recipe's math —
 > plus snapshot + commit), so the block closes incrementally rather than in one
 > big drop.

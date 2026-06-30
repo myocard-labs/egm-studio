@@ -265,6 +265,13 @@ its figures get full implementation in egm-studio v0.1.
 - **Data sources:** Per-intervention model + synthetic val
   predictions bank.
 - **Priority:** P0
+- **Status:** Shipped — egm-studio `roc-curve-multi-line` recipe (Block 3):
+  overlaid ROC curves (one per labeled synthetic-val predictions bank) with
+  per-curve AUROC + a chance diagonal. The ROC/AUROC math is a new
+  pure-numpy/scipy `analysis/metrics` module (rank-based AUROC, no sklearn); the
+  recipe reuses `PredictionGroup` + the `prediction-histogram` loader (stacked
+  registration), adding only an all-groups-labeled guard. `inputs.positive_label`
+  selects the positive class. Snapshot test + examples/roc_curve_multi_line_spec.json.
 - **Notes:** **Synthetic-only evaluation** (where labels exist by
   construction). The companion-question to F-1.5.3: did the
   interventions hurt in-distribution performance? If F-1.5.3 shows
