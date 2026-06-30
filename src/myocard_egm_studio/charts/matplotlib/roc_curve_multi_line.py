@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 from matplotlib.figure import Figure
 
 from myocard_egm_studio.analysis import metrics
+from myocard_egm_studio.charts.matplotlib import spec_fields
 from myocard_egm_studio.charts.matplotlib.inputs import PredictionGroup
 from myocard_egm_studio.charts.matplotlib.registry import register
 from myocard_egm_studio.charts.matplotlib.style import color_for, paper_style
@@ -38,18 +39,12 @@ _FIGSIZE = (4.6, 4.4)
 _CHANCE_COLOR = "0.6"
 
 
-def _positive_label(spec: FigureSpec) -> int:
-    """``inputs.positive_label`` (default 1) — mirror of the loader's key."""
-    extra = (spec.inputs.model_extra if spec.inputs else None) or {}
-    return int(extra.get("positive_label", 1))
-
-
 @register("roc-curve-multi-line")
 def roc_curve_multi_line(data: list[PredictionGroup], spec: FigureSpec) -> Figure:
     """Render the ``roc-curve-multi-line`` figure. See the module docstring."""
     if not data:
         raise ValueError("roc-curve-multi-line needs at least one PredictionGroup.")
-    positive_label = _positive_label(spec)
+    positive_label = spec_fields.positive_label(spec)
 
     with paper_style():
         figure = Figure(figsize=_FIGSIZE, layout="constrained")

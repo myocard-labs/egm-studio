@@ -1,0 +1,16 @@
+{
+  "schema_version": "1",
+  "id": "fig_calibration_synth_val_interventions",
+  "description": "Phase-1.5 in-distribution calibration check (F-1.5.5), companion to the F-1.5.4 ROC: reliability curves on the labeled synthetic held-out validation set, one per model — binned mean predicted P(fibrotic) (x) against the observed positive fraction (y) — over the y=x perfect-calibration line, each annotated with its ECE. Shows whether an intervention kept the model well-calibrated in-distribution (the Phase 1 result already established temperature scaling fixed synthetic calibration but not the IAFDB saturation). Synthetic-only: calibration needs ground truth, which IAFDB lacks. Each group's bank is one model's predictions on the SAME synthetic val set (probs = P(fibrotic), labels = truth); the recipe reuses the prediction-histogram loader, so an unlabeled (upred_ IAFDB) bank is rejected. 'styling.n_bins' (default 10) sets the reliability bins; 'inputs.positive_label' (default 1) selects the positive class. Swap in your own labeled synth-val predictions banks when wiring real data. Renders via the 'calibration-reliability-diagram' recipe.",
+  "recipe": "calibration-reliability-diagram",
+  "inputs": {
+    "groups": [
+      { "name": "Baseline 1", "bank_id": "lpred_v1_baseline_1_2026-06-30" },
+      { "name": "Baseline 1 w Noise", "bank_id": "lpred_v1_baseline_1_noise_2026-06-30" },
+      { "name": "Baseline 2", "bank_id": "lpred_v1_baseline_2_2026-06-30" }
+    ],
+    "positive_label": 1
+  },
+  "styling": { "n_bins": 10 },
+  "output": { "format": "pdf", "path": "out/fig_calibration_synth_val_interventions.pdf" }
+}

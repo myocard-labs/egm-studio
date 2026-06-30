@@ -14,9 +14,10 @@ unchanged once the manifest lands; only the source of the path map changes.
 Loaders register per recipe (mirroring the ``charts/matplotlib`` recipe
 registry): :func:`resolve_recipe_data` dispatches on ``spec.recipe`` into
 :data:`LOADERS`. ``prediction-histogram``, ``feature-distribution-overlay``,
-``bar-chart-with-deltas``, and ``roc-curve-multi-line`` have loaders so far (the
-last reuses ``prediction-histogram``'s — both build the same per-trace
-P(positive) + truth); more land as recipes gain real-data paths.
+``bar-chart-with-deltas``, ``roc-curve-multi-line``, and
+``calibration-reliability-diagram`` have loaders so far (the last two reuse
+``prediction-histogram``'s — all three build the same per-trace P(positive) +
+truth); more land as recipes gain real-data paths.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ import numpy as np
 from myocard_egm_data.banks import load_classifier_bank
 
 from myocard_egm_studio.analysis.aggregation import aggregate_distance, feature_distances
+from myocard_egm_studio.charts.matplotlib import spec_fields
 from myocard_egm_studio.charts.matplotlib.inputs import (
     BarChartData,
     FeatureGroup,
@@ -208,13 +210,14 @@ def prediction_group_from_bank(
 
 @register_loader("prediction-histogram")
 @register_loader("roc-curve-multi-line")
+@register_loader("calibration-reliability-diagram")
 def load_prediction_groups(spec: FigureSpec, bank_paths: BankPaths) -> list[PredictionGroup]:
-    """Loader for ``prediction-histogram`` and ``roc-curve-multi-line``: each spec
-    group -> a PredictionGroup.
+    """Loader for ``prediction-histogram``, ``roc-curve-multi-line``, and
+    ``calibration-reliability-diagram``: each spec group -> a PredictionGroup.
 
-    Both recipes need the same per-trace P(positive) + truth, so they share this
-    loader (``roc-curve-multi-line`` additionally *requires* truth, which it
-    enforces at draw time). Resolves + loads each group's bank via
+    All three need the same per-trace P(positive) + truth, so they share this
+    loader (the two metric recipes additionally *require* truth, which they
+    enforce at draw time). Resolves + loads each group's bank via
     :func:`load_group_banks`, then adapts it with :func:`prediction_group_from_bank`.
 
     ``positive_label`` — which class's probability the histogram shows —
@@ -224,8 +227,7 @@ def load_prediction_groups(spec: FigureSpec, bank_paths: BankPaths) -> list[Pred
     figure_spec per target class (each with its own ``positive_label``) renders
     P(class = k) individually.
     """
-    extra = (spec.inputs.model_extra if spec.inputs else None) or {}
-    positive_label = int(extra.get("positive_label", 1))
+    positive_label = spec_fields.positive_label(spec)
     return [
         prediction_group_from_bank(bank, name=name, positive_label=positive_label)
         for name, bank in load_group_banks(spec, bank_paths)
