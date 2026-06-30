@@ -364,3 +364,85 @@ def test_bar_chart_reference_not_in_groups_raises(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="not among the groups"):
         resolve_recipe_data(spec, {"tbank_x_2026-06-29": str(path)})
+
+
+# --- trace-pair-gallery loader -------------------------------------------- #
+
+
+def _tpg_spec(
+    *groups: tuple[str, str],
+    feature: str | None = "peak_to_peak",
+    n_pairs: int | None = None,
+) -> FigureSpec:
+    """A trace-pair-gallery spec over named (name, bank_id) groups."""
+    styling: dict[str, object] = {}
+    if feature is not None:
+        styling["feature"] = feature
+    if n_pairs is not None:
+        styling["n_pairs"] = n_pairs
+    payload: dict[str, object] = {
+        "schema_version": "1",
+        "id": "fig_tpg_loader_test",
+        "description": "trace-pair-gallery loader test spec",
+        "recipe": "trace-pair-gallery",
+        "inputs": {"groups": [{"name": n, "bank_id": b} for n, b in groups]},
+        "output": {"format": "png", "path": "out.png"},
+    }
+    if styling:
+        payload["styling"] = styling
+    return FigureSpec.model_validate(payload)
+
+
+def test_load_trace_pair_gallery(tmp_path: Path) -> None:
+    """Two banks -> an N-row gallery: source/pool titles, fs, and 1-D signal pairs."""
+    banks = {
+        "tbank_src_2026-06-29": _feature_bank("tbank_src_2026-06-29", scale=1.0, seed=1),
+        "upred_pool_2026-06-29": _feature_bank("upred_pool_2026-06-29", scale=1.3, seed=2),
+    }
+    paths: dict[str, str] = {}
+    for bank_id, bank in banks.items():
+        p = tmp_path / f"{bank_id}.h5"
+        write_classifier_bank(bank, p)
+        paths[bank_id] = str(p)
+
+    gallery = resolve_recipe_data(
+        _tpg_spec(
+            ("Synthetic", "tbank_src_2026-06-29"),
+            ("IAFDB", "upred_pool_2026-06-29"),
+            feature="peak_to_peak",
+            n_pairs=3,
+        ),
+        paths,
+    )
+    assert gallery.left_title == "Synthetic"
+    assert gallery.right_title == "IAFDB"
+    assert gallery.left_fs_hz == 1000.0
+    assert gallery.right_fs_hz == 1000.0
+    assert 1 <= len(gallery.pairs) <= 3
+    for pair in gallery.pairs:
+        assert pair.left.shape == (128,)  # _feature_bank signals are length 128
+        assert pair.right.shape == (128,)
+        assert "peak_to_peak" in pair.annotation
+
+
+def test_trace_pair_gallery_feature_required() -> None:
+    """styling.feature is required — the similarity axis is the open question."""
+    spec = _tpg_spec(("S", "tbank_src_2026-06-29"), ("P", "upred_pool_2026-06-29"), feature=None)
+    with pytest.raises(ValueError, match=r"styling\.feature"):
+        resolve_recipe_data(spec, {})
+
+
+def test_trace_pair_gallery_bad_feature() -> None:
+    """styling.feature must name a real egm-features column."""
+    spec = _tpg_spec(
+        ("S", "tbank_src_2026-06-29"), ("P", "upred_pool_2026-06-29"), feature="not_a_feature"
+    )
+    with pytest.raises(ValueError, match="not an egm-features column"):
+        resolve_recipe_data(spec, {})
+
+
+def test_trace_pair_gallery_needs_two_groups() -> None:
+    """Exactly two groups (source, pool) are required."""
+    spec = _tpg_spec(("only", "tbank_src_2026-06-29"), feature="peak_to_peak")
+    with pytest.raises(ValueError, match="exactly 2"):
+        resolve_recipe_data(spec, {})
