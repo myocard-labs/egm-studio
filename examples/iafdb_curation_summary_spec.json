@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "id": "fig_iafdb_curation_summary",
+  "description": "IAFDB curation summary table (F-1.5.10): a key/value methods-section table of how the IAFDB noise bank was curated — source, contributing records, patients, post-curation segment count, sampling + sliding-window parameters, band-pass edges, calibration scheme, and the selection threshold. Read from the noise_bank_run_record.json sidecar via egm-data's load_noise_bank_run_record. The single inputs.groups entry's bank_id is the noise bank's stable id; map it to the run-record JSON path with --bank <bank_id>=<path-to-run-record.json> (the resolved path is the JSON sidecar, not an HDF5 bank). Renders via the 'summary-table' recipe as a matplotlib table — vector PDF is paper-embeddable. Note: per-record / per-channel breakdowns aren't in the run record (no per-trace record or channel field), so this is the aggregate summary; true LaTeX / markdown text export would need a tex/md output format added to egm-contracts (tracked follow-up). By default all fields show in a fixed order; restrict / reorder them with 'layout.fields' — a list of these keys: source, records, patients, segments, sampling_rate, window, hop, band, calibration, threshold. Swap in your own noise-bank run record when wiring real data.",
+  "recipe": "summary-table",
+  "inputs": {
+    "groups": [
+      { "name": "IAFDB noise", "bank_id": "nbank_iafdb_2026-06-28" }
+    ]
+  },
+  "output": { "format": "pdf", "path": "out/fig_iafdb_curation_summary.pdf" }
+}

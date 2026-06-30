@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from myocard_egm_data.banks import load_classifier_bank
+from myocard_egm_data.records import NoiseBankRunRecord, load_noise_bank_run_record
 from numpy.typing import NDArray
 
 from myocard_egm_studio.analysis.aggregation import aggregate_distance, feature_distances
@@ -37,10 +38,14 @@ from myocard_egm_studio.charts.matplotlib.inputs import (
     BarChartData,
     FeatureGroup,
     PredictionGroup,
+    TableData,
     TracePair,
     TracePairGallery,
 )
-from myocard_egm_studio.charts.matplotlib.selection import select_layout_features
+from myocard_egm_studio.charts.matplotlib.selection import (
+    select_from_available,
+    select_layout_features,
+)
 from myocard_egm_studio.view_model import FEATURE_COLUMNS, build_view_model, feature_units
 
 if TYPE_CHECKING:
@@ -64,6 +69,7 @@ __all__ = [
     "RecipeLoaderFn",
     "UnmappedBankIdError",
     "load_bar_chart_distances",
+    "load_curation_summary_table",
     "load_feature_groups",
     "load_group_banks",
     "load_prediction_groups",
@@ -422,4 +428,100 @@ def load_trace_pair_gallery(spec: FigureSpec, bank_paths: BankPaths) -> TracePai
         right_title=pool_name,
         left_fs_hz=source_bank.uniform_fs_hz(),
         right_fs_hz=pool_bank.uniform_fs_hz(),
+    )
+
+
+#: Default order of the IAFDB curation-summary fields. A figure may show a subset
+#: / reordering via ``layout.fields`` (these keys); an absent key shows them all.
+_DEFAULT_CURATION_FIELD_ORDER = (
+    "source",
+    "records",
+    "patients",
+    "segments",
+    "sampling_rate",
+    "window",
+    "hop",
+    "band",
+    "calibration",
+    "threshold",
+)
+
+
+def _curation_fields(record: NoiseBankRunRecord) -> dict[str, tuple[str, str]]:
+    """``{field_key: (label, value)}`` for every curation field this record supports.
+
+    Labels + value formatting are fixed here — the spec chooses *which* fields via
+    ``layout.fields``, not how they read. ``patients`` / ``segments`` are present
+    only when the record carries per-trace provenance.
+    """
+    cal = record.calibration
+    calibration = (
+        f"{cal.method} (target {cal.target_qrs_pp_mv:g} mV)"
+        if cal.target_qrs_pp_mv is not None
+        else str(cal.method)
+    )
+    sel = record.selection
+    threshold = (
+        f"percentile (bottom {sel.threshold_value:g}%)"
+        if sel.threshold_mode.value == "percentile"
+        else f"absolute (<= {sel.threshold_value:g} mV)"
+    )
+    win = record.windowing
+    fields: dict[str, tuple[str, str]] = {
+        "source": ("Source", str(record.source)),
+        "records": ("Source records", f"{len(record.source_records):,}"),
+        "sampling_rate": ("Sampling rate", f"{record.fs_hz:g} Hz"),
+        "window": ("Window", f"{win.window_ms:g} ms ({win.window_samples} samples)"),
+        "hop": ("Hop", f"{win.hop_ms:g} ms"),
+        "band": ("Band-pass", f"{record.band_hz[0].root:g}-{record.band_hz[1].root:g} Hz"),
+        "calibration": ("Calibration", calibration),
+        "threshold": ("Threshold", threshold),
+    }
+    # Patient + segment counts need the optional per-trace provenance arrays.
+    ptp = record.per_trace_provenance
+    if ptp is not None:
+        fields["patients"] = ("Patients", f"{len(set(ptp.patient_id)):,}")
+        fields["segments"] = ("Segments (post-curation)", f"{len(ptp.patient_id):,}")
+    return fields
+
+
+def _curation_summary_table(record: NoiseBankRunRecord, requested_fields: object) -> TableData:
+    """Curation TableData honoring a ``layout.fields`` override (default: all fields)."""
+    fields = _curation_fields(record)
+    default_order = [key for key in _DEFAULT_CURATION_FIELD_ORDER if key in fields]
+    selected = select_from_available(requested_fields, default_order, what="layout.fields")
+    rows = [list(fields[key]) for key in selected]
+    return TableData(columns=["Field", "Value"], rows=rows, title="IAFDB curation summary")
+
+
+@register_loader("summary-table")
+def load_curation_summary_table(spec: FigureSpec, bank_paths: BankPaths) -> TableData:
+    """Loader for ``summary-table`` (F-1.5.10): the IAFDB curation-provenance summary.
+
+    Resolves exactly one ``inputs.groups`` entry — the noise-bank run record's id —
+    to a path in ``bank_paths`` and reads the ``noise_bank_run_record`` JSON via
+    egm-data's :func:`load_noise_bank_run_record`, then builds a key/value summary
+    of the extraction provenance: source, record / patient / segment counts,
+    sampling + windowing, filter band, calibration, and the selection threshold.
+
+    Unlike the other loaders the resolved path is a run-record JSON sidecar, not a
+    ClassifierBank, so this resolves the id itself rather than via
+    :func:`load_group_banks`. Per-record / per-channel breakdowns aren't in the run
+    record (no per-trace record or channel field), so the table is the aggregate
+    summary — a finer breakdown would need a schema addition. The metrics-comparison
+    instance (F-2.9) is a different table built from predictions banks; it lands as
+    an internal dispatch on this loader when Phase 2 arrives.
+    """
+    groups = (spec.inputs.groups if spec.inputs else None) or []
+    if len(groups) != 1:
+        raise ValueError(
+            "summary-table (IAFDB curation) needs exactly one inputs.groups entry — the "
+            f"noise-bank run record's id; got {len(groups)}."
+        )
+    bank_id = groups[0].bank_id
+    path = bank_paths.get(bank_id)
+    if path is None:
+        raise UnmappedBankIdError([bank_id], sorted(bank_paths))
+    return _curation_summary_table(
+        load_noise_bank_run_record(path), (spec.layout or {}).get("fields")
     )

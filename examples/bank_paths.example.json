@@ -10,5 +10,6 @@
   "lpred_v1_baseline_1_noise_2026-06-30": "banks/v1_baseline_1_noise_test_pred.classifier.h5",
   "lpred_v1_baseline_2_2026-06-30": "banks/v1_baseline_2_test_pred.classifier.h5",
   "lpred_v1_baseline_3_2026-06-30": "banks/v1_baseline_3_test_pred.classifier.h5",
-  "lpred_v1_baseline_4_2026-06-30": "banks/v1_baseline_4_test_pred.classifier.h5"
+  "lpred_v1_baseline_4_2026-06-30": "banks/v1_baseline_4_test_pred.classifier.h5",
+  "nbank_iafdb_2026-06-28": "banks/iafdb_noise_v1_run_record.json"
 }

@@ -22,6 +22,7 @@ __all__ = [
     "BarChartData",
     "FeatureGroup",
     "PredictionGroup",
+    "TableData",
     "TracePair",
     "TracePairGallery",
 ]
@@ -161,3 +162,26 @@ class TracePairGallery:
     right_title: str = "right"
     left_fs_hz: float | None = None
     right_fs_hz: float | None = None
+
+
+@dataclass(frozen=True)
+class TableData:
+    """A simple table for the ``summary-table`` recipe.
+
+    Generic by design — the loader fills it with whatever it summarizes (the
+    F-1.5.10 IAFDB curation provenance for now). Cells are pre-formatted strings,
+    so the producer owns number formatting + units; the recipe only lays them out.
+
+    Attributes
+    ----------
+    columns
+        Column headers, drawn as a bold, shaded header row.
+    rows
+        One ``list[str]`` per body row; each row must have one cell per column.
+    title
+        Optional caption drawn above the grid.
+    """
+
+    columns: list[str]
+    rows: list[list[str]]
+    title: str = ""
