@@ -116,3 +116,60 @@ def test_shape_mismatch_raises(fn: Callable[..., object]) -> None:
     """y_true and y_pred_prob must align."""
     with pytest.raises(ValueError, match="same shape"):
         fn(np.array([0, 1]), np.array([0.5]))
+
+
+# --------------------------------------------------------------------------- #
+# Reliability curve + ECE
+# --------------------------------------------------------------------------- #
+
+# Two populated bins (mid-bin probs 0.25 and 0.75), both classes present.
+_TWO_BIN_PROB = np.array([0.25] * 100 + [0.75] * 100)
+
+
+def test_reliability_curve_bins_and_counts() -> None:
+    """Non-empty bins only, with mean predicted prob + observed positive fraction."""
+    # 0.25 bin: 0 positive; 0.75 bin: all positive.
+    y_true = np.array([0] * 100 + [1] * 100)
+    mean_pred, obs_freq, count = metrics.reliability_curve(y_true, _TWO_BIN_PROB, n_bins=10)
+    assert mean_pred.tolist() == pytest.approx([0.25, 0.75])
+    assert obs_freq.tolist() == pytest.approx([0.0, 1.0])
+    assert count.tolist() == [100, 100]  # the other 8 bins are dropped
+    assert int(count.sum()) == y_true.size
+
+
+def test_ece_known_value() -> None:
+    """Both bins miss the diagonal by 0.25, weighted equally -> ECE = 0.25."""
+    y_true = np.array([0] * 100 + [1] * 100)
+    assert metrics.expected_calibration_error(y_true, _TWO_BIN_PROB, n_bins=10) == pytest.approx(
+        0.25
+    )
+
+
+def test_ece_zero_when_calibrated() -> None:
+    """Observed fraction matches the predicted prob in every bin -> ECE = 0."""
+    # 0.25 bin: 25/100 positive; 0.75 bin: 75/100 positive.
+    y_true = np.array([1] * 25 + [0] * 75 + [1] * 75 + [0] * 25)
+    assert metrics.expected_calibration_error(y_true, _TWO_BIN_PROB, n_bins=10) == pytest.approx(
+        0.0
+    )
+
+
+def test_reliability_curve_respects_n_bins() -> None:
+    """Coarser binning merges the two populations into one bin."""
+    y_true = np.array([0] * 100 + [1] * 100)
+    mean_pred, _, count = metrics.reliability_curve(y_true, _TWO_BIN_PROB, n_bins=1)
+    assert count.tolist() == [200]
+    assert mean_pred.tolist() == pytest.approx([0.5])  # (0.25*100 + 0.75*100) / 200
+
+
+def test_reliability_curve_bad_n_bins_raises() -> None:
+    """n_bins must be >= 1."""
+    with pytest.raises(ValueError, match="n_bins"):
+        metrics.reliability_curve(np.array([0, 1]), np.array([0.2, 0.8]), n_bins=0)
+
+
+@pytest.mark.parametrize("fn", [metrics.reliability_curve, metrics.expected_calibration_error])
+def test_calibration_single_class_raises(fn: Callable[..., object]) -> None:
+    """Calibration reuses the both-classes guard."""
+    with pytest.raises(ValueError, match="both"):
+        fn(np.array([0, 0, 0]), np.array([0.2, 0.5, 0.9]))
