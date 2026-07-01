@@ -832,12 +832,27 @@ high-ambient-light rooms) without forcing the default.
 
 ### Consequences
 
-- v0.1 ships with two themes wired to a `View > Theme` menu (or
-  equivalent).
-- User-preference system needs a `theme` key (dark | light).
+- v0.1 ships with three themes wired to a `View > Theme` menu — dark
+  (default), light, and vibrant (see the Block 4 amendment below).
+- User-preference system needs a `theme` key; realised in Block 4 via
+  `gui/preferences.py` (Qt `QSettings`), which persists the selection.
 - Per-trace plot styling (colors, line weights) lives separately from
   the GUI theme and is selected per-figure for the headless figure
   path.
+
+### Amendment (2026-07-01, Block 4)
+
+Shipped **three** themes, not two: dark (default) + light + **vibrant** — a
+programmer-editor palette (Tokyo-Night-ish: bright green headings, purple
+selection, cyan accents) Daniel requested as a personal preference. Adding a
+theme is cheap under the implementation: each theme is a `Palette` of colour +
+typography tokens fed to one shared QSS template (`gui/theme/`), so the three
+can't drift structurally.
+
+The "user-preference theme key" consequence is now realised — `gui/preferences.py`
+persists the selection via Qt `QSettings`, so the shell reopens in the last-chosen
+theme (first launch still defaults to dark). This is the seed of ADR-017's broader
+save-state.
 
 ---
 

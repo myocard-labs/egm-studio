@@ -116,21 +116,24 @@ myocard_egm_studio/
 │   ├── render.py         #   render(spec, *, data, overwrite) -> Path
 │   └── loaders.py        #   bank-id -> recipe-input adapters + LOADERS registry
 ├── gui/                  # Qt shell — imports PySide6 + pyqtgraph.
-│   ├── app.py            #   QApplication entry point
-│   ├── shell.py          #   Resizable-column layout shell  [ADR-025]
+│   ├── app.py            #   QApplication entry (`egm-studio` script)  [B4]
+│   ├── shell.py          #   Layout shell + CollapsibleSidebar    [ADR-025, B4]
+│   ├── preferences.py    #   QSettings-backed prefs (theme)    [ADR-017 seed, B4]
+│   ├── theme/            #   dark + light + vibrant QSS themes    [ADR-012, B4]
+│   │   ├── palette.py    #     colour + typography tokens per theme
+│   │   └── _qss.py       #     one shared QSS template + builder
 │   ├── widgets/
-│   │   ├── trace.py      #   TraceWidget + container        [ADR-024]
+│   │   ├── trace.py      #   TraceWidget + container        [ADR-024, B5]
 │   │   ├── filter.py     #   Filter / query UI              [ADR-002]
 │   │   ├── phase_tree.py #   Right-rail Phase artifact tree
 │   │   └── ...           #   Other shared widgets
-│   ├── views/
-│   │   ├── signal_exploration.py   # Flow A — uses charts/pyqtgraph
-│   │   ├── ml_diagnostics.py       # Flow B — uses charts/pyqtgraph
-│   │   └── paper_figure_prep.py    # Flow C — wraps figures/
-│   └── theme/            #   QSS for dark + light            [ADR-012]
+│   └── views/
+│       ├── signal_exploration.py   # Flow A — uses charts/pyqtgraph
+│       ├── ml_diagnostics.py       # Flow B — uses charts/pyqtgraph
+│       └── paper_figure_prep.py    # Flow C — wraps figures/
 ├── cli/
-│   ├── studio.py         #   `egm-studio` entry point
 │   └── render.py         #   `egm-studio-render` entry point
+│                         #   (`egm-studio` GUI script -> gui/app.py:main)
 ├── loaders/              # Thin wrappers over egm-data.
 ├── save/                 # Observation + manifest writers   [ADR-017, ADR-021]
 └── view_model/           # Unified per-trace view-model      [ADR-002]
@@ -286,6 +289,14 @@ library-only extractor (no analysis workflows).
   sidebars + use one main column).
 - Pair-comparison views use the two-column main area [ADR-002].
 
+**As built (Block 4):** `MainWindow` + `CollapsibleSidebar` (in `gui/shell.py`)
+implement this shell — draggable `QSplitter` columns, each sidebar folding to a
+~40px Activity-Bar strip and back (the splitter drives the width, since a
+`QSplitter` ignores a child's max-width; a collapsed strip is non-resizable), a
+header-hosted 3-mode segmented control, and the `View > Theme` toggle.
+`View > Toggle sidebar` and the in-panel buttons share one handler so the menu
+checkmarks stay in sync. Region content stays placeholder until Blocks 5+.
+
 ### Interaction patterns
 
 - **Filter-and-sort-first** as the universal entry: every view
@@ -299,7 +310,8 @@ library-only extractor (no analysis workflows).
   (Qt's `QMdiArea` / detached windows).
 - **Time-axis navigation** on traces: pan + zoom via PyQtGraph mouse
   defaults; time-scale slider as a discoverability aid.
-- **Theme**: dark default with light toggle via QSS [ADR-012].
+- **Theme**: dark default + light + vibrant themes via QSS, the choice
+  persisted across launches (`gui/preferences.py`) [ADR-012].
 
 ## Data flow
 

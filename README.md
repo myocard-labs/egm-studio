@@ -67,8 +67,8 @@ pre-commit install
 
 Runtime deps: `myocard-egm-contracts`, `myocard-egm-data`,
 `myocard-egm-features` (pinned to git tags pre-1.0), plus `matplotlib`,
-`numpy`, `pandas`, `scipy`. The interactive GUI stack (PySide6 + pyqtgraph) is
-added with Block 4.
+`numpy`, `pandas`, `scipy`, and — added with the Block 4 Qt shell — `PySide6`
+and `pyqtgraph`.
 
 ---
 
@@ -127,12 +127,14 @@ ks = distributions.ks_distance(synthetic_feature_values, iafdb_feature_values)
 | `myocard_egm_studio.view_model` | `build_view_model` — the unified per-trace table joining identity + bank metadata + the egm-features columns. |
 | `myocard_egm_studio.charts.matplotlib` | The publication (static) rendering backend + the recipe registry the dispatch fills. |
 | `myocard_egm_studio.figures` | `render(spec, *, data) -> Path` — the thin headless dispatch over `charts/matplotlib` — plus `loaders` (bank → recipe-input adapters; the data-loading step). |
+| `myocard_egm_studio.gui` | The PySide6 desktop shell (Block 4): `app` (the `egm-studio` entry), `shell` (ADR-025 layout — collapsible sidebars + 3-mode switch), `theme` (dark / light / vibrant QSS), `preferences` (persisted theme via QSettings). Interactive views + widgets land in Blocks 5+. |
 | `myocard_egm_studio.cli` | Console-script entry points: `render` (`egm-studio-render`). |
 
-The interactive Qt shell (`gui/`) and the `charts/pyqtgraph/` backend land in
-Blocks 4–10. `figures/loaders.py` is seeded now (fed `{bank_id: path}` by
-`--bank` / `--banks`); Block 7 swaps the hand-written map for phase-manifest
-resolution — see [`project/roadmap.md`](project/roadmap.md).
+The Qt shell (`gui/`) landed in Block 4 (layout + theming); its interactive
+views + widgets and the `charts/pyqtgraph/` backend land in Blocks 5–10.
+`figures/loaders.py` is seeded now (fed `{bank_id: path}` by `--bank` /
+`--banks`); Block 7 swaps the hand-written map for phase-manifest resolution —
+see [`project/roadmap.md`](project/roadmap.md).
 
 ---
 
@@ -155,15 +157,17 @@ the GUI integration layer (added with the Qt shell) runs under `xvfb-run`.
 ## Project status
 
 Pre-v0.1.0; built across 13 blocks (see
-[`project/roadmap.md`](project/roadmap.md)). **Block 3 is in progress:** the
-`charts/matplotlib/` foundation (recipe registry + paper style), the
-`render(spec, *, data)` contract, and the figure-data loaders
-(`egm-studio-render --bank/--banks`) have shipped, and all eight Phase-1.5 P0
-recipes — `prediction-histogram`, `feature-distribution-overlay`,
-`bar-chart-with-deltas`, `roc-curve-multi-line`, `calibration-reliability-diagram`,
-`trace-pair-gallery`, `summary-table`, and `training-curve` — render real banks
-with snapshot tests. The interactive Qt GUI (Block 4+) is still ahead, so the app
-is not yet end-user-runnable. Pins
+[`project/roadmap.md`](project/roadmap.md)). **Blocks 2–4 have shipped.** The
+headless figure pipeline (Blocks 2–3): the `charts/matplotlib/` foundation, the
+`render(spec, *, data)` contract, the figure-data loaders (`egm-studio-render
+--bank/--banks`), and all eight Phase-1.5 P0 recipes — `prediction-histogram`,
+`feature-distribution-overlay`, `bar-chart-with-deltas`, `roc-curve-multi-line`,
+`calibration-reliability-diagram`, `trace-pair-gallery`, `summary-table`, and
+`training-curve` — render real banks with snapshot tests. The **Qt shell**
+(Block 4): `egm-studio` launches the ADR-025 layout — collapsible sidebars, the
+3-mode segmented control, and dark / light / vibrant themes that persist across
+launches. Interactive region content (trace + figure views) begins in Block 5,
+so the shell opens but isn't yet an end-user analysis tool. Pins
 `myocard-egm-contracts v0.5.1`, `myocard-egm-data v0.4.1`, `myocard-egm-features
 v0.1.1`.
 

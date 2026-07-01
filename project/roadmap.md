@@ -219,6 +219,17 @@ placeholder panels prove the shell works.
 
 **Estimated effort:** ~1 day.
 
+**Status:** Done (2026-07-01). Shipped as specified — `gui/app.py` + `gui/shell.py`
+(ADR-025 layout: draggable columns, collapsible sidebars that fold to a ~40px
+Activity-Bar strip), the 3-mode segmented control, `gui/theme/`, and pytest-qt
+tests — plus two extras Daniel requested during review:
+- **Three** themes, not just dark+light: dark (default) + light + a **vibrant**
+  programmer-editor palette (ADR-012 amended).
+- The selected theme **persists across launches** via Qt `QSettings`
+  (`gui/preferences.py`), realising ADR-012's "user-preference theme key" and
+  seeding the ADR-017 save-state.
+Verified headless under the offscreen QPA platform (the sandbox has no xvfb).
+
 ### Block 5 — TraceWidget + container + `charts/pyqtgraph/` backend
 
 The composable trace widget from ADR-024, plus the second rendering
