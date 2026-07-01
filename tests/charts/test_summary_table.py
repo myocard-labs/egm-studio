@@ -12,7 +12,7 @@ import pytest
 from matplotlib.figure import Figure
 from myocard_egm_data.phases import FigureSpec
 
-from myocard_egm_studio.charts.matplotlib.inputs import TableData
+from myocard_egm_studio.charts.inputs import TableData
 from myocard_egm_studio.charts.matplotlib.summary_table import summary_table
 
 _TOL = 20.0

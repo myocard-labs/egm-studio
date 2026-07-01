@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from matplotlib.figure import Figure
 
-from myocard_egm_studio.charts.matplotlib.inputs import BarChartData
+from myocard_egm_studio.charts.inputs import BarChartData
 from myocard_egm_studio.charts.matplotlib.registry import register
 from myocard_egm_studio.charts.matplotlib.style import color_for, paper_style
 

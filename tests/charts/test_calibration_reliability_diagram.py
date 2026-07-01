@@ -13,10 +13,10 @@ import pytest
 from matplotlib.figure import Figure
 from myocard_egm_data.phases import FigureSpec
 
+from myocard_egm_studio.charts.inputs import PredictionGroup
 from myocard_egm_studio.charts.matplotlib.calibration_reliability_diagram import (
     calibration_reliability_diagram,
 )
-from myocard_egm_studio.charts.matplotlib.inputs import PredictionGroup
 
 _TOL = 20.0
 

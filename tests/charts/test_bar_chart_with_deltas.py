@@ -11,8 +11,8 @@ import pytest
 from matplotlib.figure import Figure
 from myocard_egm_data.phases import FigureSpec
 
+from myocard_egm_studio.charts.inputs import BarChartData
 from myocard_egm_studio.charts.matplotlib.bar_chart_with_deltas import bar_chart_with_deltas
-from myocard_egm_studio.charts.matplotlib.inputs import BarChartData
 
 _TOL = 20.0
 

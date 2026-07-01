@@ -6,9 +6,10 @@ headless renderer's data-loading step (Block 7) is what turns a spec's
 ``inputs.groups`` bank ids into these structures; until that lands, tests and
 callers build them in memory.
 
-These live next to the recipes that consume them (not in egm-contracts) because
-they're egm-studio-internal figure-data shapes, not a cross-repo schema. One
-input type per recipe family; more land as Block 3 adds recipes.
+They live at the ``charts/`` level (not under a backend, not in egm-contracts):
+both the matplotlib and pyqtgraph backends consume the same prepared inputs, so
+one loader can feed either. They're egm-studio-internal figure-data shapes rather
+than a cross-repo schema. One input type per recipe family.
 """
 
 from __future__ import annotations

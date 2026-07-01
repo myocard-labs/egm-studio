@@ -23,7 +23,7 @@ import pytest
 from matplotlib.figure import Figure
 from myocard_egm_data.phases import FigureSpec
 
-from myocard_egm_studio.charts.matplotlib.inputs import PredictionGroup
+from myocard_egm_studio.charts.inputs import PredictionGroup
 from myocard_egm_studio.charts.matplotlib.prediction_histogram import prediction_histogram
 
 #: Loose RMS tolerance absorbing sub-pixel font/antialiasing differences across

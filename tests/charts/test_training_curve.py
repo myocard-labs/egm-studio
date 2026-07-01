@@ -13,7 +13,7 @@ import pytest
 from matplotlib.figure import Figure
 from myocard_egm_data.phases import FigureSpec
 
-from myocard_egm_studio.charts.matplotlib.inputs import TrainingCurve
+from myocard_egm_studio.charts.inputs import TrainingCurve
 from myocard_egm_studio.charts.matplotlib.training_curve import training_curve
 
 _TOL = 20.0

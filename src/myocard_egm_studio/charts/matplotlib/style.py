@@ -25,20 +25,11 @@ from typing import Any, cast
 
 import matplotlib as mpl
 
-__all__ = ["OKABE_ITO", "PAPER_RCPARAMS", "color_for", "paper_style"]
+from myocard_egm_studio.charts.palette import OKABE_ITO, color_for
 
-#: Okabe-Ito color-blind-safe qualitative palette (8 colors). The order is the
-#: project-standard group/series cycle; recipes index into it by group.
-OKABE_ITO: tuple[str, ...] = (
-    "#0072B2",  # blue
-    "#D55E00",  # vermillion
-    "#009E73",  # bluish green
-    "#CC79A7",  # reddish purple
-    "#E69F00",  # orange
-    "#56B4E9",  # sky blue
-    "#F0E442",  # yellow
-    "#000000",  # black
-)
+# OKABE_ITO + color_for now live in the framework-free charts.palette so the
+# pyqtgraph backend shares them; re-exported here for the recipes' import path.
+__all__ = ["OKABE_ITO", "PAPER_RCPARAMS", "color_for", "paper_style"]
 
 #: rcParams for journal-ready figures. The font-embedding entries are the
 #: load-bearing bit: pdf/ps fonttype 42 embeds TrueType (selectable, scalable
@@ -60,16 +51,6 @@ PAPER_RCPARAMS: dict[str, object] = {
     "axes.spines.top": False,
     "axes.spines.right": False,
 }
-
-
-def color_for(index: int) -> str:
-    """The :data:`OKABE_ITO` color for series/group ``index`` (cycles, wraps).
-
-    The project-standard way recipes pick a per-series color, so the palette
-    indexing lives in one place across recipes rather than each repeating
-    ``OKABE_ITO[i % len(OKABE_ITO)]``.
-    """
-    return OKABE_ITO[index % len(OKABE_ITO)]
 
 
 @contextmanager

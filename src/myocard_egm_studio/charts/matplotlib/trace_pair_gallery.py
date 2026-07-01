@@ -23,7 +23,7 @@ from matplotlib.figure import Figure
 from matplotlib.layout_engine import ConstrainedLayoutEngine
 from numpy.typing import NDArray
 
-from myocard_egm_studio.charts.matplotlib.inputs import TracePairGallery
+from myocard_egm_studio.charts.inputs import TracePairGallery
 from myocard_egm_studio.charts.matplotlib.registry import register
 from myocard_egm_studio.charts.matplotlib.style import color_for, paper_style
 

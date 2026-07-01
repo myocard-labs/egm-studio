@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from matplotlib.figure import Figure
 
-from myocard_egm_studio.charts.matplotlib.inputs import TableData
+from myocard_egm_studio.charts.inputs import TableData
 from myocard_egm_studio.charts.matplotlib.registry import register
 from myocard_egm_studio.charts.matplotlib.style import paper_style
 

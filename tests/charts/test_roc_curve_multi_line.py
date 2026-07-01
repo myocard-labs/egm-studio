@@ -13,7 +13,7 @@ import pytest
 from matplotlib.figure import Figure
 from myocard_egm_data.phases import FigureSpec
 
-from myocard_egm_studio.charts.matplotlib.inputs import PredictionGroup
+from myocard_egm_studio.charts.inputs import PredictionGroup
 from myocard_egm_studio.charts.matplotlib.roc_curve_multi_line import roc_curve_multi_line
 
 _TOL = 20.0

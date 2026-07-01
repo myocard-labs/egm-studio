@@ -15,10 +15,10 @@ import pytest
 from matplotlib.figure import Figure
 from myocard_egm_data.phases import FigureSpec
 
+from myocard_egm_studio.charts.inputs import FeatureGroup
 from myocard_egm_studio.charts.matplotlib.feature_distribution_overlay import (
     feature_distribution_overlay,
 )
-from myocard_egm_studio.charts.matplotlib.inputs import FeatureGroup
 
 _TOL = 20.0
 

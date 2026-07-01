@@ -38,8 +38,7 @@ from numpy.typing import NDArray
 
 from myocard_egm_studio.analysis.aggregation import aggregate_distance, feature_distances
 from myocard_egm_studio.analysis.similarity import nearest_along_feature
-from myocard_egm_studio.charts.matplotlib import spec_fields
-from myocard_egm_studio.charts.matplotlib.inputs import (
+from myocard_egm_studio.charts.inputs import (
     BarChartData,
     FeatureGroup,
     PredictionGroup,
@@ -48,6 +47,7 @@ from myocard_egm_studio.charts.matplotlib.inputs import (
     TracePairGallery,
     TrainingCurve,
 )
+from myocard_egm_studio.charts.matplotlib import spec_fields
 from myocard_egm_studio.charts.matplotlib.selection import (
     select_from_available,
     select_layout_features,

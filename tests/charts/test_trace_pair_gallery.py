@@ -13,7 +13,7 @@ import pytest
 from matplotlib.figure import Figure
 from myocard_egm_data.phases import FigureSpec
 
-from myocard_egm_studio.charts.matplotlib.inputs import TracePair, TracePairGallery
+from myocard_egm_studio.charts.inputs import TracePair, TracePairGallery
 from myocard_egm_studio.charts.matplotlib.trace_pair_gallery import trace_pair_gallery
 
 _TOL = 20.0
