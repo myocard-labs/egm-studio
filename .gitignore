@@ -88,3 +88,8 @@ tests/charts/baseline
 # --------------------------------------------------------------------
 docs/_build/
 site/
+
+# --------------------------------------------------------------------
+# Local dev-only tools (never committed; deleted once the GUI hosts them)
+# --------------------------------------------------------------------
+examples/pyqtgraph_demo.py

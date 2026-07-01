@@ -235,6 +235,16 @@ Verified headless under the offscreen QPA platform (the sandbox has no xvfb).
 The composable trace widget from ADR-024, plus the second rendering
 backend for `charts/`. The GUI now has its core data-display primitive.
 
+**Status:** Done (2026-07-01). `TraceWidget` + `TraceContainer` (ADR-024) with a
+shared, pannable/zoomable X-axis, the time-scale slider, and a metadata-driven
+trace selector; plus the `charts/pyqtgraph/` backend's `feature-distribution-overlay`,
+visually equivalent to the Block 3 matplotlib figure over the same `analysis/`
+output. A throwaway local demo (`examples/pyqtgraph_demo.py`, git-ignored — for
+interactive checks until the shell hosts these views) opens either standalone.
+The shared recipe-input dataclasses + Okabe-Ito palette moved to `charts/inputs.py` +
+`charts/palette.py` (framework-free) so both backends share them without
+`charts/pyqtgraph/` importing matplotlib.
+
 **Scope:**
 
 - `gui/widgets/trace.py` — `TraceWidget` (one trace + metadata) and

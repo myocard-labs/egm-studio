@@ -106,12 +106,15 @@ myocard_egm_studio/
 │   ├── metrics.py        #   ROC / AUROC + reliability / ECE (synth-val only)
 │   └── ...               #   one module per analytical concern
 ├── charts/               # Chart-building primitives, dual backend.
+│   ├── inputs.py         #   prepared recipe-input dataclasses (shared, framework-free)
+│   ├── palette.py        #   shared Okabe-Ito group palette + color_for
 │   ├── matplotlib/       #   static recipes + the recipe registry
 │   │   ├── registry.py   #     RECIPES dict + @register decorator
-│   │   ├── style.py      #     Okabe-Ito palette + paper rcParams + color_for
-│   │   ├── inputs.py     #     prepared recipe-input dataclasses
+│   │   ├── style.py      #     paper rcParams + paper_style (re-exports palette)
 │   │   └── <recipe>.py   #     one self-registering recipe per module
-│   └── pyqtgraph/        #   pyqtgraph renderers (interactive, GUI-embedded)
+│   └── pyqtgraph/        #   interactive, GUI-embedded chart recipes
+│       ├── style.py      #     PgChartStyle (background / foreground)
+│       └── feature_distribution.py  # feature-distribution overlay (GUI twin)
 ├── figures/              # Thin headless layer over charts/matplotlib/.
 │   ├── render.py         #   render(spec, *, data, overwrite) -> Path
 │   └── loaders.py        #   bank-id -> recipe-input adapters + LOADERS registry
@@ -169,6 +172,11 @@ for static export. Both reuse `analysis/` for data prep. Adding a
 new chart means: implement once in `analysis/`, implement twice in
 `charts/` (one per backend), expose via `figures/` if it needs
 headless export.
+
+The two backends share their prepared inputs (`charts/inputs.py`) and
+group palette (`charts/palette.py`) at the `charts/` root — both
+framework-free, so `charts/pyqtgraph/` reuses them without importing
+`charts/matplotlib/` (whose package import pulls in matplotlib).
 
 ### The registry pattern (recipes + loaders)
 
