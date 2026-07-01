@@ -23,8 +23,10 @@ from myocard_egm_data.banks import (
 from myocard_egm_data.phases import FigureSpec
 from myocard_egm_data.records import (
     NoiseBankRunRecord,
+    TrainingRunRecord,
     build_noise_bank_run_record,
     write_noise_bank_run_record,
+    write_training_run_record,
 )
 
 from myocard_egm_studio.figures.loaders import (
@@ -532,4 +534,100 @@ def test_curation_summary_unmapped_id_raises() -> None:
     """An unmapped run-record id surfaces the standard UnmappedBankIdError."""
     spec = _curation_spec("nbank_absent_2026-06-29")
     with pytest.raises(UnmappedBankIdError, match="nbank_absent_2026-06-29"):
+        resolve_recipe_data(spec, {})
+
+
+# --- training-curve loader ------------------------------------------------ #
+
+
+def _training_record(metric: str = "auroc") -> TrainingRunRecord:
+    """A 3-epoch training run record (rising metric, falling loss)."""
+    return TrainingRunRecord.model_validate(
+        {
+            "schema_version": "1.1",
+            "created_utc": "2026-06-30T00:00:00Z",
+            "run": {},
+            "config": {},
+            "epochs": [
+                {
+                    "epoch": 1,
+                    "lr": 0.001,
+                    "train_loss": 0.5,
+                    "val_loss": 0.55,
+                    "epoch_seconds": 1.0,
+                    "val_metrics": {metric: 0.70},
+                    "val_reliability": [],
+                },
+                {
+                    "epoch": 2,
+                    "lr": 0.001,
+                    "train_loss": 0.3,
+                    "val_loss": 0.35,
+                    "epoch_seconds": 1.0,
+                    "val_metrics": {metric: 0.90},
+                    "val_reliability": [],
+                },
+                {
+                    "epoch": 3,
+                    "lr": 0.001,
+                    "train_loss": 0.2,
+                    "val_loss": 0.25,
+                    "epoch_seconds": 1.0,
+                    "val_metrics": {metric: 0.95},
+                    "val_reliability": [],
+                },
+            ],
+            "best": {"epoch": 3, "metric": metric, "value": 0.95},
+        }
+    )
+
+
+def _tc_spec(*ids: str, metric: str | None = None) -> FigureSpec:
+    """A training-curve spec over named run ids."""
+    payload: dict[str, object] = {
+        "schema_version": "1",
+        "id": "fig_training_loader_test",
+        "description": "training-curve loader test",
+        "recipe": "training-curve",
+        "inputs": {"groups": [{"name": f"g{i}", "bank_id": b} for i, b in enumerate(ids)]},
+        "output": {"format": "png", "path": "out.png"},
+    }
+    if metric is not None:
+        payload["styling"] = {"metric": metric}
+    return FigureSpec.model_validate(payload)
+
+
+def test_load_training_curve(tmp_path: Path) -> None:
+    """A training run record resolves to per-epoch loss + metric series + best epoch."""
+    path = tmp_path / "run.json"
+    write_training_run_record(path, _training_record())
+    data = resolve_recipe_data(_tc_spec("run_demo_2026-06-29"), {"run_demo_2026-06-29": str(path)})
+    assert data.epochs.tolist() == [1, 2, 3]
+    assert data.loss["train"].tolist() == [0.5, 0.3, 0.2]
+    assert data.loss["val"].tolist() == [0.55, 0.35, 0.25]
+    assert data.metric["val"].tolist() == [0.70, 0.90, 0.95]
+    assert data.metric_name == "AUROC"
+    assert data.best_epoch == 3
+
+
+def test_training_curve_metric_absent_raises(tmp_path: Path) -> None:
+    """styling.metric must name a scalar val metric the run recorded."""
+    path = tmp_path / "run.json"
+    write_training_run_record(path, _training_record())
+    spec = _tc_spec("run_demo_2026-06-29", metric="not_a_metric")
+    with pytest.raises(ValueError, match="not a scalar val metric"):
+        resolve_recipe_data(spec, {"run_demo_2026-06-29": str(path)})
+
+
+def test_training_curve_needs_one_group() -> None:
+    """Exactly one inputs.groups entry (the run id) is required."""
+    spec = _tc_spec("run_alpha_2026-06-29", "run_beta_2026-06-29")
+    with pytest.raises(ValueError, match="exactly one"):
+        resolve_recipe_data(spec, {})
+
+
+def test_training_curve_unmapped_id_raises() -> None:
+    """An unmapped run id surfaces the standard UnmappedBankIdError."""
+    spec = _tc_spec("run_absent_2026-06-29")
+    with pytest.raises(UnmappedBankIdError, match="run_absent_2026-06-29"):
         resolve_recipe_data(spec, {})
