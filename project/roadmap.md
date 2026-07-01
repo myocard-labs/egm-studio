@@ -115,13 +115,13 @@ The first end-to-end vertical slice through the pipeline. Picks up
 where Block 2 leaves off; ends with real figures rendering from
 spec JSON files.
 
-> **Status (in progress):** the matplotlib foundation has shipped — the recipe
+> **Status (P0 recipe set complete):** the matplotlib foundation has shipped — the recipe
 > registry (`registry.py`, split out of `__init__` to avoid import cycles), the
 > paper style (`style.py`: Okabe-Ito palette + embedded-font rcParams +
 > `color_for`), the prepared-input dataclasses (`inputs.py`), the
 > `render(spec, *, data, overwrite)` contract + existing-output skip, and the
 > figure-data loaders (`loaders.py` + `egm-studio-render --bank/--banks`,
-> brought forward from Block 7). Seven recipes have shipped so far —
+> brought forward from Block 7). All eight Phase-1.5 P0 recipes have shipped —
 > **`prediction-histogram`**, **`feature-distribution-overlay`** (the primary
 > sim-realism diagnostic, F-1.5.2: per-feature density overlay with
 > KS/Wasserstein annotation, axis units, `layout.features` curation),
@@ -134,19 +134,21 @@ spec JSON files.
 > ECE, extending `analysis/metrics`; same loader reuse), and
 > **`trace-pair-gallery`** (F-1.5.7: an N x 2 synthetic-vs-IAFDB matched-trace
 > grid — new `TracePair` / `TracePairGallery` inputs + a dedicated loader, the
-> first consumer of `analysis/similarity`), and **`summary-table`** (F-1.5.10:
+> first consumer of `analysis/similarity`), **`summary-table`** (F-1.5.10:
 > generic `TableData` -> matplotlib table; the curation loader reads the
 > `noise_bank_run_record` sidecar — the first non-bank loader — with
-> `layout.fields` field curation) — each with a snapshot test + example spec, plus
-> shared helpers `select_from_available` (backing the `layout.features` +
-> `layout.fields` curation) and `spec_fields.positive_label` (read identically by
-> the loader and the ROC / calibration recipes). Beyond the seven recipes,
+> `layout.fields` field curation), and **`training-curve`** (F-1.5.11: loss +
+> val-metric vs epoch from a `training_run_record`, best epoch marked) — each with
+> a snapshot test + example spec, plus shared helpers `select_from_available`
+> (backing the `layout.features` + `layout.fields` curation) and
+> `spec_fields.positive_label` (read identically by the loader and the ROC /
+> calibration recipes). Beyond the eight recipes,
 > **F-1.5.6** (per-intervention IAFDB de-saturation overlay) is also wired — it
 > needed no new recipe, reusing `prediction-histogram`'s overlay mode with its own
-> example spec + a multi-unlabeled-overlay test. Remaining P0 recipes land **one
-> at a time** (each its own review — including a deep look at the recipe's math —
-> plus snapshot + commit), so the block closes incrementally rather than in one
-> big drop.
+> example spec + a multi-unlabeled-overlay test. **That completes the Phase-1.5
+> P0 recipe set** — all eight reviewed one at a time (each a math look + snapshot
+> + commit); P1 / P2 recipes are Post-v0.1.0 follow-ups and the interactive Qt GUI
+> (Block 4) is next.
 
 **Scope:**
 

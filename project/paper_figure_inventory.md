@@ -443,6 +443,16 @@ its figures get full implementation in egm-studio v0.1.
 - **Recipe:** `training-curve`
 - **Data sources:** `metrics.csv` + `run.json` from a training run.
 - **Priority:** P0
+- **Status:** Shipped — egm-studio `training-curve` recipe + loader (Block 3).
+  New `TrainingCurve` input -> a two-panel figure (loss train + val on top, the
+  selection metric below) sharing the epoch x-axis, with the best /
+  early-stopping epoch marked. The loader reads the `run.json`
+  `training_run_record` via egm-data's `load_training_run_record` (another
+  run-record sidecar, not a ClassifierBank); pulls per-epoch `train_loss` /
+  `val_loss` + the `styling.metric` val metric (default `auroc`, null / non-scalar
+  epochs as gaps) and marks `record.best.epoch`. run.json only (metrics.csv is
+  redundant for the curves). Multi-run overlay (F-5.2) + IAFDB-pretraining (F-5.1)
+  are future series variants. Snapshot test + examples/training_curve_spec.json.
 - **Notes:** Standard ML-paper figure. Usually goes in supplementary
   but worth including in the main body if the training story is
   interesting (early stopping, instability, etc.).
