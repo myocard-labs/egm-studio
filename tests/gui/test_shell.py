@@ -17,7 +17,7 @@ from pytestqt.qtbot import QtBot
 
 from myocard_egm_studio.gui.shell import CollapsibleSidebar, MainWindow
 from myocard_egm_studio.gui.theme import plot_palette
-from myocard_egm_studio.gui.widgets import TraceContainer, TraceData
+from myocard_egm_studio.gui.widgets import TraceContainer, TraceData, TraceView
 
 
 def test_shell_builds_with_three_columns(qtbot: QtBot) -> None:
@@ -106,8 +106,8 @@ def test_theme_change_restyles_open_traces(qtbot: QtBot, qapp: QtWidgets.QApplic
     light.trigger()
 
     content = window._work_area.content
-    assert isinstance(content, TraceContainer)
-    assert content.palette == plot_palette("light")
+    assert isinstance(content, TraceView)
+    assert content.container.palette == plot_palette("light")
 
 
 def test_open_bank_populates_selector_and_view(
