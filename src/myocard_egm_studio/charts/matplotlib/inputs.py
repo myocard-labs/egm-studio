@@ -25,6 +25,7 @@ __all__ = [
     "TableData",
     "TracePair",
     "TracePairGallery",
+    "TrainingCurve",
 ]
 
 
@@ -185,3 +186,32 @@ class TableData:
     columns: list[str]
     rows: list[list[str]]
     title: str = ""
+
+
+@dataclass(frozen=True)
+class TrainingCurve:
+    """Per-epoch training curves for the ``training-curve`` recipe.
+
+    Attributes
+    ----------
+    epochs
+        ``(E,)`` epoch numbers — the shared x-axis of both panels.
+    loss
+        ``{series: (E,) values}`` loss curves for the top panel (e.g.
+        ``{"train": ..., "val": ...}``). Non-finite entries (a missing epoch
+        value) render as gaps.
+    metric
+        ``{series: (E,) values}`` selection-metric curves for the bottom panel
+        (e.g. ``{"val": auroc}``).
+    metric_name
+        y-axis label for the metric panel (e.g. ``"AUROC"``).
+    best_epoch
+        Optional epoch number to mark with a vertical line (the selected /
+        early-stopping epoch); ``None`` draws no marker.
+    """
+
+    epochs: NDArray[np.int64]
+    loss: dict[str, NDArray[np.float64]]
+    metric: dict[str, NDArray[np.float64]]
+    metric_name: str = "metric"
+    best_epoch: int | None = None

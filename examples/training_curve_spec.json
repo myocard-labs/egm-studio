@@ -1,0 +1,13 @@
+{
+  "schema_version": "1",
+  "id": "fig_training_curve_v1_baseline",
+  "description": "Training-curve panel (F-1.5.11): loss (train + val) and the selection metric (val AUROC) vs epoch for one representative Phase-1.5 training run, with the best / early-stopping epoch marked by a dashed vertical line. Read from the run.json training_run_record via egm-data's load_training_run_record (a run-record sidecar, not a ClassifierBank). The single inputs.groups entry's bank_id is the run's id; map it to the run.json path with --bank <run_id>=<path-to-run.json> (the resolved path is the JSON, not an HDF5 bank). 'styling.metric' (default 'auroc') picks which val_metrics series the bottom panel plots; a null / non-scalar epoch value renders as a gap. Standard ML-paper figure — usually supplementary, but worth the main body when the training story is interesting (early stopping, instability). Renders via the 'training-curve' recipe. Swap in your own run.json when wiring real data.",
+  "recipe": "training-curve",
+  "inputs": {
+    "groups": [
+      { "name": "v1 baseline", "bank_id": "run_v1_baseline_2026-06-30" }
+    ]
+  },
+  "styling": { "metric": "auroc" },
+  "output": { "format": "pdf", "path": "out/fig_training_curve_v1_baseline.pdf" }
+}

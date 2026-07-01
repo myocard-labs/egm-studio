@@ -28,7 +28,12 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from myocard_egm_data.banks import load_classifier_bank
-from myocard_egm_data.records import NoiseBankRunRecord, load_noise_bank_run_record
+from myocard_egm_data.records import (
+    NoiseBankRunRecord,
+    TrainingRunRecord,
+    load_noise_bank_run_record,
+    load_training_run_record,
+)
 from numpy.typing import NDArray
 
 from myocard_egm_studio.analysis.aggregation import aggregate_distance, feature_distances
@@ -41,6 +46,7 @@ from myocard_egm_studio.charts.matplotlib.inputs import (
     TableData,
     TracePair,
     TracePairGallery,
+    TrainingCurve,
 )
 from myocard_egm_studio.charts.matplotlib.selection import (
     select_from_available,
@@ -74,6 +80,7 @@ __all__ = [
     "load_group_banks",
     "load_prediction_groups",
     "load_trace_pair_gallery",
+    "load_training_curve",
     "prediction_group_from_bank",
     "register_loader",
     "resolve_recipe_data",
@@ -525,3 +532,72 @@ def load_curation_summary_table(spec: FigureSpec, bank_paths: BankPaths) -> Tabl
     return _curation_summary_table(
         load_noise_bank_run_record(path), (spec.layout or {}).get("fields")
     )
+
+
+#: Pretty y-axis labels for common selection metrics; others use the key as-is.
+_METRIC_LABELS = {"auroc": "AUROC", "ece": "ECE", "f1": "F1"}
+
+
+def _scalar(value: object) -> float:
+    """A finite float, or NaN for None / non-numeric (so a curve gaps, not crashes)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return float("nan")
+    return float(value)
+
+
+def _training_curve(record: TrainingRunRecord, metric_key: str) -> TrainingCurve:
+    """Per-epoch loss + selection-metric series from a training run record."""
+    if not record.epochs:
+        raise ValueError("training run record has no epochs.")
+    epochs = np.array([e.epoch for e in record.epochs], dtype=np.int64)
+    train_loss = np.array([_scalar(e.train_loss) for e in record.epochs], dtype=np.float64)
+    val_loss = np.array([_scalar(e.val_loss) for e in record.epochs], dtype=np.float64)
+    metric_vals = np.array(
+        [_scalar(e.val_metrics.get(metric_key)) for e in record.epochs], dtype=np.float64
+    )
+    if bool(np.all(np.isnan(metric_vals))):
+        available = sorted(
+            {
+                k
+                for e in record.epochs
+                for k, v in e.val_metrics.items()
+                if isinstance(v, (int, float)) and not isinstance(v, bool)
+            }
+        )
+        raise ValueError(
+            f"styling.metric {metric_key!r} is not a scalar val metric in this run; "
+            f"available: {available}."
+        )
+    return TrainingCurve(
+        epochs=epochs,
+        loss={"train": train_loss, "val": val_loss},
+        metric={"val": metric_vals},
+        metric_name=_METRIC_LABELS.get(metric_key, metric_key),
+        best_epoch=int(record.best.epoch) if record.best.epoch is not None else None,
+    )
+
+
+@register_loader("training-curve")
+def load_training_curve(spec: FigureSpec, bank_paths: BankPaths) -> TrainingCurve:
+    """Loader for ``training-curve`` (F-1.5.11): one run's loss + metric curves.
+
+    Resolves the single ``inputs.groups`` entry — the training run's id — to a
+    ``run.json`` path in ``bank_paths`` and reads it via egm-data's
+    :func:`load_training_run_record` (another run-record sidecar, like the
+    curation summary, not a ClassifierBank). Pulls per-epoch ``train_loss`` /
+    ``val_loss`` and the ``styling.metric`` validation metric (default
+    ``"auroc"``), and marks ``record.best.epoch`` as the selected epoch; a null /
+    non-scalar epoch value becomes a gap in its curve.
+    """
+    groups = (spec.inputs.groups if spec.inputs else None) or []
+    if len(groups) != 1:
+        raise ValueError(
+            "training-curve needs exactly one inputs.groups entry — the training run's id; "
+            f"got {len(groups)}."
+        )
+    run_id = groups[0].bank_id
+    path = bank_paths.get(run_id)
+    if path is None:
+        raise UnmappedBankIdError([run_id], sorted(bank_paths))
+    metric_key = str((spec.styling or {}).get("metric", "auroc"))
+    return _training_curve(load_training_run_record(path), metric_key)
