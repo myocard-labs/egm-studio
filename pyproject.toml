@@ -10,14 +10,15 @@
 #   PyPI dist    : myocard-egm-studio             (myocard- prefix)
 #   Import name  : myocard_egm_studio             (underscore)
 #
-# Implementation in progress (Block 3 — matplotlib figure recipes). The headless
-# core is wired: analysis / view_model / charts.matplotlib (recipe registry +
-# paper style) / figures (render + bank loaders) / the egm-studio-render CLI.
-# All eight Phase-1.5 P0 recipes have shipped (prediction-histogram,
-# feature-distribution-overlay, bar-chart-with-deltas, roc-curve-multi-line,
-# calibration-reliability-diagram, trace-pair-gallery, summary-table,
-# training-curve). The interactive Qt stack (PySide6 + pyqtgraph) lands in
-# Block 4. See project/roadmap.md for the block plan.
+# Implementation in progress (Blocks 2-4 shipped). The headless core:
+# analysis / view_model / charts.matplotlib (recipe registry + paper style) /
+# figures (render + bank loaders) / the egm-studio-render CLI, with all eight
+# Phase-1.5 P0 recipes (prediction-histogram, feature-distribution-overlay,
+# bar-chart-with-deltas, roc-curve-multi-line, calibration-reliability-diagram,
+# trace-pair-gallery, summary-table, training-curve). The Block 4 Qt shell
+# (gui/: app + shell + theme + preferences) adds the PySide6 layout, the 3-mode
+# switch, and dark/light/vibrant themes with persistence; interactive views +
+# pyqtgraph land in Blocks 5+. See project/roadmap.md for the block plan.
 # ---------------------------------------------------------------------------
 
 [build-system]
@@ -68,8 +69,7 @@ dependencies = [
   # Per-trace feature extractors (bundle.extract_all) for the unified
   # per-trace view-model. [ADR-002]
   "myocard-egm-features @ git+https://github.com/myocard-labs/egm-features.git@v0.1.1",
-  # Publication figure rendering via the headless Agg backend [ADR-016]. The
-  # interactive Qt plotting stack (PySide6 + pyqtgraph) is added in Block 4.
+  # Publication figure rendering via the headless Agg backend [ADR-016].
   "matplotlib>=3.8",
   # Imported by name in analysis/ + view_model/, so declared directly even
   # though they also arrive transitively via egm-features / egm-data.
@@ -78,6 +78,13 @@ dependencies = [
   "numpy>=1.26,<2.5",
   "pandas>=2.0",
   "scipy>=1.11",
+  # Interactive desktop GUI stack [ADR-016], added in Block 4. PySide6 is the
+  # Qt binding for the shell; pyqtgraph is the live trace-plotting backend
+  # (Block 5+). Hard runtime deps of the GUI, but the headless figure path
+  # (egm-studio-render) never imports them — pulling in charts/matplotlib or
+  # figures/ imports neither.
+  "PySide6>=6.6",
+  "pyqtgraph>=0.13",
 ]
 
 [project.optional-dependencies]
@@ -86,6 +93,9 @@ dev = [
   "pytest-cov>=5.0",
   # Snapshot-test rendered figures against committed baseline PNGs.
   "pytest-mpl>=0.17",
+  # GUI integration tests for the Qt shell [ADR-013]; runs headless under
+  # offscreen QPA (CI uses xvfb).
+  "pytest-qt>=4.4",
   "ruff>=0.6.0",
   "mypy>=1.10",
   "pre-commit>=3.7",
@@ -99,9 +109,10 @@ Issues        = "https://github.com/myocard-labs/egm-studio/issues"
 Organization  = "https://github.com/myocard-labs"
 
 [project.scripts]
-# Headless figure renderer (Block 2). The interactive `egm-studio` GUI
-# console script is added in Block 4.
+# Headless figure renderer (Block 2).
 egm-studio-render = "myocard_egm_studio.cli.render:main"
+# Interactive desktop GUI [ADR-016], added in Block 4.
+egm-studio = "myocard_egm_studio.gui.app:main"
 
 # ---------------------------------------------------------------------------
 # Hatch
@@ -210,12 +221,14 @@ files = ["src", "tests"]
 # checking on our own code. (pandas has a pandas-stubs package; like
 # egm-features we don't pin it yet — a natural add when the DataFrame
 # ergonomics get richer.) The myocard siblings (egm-contracts / egm-data /
-# egm-features) ship py.typed and are deliberately NOT in this list. PySide6 +
-# pyqtgraph join here in Block 4.
+# egm-features) ship py.typed and are deliberately NOT in this list — and
+# neither is PySide6, which ships py.typed + stubs of its own. pyqtgraph ships
+# no type information, so it joins the list (added Block 4).
 [[tool.mypy.overrides]]
 module = [
   "matplotlib.*",
   "scipy.*",
   "pandas.*",
+  "pyqtgraph.*",
 ]
 ignore_missing_imports = true
