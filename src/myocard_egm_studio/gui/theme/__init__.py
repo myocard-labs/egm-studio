@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from myocard_egm_studio.gui.theme._qss import build_stylesheet
 from myocard_egm_studio.gui.theme.palette import PALETTES, ThemeName
-from myocard_egm_studio.gui.theme.plots import PlotPalette, plot_palette
+from myocard_egm_studio.gui.theme.plots import PlotPalette, chart_style, plot_palette
 
 if TYPE_CHECKING:
     from PySide6 import QtWidgets
@@ -37,5 +37,6 @@ __all__ = [
     "ThemeName",
     "apply_theme",
     "build_stylesheet",
+    "chart_style",
     "plot_palette",
 ]

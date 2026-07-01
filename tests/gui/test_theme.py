@@ -12,6 +12,7 @@ from myocard_egm_studio.gui.theme import (
     THEME_NAMES,
     apply_theme,
     build_stylesheet,
+    chart_style,
 )
 from myocard_egm_studio.gui.theme.palette import DARK, LIGHT, PALETTES, VIBRANT
 
@@ -19,6 +20,13 @@ from myocard_egm_studio.gui.theme.palette import DARK, LIGHT, PALETTES, VIBRANT
 def test_default_theme_is_dark_and_three_themes_ship() -> None:
     assert DEFAULT_THEME == "dark"
     assert THEME_NAMES == ("dark", "light", "vibrant")
+
+
+def test_chart_style_tracks_theme() -> None:
+    for name in THEME_NAMES:
+        style = chart_style(name)
+        assert style.background == PALETTES[name].surface
+        assert style.foreground == PALETTES[name].text
 
 
 def test_build_stylesheet_substitutes_every_token() -> None:

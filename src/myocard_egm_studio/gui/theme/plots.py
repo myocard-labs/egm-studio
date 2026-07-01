@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from myocard_egm_studio.charts.pyqtgraph.style import PgChartStyle
 from myocard_egm_studio.gui.theme.palette import PALETTES, ThemeName
 
 
@@ -26,3 +27,14 @@ def plot_palette(theme: ThemeName) -> PlotPalette:
     """Map a theme to its pyqtgraph plot colours (trace = the theme accent)."""
     p = PALETTES[theme]
     return PlotPalette(background=p.surface, foreground=p.text_muted, trace=p.accent)
+
+
+def chart_style(theme: ThemeName) -> PgChartStyle:
+    """Map a theme to a pyqtgraph chart style (feature-distribution + kin).
+
+    Background + foreground follow the theme so an embedded chart matches the
+    shell; group / series colours stay the shared Okabe-Ito palette, so a themed
+    chart still lines up with its matplotlib twin.
+    """
+    p = PALETTES[theme]
+    return PgChartStyle(background=p.surface, foreground=p.text)
