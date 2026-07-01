@@ -141,7 +141,7 @@ see [`project/roadmap.md`](project/roadmap.md).
 ## Tests
 
 ```bash
-pytest                  # full suite (no display required)
+pytest                  # full suite
 pytest --cov            # with coverage
 ruff check .            # lint
 ruff format --check .   # format check
@@ -149,8 +149,10 @@ mypy                    # type check
 ```
 
 CI runs the same checks on Python 3.10, 3.11, and 3.12 — see
-`.github/workflows/ci.yml`. The unit + snapshot layers run without a display;
-the GUI integration layer (added with the Qt shell) runs under `xvfb-run`.
+`.github/workflows/ci.yml`. The pytest-qt GUI tests run headless under Qt's
+**offscreen** platform — CI installs the Qt system libraries and sets
+`QT_QPA_PLATFORM=offscreen`; set that variable too if you run the suite on a
+machine with no display.
 
 ---
 

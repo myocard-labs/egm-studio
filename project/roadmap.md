@@ -215,7 +215,7 @@ placeholder panels prove the shell works.
 
 - `egm-studio` launches a window with the empty layout shell.
 - Dark / light theme toggle works.
-- pytest-qt smoke tests pass under `xvfb-run`.
+- pytest-qt smoke tests pass headless (offscreen QPA; CI installs the Qt libs).
 
 **Estimated effort:** ~1 day.
 
