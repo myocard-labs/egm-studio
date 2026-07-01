@@ -13,6 +13,7 @@ indices). Sized small (12 traces, T=128) so the ~O(T^2) sample-entropy pass in
 from __future__ import annotations
 
 import dataclasses
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -132,4 +133,23 @@ def tiny_unlabeled_predictions_bank(tiny_predictions_bank: ClassifierBank) -> Cl
     traces = [dataclasses.replace(t, label_truth=None) for t in tiny_predictions_bank.traces]
     return dataclasses.replace(
         tiny_predictions_bank, traces=traces, id="upred_studio_fixture_2026-06-28"
+    )
+
+
+@pytest.fixture(autouse=True)
+def _isolated_qsettings(tmp_path: Path) -> None:
+    """Redirect Qt ``QSettings`` to a per-test temp dir.
+
+    The GUI theme preference (tests/gui) persists via ``QSettings``; without this
+    every such test would read / write the developer's real ~/.config store.
+    Autouse so no GUI test can forget it, and a no-op for the non-GUI tests that
+    never touch ``QSettings``. ``QtCore`` is imported lazily so the pure-data tests
+    don't pull in Qt just to collect.
+    """
+    from PySide6 import QtCore
+
+    QtCore.QSettings.setPath(
+        QtCore.QSettings.Format.IniFormat,
+        QtCore.QSettings.Scope.UserScope,
+        str(tmp_path),
     )
