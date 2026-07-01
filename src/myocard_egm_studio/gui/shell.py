@@ -9,12 +9,15 @@ header carries the three-mode segmented control. The theme (ADR-012) persists vi
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from myocard_egm_studio.gui.preferences import load_theme, save_theme
-from myocard_egm_studio.gui.theme import DEFAULT_THEME, THEME_NAMES, apply_theme
+from myocard_egm_studio.gui.sources import load_bank
+from myocard_egm_studio.gui.theme import DEFAULT_THEME, THEME_NAMES, apply_theme, plot_palette
+from myocard_egm_studio.gui.widgets import BankTrace, TraceContainer, TraceData, TraceSelector
 
 _WINDOW_TITLE = "egm-studio"
 _MIN_WIDTH = 1100
@@ -29,6 +32,8 @@ _UNCONSTRAINED_W = 16777215  # Qt's QWIDGETSIZE_MAX — undoes a fixed width
 _COL_LEFT, _COL_MAIN, _COL_RIGHT = 0, 1, 2
 
 _MODES = ("Signal exploration", "ML diagnostics", "Paper figures")
+_MAX_TRACES = 8  # cap on traces stacked at once (full selection is Block 7)
+_DEFAULT_SHOWN = 3  # traces auto-selected when a bank is first opened
 
 _Side = Literal["left", "right"]
 # Chevrons: the panel's collapse button points at the edge it hides toward; the
@@ -58,6 +63,30 @@ class _Placeholder(QtWidgets.QFrame):
             caption.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             caption.setWordWrap(True)
             layout.addWidget(caption)
+
+
+class _WorkArea(QtWidgets.QWidget):
+    """The main column's swappable content host — placeholder until a bank is opened."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._layout = QtWidgets.QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._content: QtWidgets.QWidget = _Placeholder(
+            "Work area", "Open a bank (File ▸ Open bank…) to view its traces"
+        )
+        self._layout.addWidget(self._content)
+
+    def set_content(self, widget: QtWidgets.QWidget) -> None:
+        """Replace the current content widget, deleting the old one."""
+        self._layout.removeWidget(self._content)
+        self._content.deleteLater()
+        self._content = widget
+        self._layout.addWidget(widget)
+
+    @property
+    def content(self) -> QtWidgets.QWidget:
+        return self._content
 
 
 class CollapsibleSidebar(QtWidgets.QWidget):
@@ -106,6 +135,8 @@ class CollapsibleSidebar(QtWidgets.QWidget):
         body.setWordWrap(True)
         body.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
         v.addWidget(body, 1)
+        self._panel_layout = v
+        self._body: QtWidgets.QWidget = body
         return panel
 
     def _build_strip(self, title: str, side: _Side) -> QtWidgets.QWidget:
@@ -146,12 +177,20 @@ class CollapsibleSidebar(QtWidgets.QWidget):
         self.setMaximumWidth(_UNCONSTRAINED_W)
         self._collapsed = False
 
+    def set_body(self, widget: QtWidgets.QWidget) -> None:
+        """Replace the sidebar panel's body (the placeholder subtitle) with ``widget``."""
+        self._panel_layout.removeWidget(self._body)
+        self._body.deleteLater()
+        self._body = widget
+        self._panel_layout.addWidget(widget, 1)
+
 
 class MainWindow(QtWidgets.QMainWindow):
     """Top-level shell: menu bar + header (mode switch) + collapsible column work area."""
 
     def __init__(self) -> None:
         super().__init__()
+        self._bank_name = ""
         self.setWindowTitle(_WINDOW_TITLE)
         self.setMinimumSize(_MIN_WIDTH, _MIN_HEIGHT)
         self._build_menu_bar()
@@ -164,7 +203,9 @@ class MainWindow(QtWidgets.QMainWindow):
         menubar = self.menuBar()
 
         file_menu = menubar.addMenu("&File")
-        file_menu.addAction("&Open bank…")
+        open_action = file_menu.addAction("&Open bank…")
+        open_action.setObjectName("openBank")
+        open_action.triggered.connect(self._open_bank)
         file_menu.addSeparator()
         file_menu.addAction("&Quit").triggered.connect(self.close)
 
@@ -195,6 +236,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """View > Theme: an exclusive, checkable group; the saved theme is ticked."""
         theme_menu = view_menu.addMenu("&Theme")
         current = load_theme(DEFAULT_THEME)
+        self._current_theme = current
         self._theme_group = QtGui.QActionGroup(self)
         self._theme_group.setExclusive(True)
         for name in THEME_NAMES:
@@ -213,6 +255,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if isinstance(app, QtWidgets.QApplication):
             apply_theme(app, name)
         save_theme(name)
+        self._current_theme = name
+        content = self._work_area.content
+        if isinstance(content, TraceContainer):
+            content.restyle(plot_palette(name))
 
     # -- body -----------------------------------------------------------------
 
@@ -261,13 +307,16 @@ class MainWindow(QtWidgets.QMainWindow):
         splitter.setChildrenCollapsible(False)
 
         self._left_sidebar = CollapsibleSidebar(
-            title="Filters", subtitle="Channel / feature query (Block 6+)", side="left"
+            title="Filters", subtitle="Open a bank to list its traces", side="left"
         )
         self._left_sidebar.setObjectName("leftSidebar")
         self._left_sidebar.toggleRequested.connect(lambda: self._toggle_sidebar("left"))
+        self._trace_selector = TraceSelector()
+        self._trace_selector.selectionChanged.connect(self._on_trace_selection)
+        self._left_sidebar.set_body(self._trace_selector)
 
-        main = _Placeholder("Work area", "Trace + figure views land here (Blocks 5+)")
-        main.setMinimumWidth(_MAIN_MIN_W)
+        self._work_area = _WorkArea()
+        self._work_area.setMinimumWidth(_MAIN_MIN_W)
 
         self._right_sidebar = CollapsibleSidebar(
             title="Phase tree", subtitle="Saved observations & artifacts (Block 6+)", side="right"
@@ -276,7 +325,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._right_sidebar.toggleRequested.connect(lambda: self._toggle_sidebar("right"))
 
         splitter.addWidget(self._left_sidebar)
-        splitter.addWidget(main)
+        splitter.addWidget(self._work_area)
         splitter.addWidget(self._right_sidebar)
         splitter.setStretchFactor(_COL_LEFT, 0)
         splitter.setStretchFactor(_COL_MAIN, 1)
@@ -310,3 +359,46 @@ class MainWindow(QtWidgets.QMainWindow):
         sizes[slot] = target
         sizes[_COL_MAIN] = max(_MAIN_MIN_W, sizes[_COL_MAIN] - delta)
         self._splitter.setSizes(sizes)
+
+    # -- open bank (direct load; File > Open bank) -----------------------------
+
+    def _open_bank(self) -> None:
+        """File > Open bank…: pick an HDF5 bank and show its first traces."""
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Open bank", "", "EGM banks (*.h5 *.hdf5);;All files (*)"
+        )
+        if path:
+            self._load_bank_into_view(path)
+
+    def _load_bank_into_view(self, path: str) -> None:
+        """Load a bank, list its traces in the selector, and show the first few (testable)."""
+        try:
+            loaded = load_bank(path)
+        except Exception as exc:  # surface any read / validation error to the status bar
+            self.statusBar().showMessage(f"Could not open bank: {exc}")
+            return
+        if not loaded.traces:
+            self.statusBar().showMessage("That bank has no traces to display.")
+            return
+        self._bank_name = Path(path).name
+        self._trace_selector.set_bank(loaded)
+        self.statusBar().showMessage(
+            f"Loaded {self._bank_name} — {len(loaded.traces)} traces; filter / select to view"
+        )
+        self._trace_selector.select_first(min(_DEFAULT_SHOWN, len(loaded.traces)))
+
+    def _show_traces(self, traces: list[TraceData], *, source: str) -> None:
+        """Put a TraceContainer for ``traces`` in the work area + note it in the status bar."""
+        self._work_area.set_content(
+            TraceContainer(traces, palette=plot_palette(self._current_theme))
+        )
+        self.statusBar().showMessage(f"Loaded {source} — showing {len(traces)} trace(s)")
+
+    def _on_trace_selection(self, rows: list[BankTrace]) -> None:
+        """Show the selected traces (capped at _MAX_TRACES) in the work area."""
+        if not rows:
+            return
+        shown = rows[:_MAX_TRACES]
+        self._show_traces(
+            [bt.data for bt in shown], source=f"{self._bank_name} · {len(shown)} selected"
+        )

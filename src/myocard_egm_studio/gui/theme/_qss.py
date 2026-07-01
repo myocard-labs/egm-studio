@@ -103,6 +103,20 @@ QMenu::item:selected {
     background-color: $accent;
     color: $window_bg;
 }
+QTableView {
+    background-color: $surface;
+    color: $text;
+    gridline-color: $border;
+    border: 1px solid $border;
+    selection-background-color: $accent;
+    selection-color: $window_bg;
+}
+QHeaderView::section {
+    background-color: $header_bg;
+    color: $text_muted;
+    border: none;
+    padding: 3px 6px;
+}
 QSplitter::handle {
     background-color: $border;
 }
