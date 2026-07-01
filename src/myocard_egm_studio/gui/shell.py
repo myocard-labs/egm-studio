@@ -17,7 +17,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from myocard_egm_studio.gui.preferences import load_theme, save_theme
 from myocard_egm_studio.gui.sources import load_bank
 from myocard_egm_studio.gui.theme import DEFAULT_THEME, THEME_NAMES, apply_theme, plot_palette
-from myocard_egm_studio.gui.widgets import BankTrace, TraceContainer, TraceData, TraceSelector
+from myocard_egm_studio.gui.widgets import BankTrace, TraceData, TraceSelector, TraceView
 
 _WINDOW_TITLE = "egm-studio"
 _MIN_WIDTH = 1100
@@ -257,7 +257,7 @@ class MainWindow(QtWidgets.QMainWindow):
         save_theme(name)
         self._current_theme = name
         content = self._work_area.content
-        if isinstance(content, TraceContainer):
+        if isinstance(content, TraceView):
             content.restyle(plot_palette(name))
 
     # -- body -----------------------------------------------------------------
@@ -389,9 +389,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _show_traces(self, traces: list[TraceData], *, source: str) -> None:
         """Put a TraceContainer for ``traces`` in the work area + note it in the status bar."""
-        self._work_area.set_content(
-            TraceContainer(traces, palette=plot_palette(self._current_theme))
-        )
+        self._work_area.set_content(TraceView(traces, palette=plot_palette(self._current_theme)))
         self.statusBar().showMessage(f"Loaded {source} — showing {len(traces)} trace(s)")
 
     def _on_trace_selection(self, rows: list[BankTrace]) -> None:

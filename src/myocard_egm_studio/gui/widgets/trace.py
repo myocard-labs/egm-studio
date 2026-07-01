@@ -120,3 +120,19 @@ class TraceContainer(pg.GraphicsLayoutWidget):  # type: ignore[misc]
     @property
     def traces(self) -> list[TraceWidget]:
         return list(self._traces)
+
+    def x_data_bounds(self) -> tuple[float, float]:
+        """Full time extent (ms) across all traces: (0, latest last-sample time)."""
+        if not self._traces:
+            return (0.0, 1.0)
+        highs = [(w.data.signal.size - 1) / w.data.fs_hz * 1000.0 for w in self._traces]
+        return (0.0, max(highs))
+
+    def set_x_range(self, lo: float, hi: float) -> None:
+        """Set the shared visible X range (propagates to every tile via the X-link)."""
+        if self._traces:
+            self._traces[0].setXRange(lo, hi, padding=0)
+
+    def shared_viewbox(self) -> pg.ViewBox | None:
+        """The ViewBox the tiles' X-axes are linked to, or None if empty."""
+        return self._traces[0].getViewBox() if self._traces else None
