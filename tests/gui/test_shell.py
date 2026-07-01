@@ -8,10 +8,16 @@ headless under the offscreen QPA platform (CI uses xvfb).
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import numpy as np
+from myocard_egm_data.banks import ClassifierBank, write_classifier_bank
 from PySide6 import QtGui, QtWidgets
 from pytestqt.qtbot import QtBot
 
 from myocard_egm_studio.gui.shell import CollapsibleSidebar, MainWindow
+from myocard_egm_studio.gui.theme import plot_palette
+from myocard_egm_studio.gui.widgets import TraceContainer, TraceData
 
 
 def test_shell_builds_with_three_columns(qtbot: QtBot) -> None:
@@ -77,3 +83,41 @@ def test_mode_control_is_exclusive(qtbot: QtBot) -> None:
     buttons[2].click()
     assert buttons[2].isChecked()
     assert not buttons[0].isChecked()
+
+
+def test_open_bank_shows_trace_container(qtbot: QtBot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    t = np.arange(200, dtype=np.float64) / 1000.0
+    traces = [TraceData(np.sin(2.0 * np.pi * 5.0 * t), 1000.0, f"t{i}") for i in range(3)]
+    window._show_traces(traces, source="demo.h5")
+    assert window.findChild(TraceContainer) is not None
+
+
+def test_theme_change_restyles_open_traces(qtbot: QtBot, qapp: QtWidgets.QApplication) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    t = np.arange(100, dtype=np.float64) / 1000.0
+    window._show_traces([TraceData(np.sin(t), 1000.0, "x")], source="d.h5")
+    light = window.findChild(QtGui.QAction, "themeAction_light")
+    assert light is not None
+    light.trigger()
+
+    content = window._work_area.content
+    assert isinstance(content, TraceContainer)
+    assert content.palette == plot_palette("light")
+
+
+def test_open_bank_populates_selector_and_view(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    path = tmp_path / "bank.h5"
+    write_classifier_bank(tiny_classifier_bank, path)
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._load_bank_into_view(str(path))
+    assert len(window._trace_selector.selected_traces()) == min(3, len(tiny_classifier_bank.traces))
+    assert window.findChild(TraceContainer) is not None
