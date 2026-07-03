@@ -378,9 +378,10 @@ covers all of Flow A (not just the MVP exit above), built one reviewable slice a
 a time. Decisions locked this pass:
 
 - **Filter UI:** a new `gui/widgets/filter.py` over the joined view-model
-  DataFrame (features + metadata); `trace_selector.py` evolves into the sortable
-  **result list** it feeds — separating "compose the query" from "scan / pick
-  results" (the cleanest path into Block 8's ML-outcome columns).
+  DataFrame (features + metadata) feeding a new sortable **result list** widget
+  (`result_list.py`); the metadata `trace_selector` is retired (B7.5-cleanup) —
+  separating "compose the query" from "scan / pick results" (the cleanest path
+  into Block 8's ML-outcome columns).
 - **Multi-bank:** single-bank MVP first; multi-bank is its own sub-block, not the
   core.
 - **Data loading:** resolves the "Open" question above — **yes, consolidate.**
@@ -400,11 +401,11 @@ Sub-blocks:
   `data_source` / bank column (single-bank now; the multi-bank dimension lands in
   B7.8).
 - **B7.3 — `gui/widgets/filter.py`.** Composable filter: numeric thresholds +
-  categorical equality + boolean composition, offering columns per the
-  `field_config` curated allowlist; emits the matching row set.
-- **B7.4 — result list.** Evolve `trace_selector.py` into a sortable table over
-  the view-model (any feature / metadata column as the sort key), fed by the
-  filter; selection drives the detail view.
+  categorical equality + boolean composition over the frame's columns (numeric
+  vs categorical by dtype, plumbing hidden); emits the matching row set.
+- **B7.4 — `gui/widgets/result_list.py`.** A new sortable table over the
+  view-model (any feature / metadata column as the sort key, numeric-aware), fed
+  by the filter; selection drives the detail view.
 - **B7.5 — `gui/views/signal_exploration.py`.** Assemble load → filter → list →
   click → detail; wire the Signal-exploration mode button, the phase-tree
   **explore_signal** action, and File ▸ Open bank into it.
