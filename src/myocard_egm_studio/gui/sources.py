@@ -13,10 +13,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from myocard_egm_data.banks import ClassifierBank, load_classifier_bank
 
 from myocard_egm_studio.gui.field_config import CLASS_FIELD
 from myocard_egm_studio.gui.widgets import BankTrace, LoadedBank, TraceData
+from myocard_egm_studio.view_model import build_view_model
 
 # Electrode-ish metadata keys (preference order) + how they read in a plot title.
 _ELECTRODE_PREFIX = {"source_channel": "ch", "pair_index": "pair", "electrode_pair_id": "pair"}
@@ -25,6 +27,21 @@ _ELECTRODE_PREFIX = {"source_channel": "ch", "pair_index": "pair", "electrode_pa
 def load_bank(path: str | Path) -> LoadedBank:
     """Load a ClassifierBank from ``path`` and adapt it for the trace selector."""
     return loaded_bank(load_classifier_bank(path))
+
+
+def load_view_model(path: str | Path, *, source: str | None = None) -> pd.DataFrame:
+    """Load a ClassifierBank and build its per-trace view-model DataFrame.
+
+    The GUI's entry to the feature + metadata table the Block 7 filter / result
+    list bind to: one row per trace; columns are ``source`` + identity + the
+    producer's metadata keys + the 11 egm-features (see ``view_model.builder``).
+    ``source`` labels the bank as a constant column — defaults to the bank's
+    stable id, else the file stem — uniform for a single bank and the axis
+    multi-bank loading (B7.8) will vary and filter on.
+    """
+    bank = load_classifier_bank(path)
+    label = source or bank.id or Path(path).stem
+    return build_view_model(bank, source=label)
 
 
 def loaded_bank(bank: ClassifierBank) -> LoadedBank:
