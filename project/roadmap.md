@@ -373,6 +373,63 @@ filter UI + TraceContainer into the signal-exploration view per
 
 **Estimated effort:** ~1-1.5 days.
 
+**Scoping pass (2026-07-03) — full-walkthrough sub-block sequence.** Block 7
+covers all of Flow A (not just the MVP exit above), built one reviewable slice at
+a time. Decisions locked this pass:
+
+- **Filter UI:** a new `gui/widgets/filter.py` over the joined view-model
+  DataFrame (features + metadata); `trace_selector.py` evolves into the sortable
+  **result list** it feeds — separating "compose the query" from "scan / pick
+  results" (the cleanest path into Block 8's ML-outcome columns).
+- **Multi-bank:** single-bank MVP first; multi-bank is its own sub-block, not the
+  core.
+- **Data loading:** resolves the "Open" question above — **yes, consolidate.**
+  `figures/loaders.py`'s data-loading folds into a top-level `loaders/` package
+  (`figures/` stays pure rendering), and phase-manifest bank-id → path resolution
+  is wired now that Block 6's reader exists.
+- **Save (Flow A step 9):** deferred to Block 10 (unified Save schema, ADR-017).
+
+Sub-blocks:
+
+- **B7.1 — `loaders/` package.** Move the `figures/loaders` adapters into a
+  top-level `loaders/`; add `loaders/bank.py` (egm-data reader wrappers) +
+  phase-manifest `{bank_id: path}` resolution, retiring the `--bank` / `--banks`
+  CLI map for manifest-driven rendering.
+- **B7.2 — view-model into the GUI.** Back the filter / list with
+  `build_view_model` (identity + metadata + the 11 features), plus a
+  `data_source` / bank column (single-bank now; the multi-bank dimension lands in
+  B7.8).
+- **B7.3 — `gui/widgets/filter.py`.** Composable filter: numeric thresholds +
+  categorical equality + boolean composition, offering columns per the
+  `field_config` curated allowlist; emits the matching row set.
+- **B7.4 — result list.** Evolve `trace_selector.py` into a sortable table over
+  the view-model (any feature / metadata column as the sort key), fed by the
+  filter; selection drives the detail view.
+- **B7.5 — `gui/views/signal_exploration.py`.** Assemble load → filter → list →
+  click → detail; wire the Signal-exploration mode button, the phase-tree
+  **explore_signal** action, and File ▸ Open bank into it.
+- **B7.6 — per-trace detail.** Waveform (Block 5 `TraceView`) + an 11-feature
+  table + a metadata panel (sim_id, electrode_pair_id, fibrosis density, label);
+  up-to-3-pane compare reuses `TraceContainer`. **← the MVP exit above.**
+- **B7.7 — bank-summary landing.** Default post-load view: trace count, class
+  balance, provenance + the 11-panel egm-features histogram grid, with **ADR-018
+  responsive sizing** (per-panel min/max clamps + a preferences-persisted global
+  scale factor + grid-wrap). Wires the phase-tree **view_feature_distributions**
+  action.
+- **B7.8 — multi-bank loading.** Load N banks at once; side-by-side / overlaid
+  summaries; `data_source` becomes a real filter dimension (`data_source ==
+  synthetic`).
+- **B7.9 — feature scatter.** A 2-D `(feat_x, feat_y)` scatter over the current
+  filter result — pan / zoom, per-point colour by `data_source`.
+- **B7.10 — per-feature similarity + 3-pane compare.** "Find similar in other
+  bank" via `analysis.similarity.nearest_along_feature` + a feature-axis dropdown
+  → 3-pane compare-with-feature-deltas (shares the pair-comparison machinery with
+  Block 8; ADR-020 per-feature only).
+
+New ADR to formalize here: **ADR-018** (responsive thumbnail-grid sizing, B7.7).
+**Revised estimate:** ~3-4 days for the full walkthrough (was ~1-1.5 for the
+MVP-only exit).
+
 ### Block 8 — Flow B ML diagnostics
 
 Extends the view-model with predictions-bank outcomes; adds the
