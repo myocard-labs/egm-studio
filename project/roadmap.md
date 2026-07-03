@@ -607,6 +607,7 @@ condition for when it becomes priority work.
 | Per-trace stable IDs in banks | Integer-index fragility causes a real reproducibility break | egm-contracts revision + cascade |
 | HF Datasets for active bank sharing | Multi-collaborator GitHub-Releases workflow gets painful | Producer-repo changes; egm-studio unchanged |
 | Web frontend | Daniel decides desktop-only is limiting | Large — `gui/` rewrite; reuses `figures/` + `loaders/` + `analysis/` + `charts/matplotlib/` |
+| Rich "Show metadata" viewer (collapsible, syntax-highlit tree) | **Low priority.** The Block 6 metadata dialog is a plain read-only text pane (`gui/shell._show_metadata`); upgrade when metadata inspection becomes a frequent workflow. Imitate a browser's JSON viewer: collapsible/expandable nodes + a per-type colour scheme (keys / strings / numbers / bools / null) | Medium — a `QTreeView` + `QAbstractItemModel` JSON tree behind the existing content. Needs `view_model/artifact_metadata` to also expose a **structured** form (nested dict/tree), not just the flat string it returns today: the run/figure/observation records already have `model_dump()` dicts that map straight to a tree; the bank + noise summaries would need restructuring from hand-built strings into sections. Keep the text form as a copy-to-clipboard fallback |
 
 ## Inter-repo coordination
 
