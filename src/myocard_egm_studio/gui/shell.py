@@ -13,16 +13,24 @@ from collections import Counter
 from pathlib import Path
 from typing import Literal
 
+import pandas as pd
 from myocard_egm_contracts import role_of
 from myocard_egm_data.phases import PhaseManifest, load_phase_dir
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from myocard_egm_studio.gui.preferences import load_theme, save_theme
-from myocard_egm_studio.gui.sources import load_bank
+from myocard_egm_studio.gui.sources import load_exploration
 from myocard_egm_studio.gui.theme import DEFAULT_THEME, THEME_NAMES, apply_theme, plot_palette
-from myocard_egm_studio.gui.widgets import BankTrace, PhaseTree, TraceData, TraceSelector, TraceView
-from myocard_egm_studio.view_model import entries_by_id, phase_artifact_groups
+from myocard_egm_studio.gui.views import SignalExplorationView
+from myocard_egm_studio.gui.widgets import FilterPanel, PhaseTree
+from myocard_egm_studio.view_model import (
+    apply_filter,
+    entries_by_id,
+    filter_columns,
+    phase_artifact_groups,
+)
 from myocard_egm_studio.view_model.artifact_metadata import artifact_metadata_text
+from myocard_egm_studio.view_model.filtering import FilterSpec
 from myocard_egm_studio.view_model.phase_actions import reveal_target
 from myocard_egm_studio.view_model.phase_status import ArtifactStatus, phase_statuses
 
@@ -39,8 +47,6 @@ _UNCONSTRAINED_W = 16777215  # Qt's QWIDGETSIZE_MAX — undoes a fixed width
 _COL_LEFT, _COL_MAIN, _COL_RIGHT = 0, 1, 2
 
 _MODES = ("Signal exploration", "ML diagnostics", "Paper figures")
-_MAX_TRACES = 8  # cap on traces stacked at once (full selection is Block 7)
-_DEFAULT_SHOWN = 3  # traces auto-selected when a bank is first opened
 
 _Side = Literal["left", "right"]
 # Chevrons: the panel's collapse button points at the edge it hides toward; the
@@ -70,30 +76,6 @@ class _Placeholder(QtWidgets.QFrame):
             caption.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             caption.setWordWrap(True)
             layout.addWidget(caption)
-
-
-class _WorkArea(QtWidgets.QWidget):
-    """The main column's swappable content host — placeholder until a bank is opened."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._layout = QtWidgets.QVBoxLayout(self)
-        self._layout.setContentsMargins(0, 0, 0, 0)
-        self._content: QtWidgets.QWidget = _Placeholder(
-            "Work area", "Open a bank (File ▸ Open bank…) to view its traces"
-        )
-        self._layout.addWidget(self._content)
-
-    def set_content(self, widget: QtWidgets.QWidget) -> None:
-        """Replace the current content widget, deleting the old one."""
-        self._layout.removeWidget(self._content)
-        self._content.deleteLater()
-        self._content = widget
-        self._layout.addWidget(widget)
-
-    @property
-    def content(self) -> QtWidgets.QWidget:
-        return self._content
 
 
 class CollapsibleSidebar(QtWidgets.QWidget):
@@ -202,6 +184,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._phase_dir = Path()
         self._last_metadata_text = ""  # last "Show metadata" text (for tests)
         self._metadata_dialog: QtWidgets.QDialog | None = None
+        self._explore_df: pd.DataFrame | None = None  # the loaded bank's view-model table
         self.setWindowTitle(_WINDOW_TITLE)
         self.setMinimumSize(_MIN_WIDTH, _MIN_HEIGHT)
         self._build_menu_bar()
@@ -273,9 +256,7 @@ class MainWindow(QtWidgets.QMainWindow):
             apply_theme(app, name)
         save_theme(name)
         self._current_theme = name
-        content = self._work_area.content
-        if isinstance(content, TraceView):
-            content.restyle(plot_palette(name))
+        self._explore_view.restyle(plot_palette(name))
 
     # -- body -----------------------------------------------------------------
 
@@ -314,7 +295,8 @@ class MainWindow(QtWidgets.QMainWindow):
         return header
 
     def _on_mode_changed(self, index: int) -> None:
-        """Mode switch is a scaffold for now — reflect the choice in the status bar."""
+        """Switch the main work area to the selected mode's view."""
+        self._modes_stack.setCurrentIndex(index)
         self.statusBar().showMessage(f"Mode: {_MODES[index]}")
 
     def _build_columns(self) -> QtWidgets.QSplitter:
@@ -324,16 +306,20 @@ class MainWindow(QtWidgets.QMainWindow):
         splitter.setChildrenCollapsible(False)
 
         self._left_sidebar = CollapsibleSidebar(
-            title="Filters", subtitle="Open a bank to list its traces", side="left"
+            title="Filters", subtitle="Open a bank to filter its traces", side="left"
         )
         self._left_sidebar.setObjectName("leftSidebar")
         self._left_sidebar.toggleRequested.connect(lambda: self._toggle_sidebar("left"))
-        self._trace_selector = TraceSelector()
-        self._trace_selector.selectionChanged.connect(self._on_trace_selection)
-        self._left_sidebar.set_body(self._trace_selector)
+        self._filter_panel = FilterPanel()
+        self._filter_panel.filterChanged.connect(self._on_filter_changed)
+        self._left_sidebar.set_body(self._filter_panel)
 
-        self._work_area = _WorkArea()
-        self._work_area.setMinimumWidth(_MAIN_MIN_W)
+        self._explore_view = SignalExplorationView(plot_palette(self._current_theme))
+        self._modes_stack = QtWidgets.QStackedWidget()
+        self._modes_stack.setMinimumWidth(_MAIN_MIN_W)
+        self._modes_stack.addWidget(self._explore_view)  # 0 — signal exploration
+        self._modes_stack.addWidget(_Placeholder("ML diagnostics", "Flow B — lands in Block 8"))
+        self._modes_stack.addWidget(_Placeholder("Paper figures", "Flow C — lands in Block 9"))
 
         self._right_sidebar = CollapsibleSidebar(
             title="Phase tree",
@@ -347,7 +333,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._right_sidebar.set_body(self._phase_tree)
 
         splitter.addWidget(self._left_sidebar)
-        splitter.addWidget(self._work_area)
+        splitter.addWidget(self._modes_stack)
         splitter.addWidget(self._right_sidebar)
         splitter.setStretchFactor(_COL_LEFT, 0)
         splitter.setStretchFactor(_COL_MAIN, 1)
@@ -385,29 +371,51 @@ class MainWindow(QtWidgets.QMainWindow):
     # -- open bank (direct load; File > Open bank) -----------------------------
 
     def _open_bank(self) -> None:
-        """File > Open bank…: pick an HDF5 bank and show its first traces."""
+        """File > Open bank…: pick an HDF5 bank and open it in Signal exploration."""
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, "Open bank", "", "EGM banks (*.h5 *.hdf5);;All files (*)"
         )
         if path:
-            self._load_bank_into_view(path)
+            self._open_bank_explore(path)
 
-    def _load_bank_into_view(self, path: str) -> None:
-        """Load a bank, list its traces in the selector, and show the first few (testable)."""
+    def _open_bank_explore(self, path: str) -> None:
+        """Load a bank as the view-model table + traces; feed the filter + Flow A view."""
         try:
-            loaded = load_bank(path)
+            frame, traces = load_exploration(path)
         except Exception as exc:  # surface any read / validation error to the status bar
             self.statusBar().showMessage(f"Could not open bank: {exc}")
             return
-        if not loaded.traces:
+        if frame.empty:
             self.statusBar().showMessage("That bank has no traces to display.")
             return
         self._bank_name = Path(path).name
-        self._trace_selector.set_bank(loaded)
+        self._explore_df = frame
+        self._explore_view.set_traces(traces)
+        # set_columns emits filterChanged -> _on_filter_changed, which populates the list.
+        self._filter_panel.set_columns(filter_columns(frame))
+        self._show_mode(0)
         self.statusBar().showMessage(
-            f"Loaded {self._bank_name} — {len(loaded.traces)} traces; filter / select to view"
+            f"Loaded {self._bank_name} — {len(frame.index)} trace(s); filter or sort, then select"
         )
-        self._trace_selector.select_first(min(_DEFAULT_SHOWN, len(loaded.traces)))
+
+    def _on_filter_changed(self, spec: FilterSpec) -> None:
+        """Re-apply the filter to the loaded frame and refresh the result list."""
+        if self._explore_df is None:
+            return
+        filtered = self._explore_df[apply_filter(self._explore_df, spec)]
+        self._explore_view.set_results(filtered)
+        total, kept = len(self._explore_df.index), len(filtered.index)
+        if kept == total:
+            self.statusBar().showMessage(f"{total} trace(s)")
+        else:
+            self.statusBar().showMessage(f"{kept} of {total} trace(s) match the filter")
+
+    def _show_mode(self, index: int) -> None:
+        """Activate a mode: switch the stack page and tick its header button."""
+        self._modes_stack.setCurrentIndex(index)
+        button = self._mode_group.button(index)
+        if button is not None:
+            button.setChecked(True)
 
     # -- open phase (File > Open phase) ---------------------------------------
 
@@ -474,8 +482,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_metadata(entry.id, text)
         elif action_id == "reveal_file":
             self._reveal(reveal_target(self._phase_dir, entry.path))
-        elif action_id == "view_traces":
-            self._load_bank_into_view(str(self._phase_dir / entry.path))
+        elif action_id in ("view_traces", "explore_signal"):
+            self._open_bank_explore(str(self._phase_dir / entry.path))
 
     def _copy_to_clipboard(self, text: str) -> None:
         app = QtWidgets.QApplication.instance()
@@ -508,17 +516,3 @@ class MainWindow(QtWidgets.QMainWindow):
         """Open ``target`` (the artifact's folder) in the OS file browser."""
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(target)))
         self.statusBar().showMessage(f"Revealing {target}")
-
-    def _show_traces(self, traces: list[TraceData], *, source: str) -> None:
-        """Put a TraceContainer for ``traces`` in the work area + note it in the status bar."""
-        self._work_area.set_content(TraceView(traces, palette=plot_palette(self._current_theme)))
-        self.statusBar().showMessage(f"Loaded {source} — showing {len(traces)} trace(s)")
-
-    def _on_trace_selection(self, rows: list[BankTrace]) -> None:
-        """Show the selected traces (capped at _MAX_TRACES) in the work area."""
-        if not rows:
-            return
-        shown = rows[:_MAX_TRACES]
-        self._show_traces(
-            [bt.data for bt in shown], source=f"{self._bank_name} · {len(shown)} selected"
-        )

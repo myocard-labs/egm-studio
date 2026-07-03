@@ -44,6 +44,22 @@ def load_view_model(path: str | Path, *, source: str | None = None) -> pd.DataFr
     return build_view_model(bank, source=label)
 
 
+def load_exploration(
+    path: str | Path, *, source: str | None = None
+) -> tuple[pd.DataFrame, list[TraceData]]:
+    """Load a bank once as both the view-model table and its display traces.
+
+    The Flow A entry (B7.5): reads the ClassifierBank a single time and returns the
+    per-trace view-model DataFrame (the filter / result list bind to it) plus the
+    per-trace display data indexed by ``trace_idx`` (the detail view resolves a
+    selected row's ``trace_idx`` into its waveform). ``source`` defaults as in
+    :func:`load_view_model`.
+    """
+    bank = load_classifier_bank(path)
+    label = source or bank.id or Path(path).stem
+    return build_view_model(bank, source=label), traces_from_bank(bank)
+
+
 def loaded_bank(bank: ClassifierBank) -> LoadedBank:
     """Adapt a ClassifierBank to a LoadedBank (bank type + per-trace fields + data)."""
     bank_type = bank.banks[0].bank_type if bank.banks else "unknown"
