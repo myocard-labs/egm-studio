@@ -81,7 +81,8 @@ framework-agnostic and importable — the same `render` the GUI and the
 ```python
 from myocard_egm_data.banks import load_classifier_bank
 from myocard_egm_data.phases import load_figure_spec
-from myocard_egm_studio.figures import prediction_group_from_bank, render
+from myocard_egm_studio.figures import render
+from myocard_egm_studio.loaders import prediction_group_from_bank
 
 # A figure_spec names a recipe + the bank ids its groups draw from. Recipes are
 # pure plotting, so render() takes the already-prepared data; build it from a
@@ -127,7 +128,8 @@ ks = distributions.ks_distance(synthetic_feature_values, iafdb_feature_values)
 | `myocard_egm_studio.view_model` | Prepared, Qt-free view data. `build_view_model` — the unified per-trace table joining identity + bank metadata + egm-features columns — plus the Phase-tree view models: `phase_groups` (manifest → the ten role groups), `phase_status` (per-artifact existence + validation), `phase_actions` (right-click policy), `artifact_metadata` (file-level metadata). |
 | `myocard_egm_studio.charts.matplotlib` | The publication (static) rendering backend + the recipe registry the dispatch fills. |
 | `myocard_egm_studio.charts.pyqtgraph` | The interactive (GUI-embedded) rendering backend — pyqtgraph chart widgets that reuse `analysis/` and the shared `charts.inputs` / `charts.palette`, so a chart matches its matplotlib twin. |
-| `myocard_egm_studio.figures` | `render(spec, *, data) -> Path` — the thin headless dispatch over `charts/matplotlib` — plus `loaders` (bank → recipe-input adapters; the data-loading step). |
+| `myocard_egm_studio.figures` | `render(spec, *, data) -> Path` — the thin headless dispatch over `charts/matplotlib`. Pure rendering; the data-loading step lives in `loaders/`. |
+| `myocard_egm_studio.loaders` | Data-loading (ids/paths → in-memory inputs): `figure_inputs` (spec + `{id: path}` → recipe inputs + the permanent bank → recipe-input adapters) and `manifest` (`bank_paths_from_phase` — a phase's `manifest.json` → `{artifact_id: path}`). |
 | `myocard_egm_studio.gui` | The PySide6 desktop shell (Block 4): `app` (the `egm-studio` entry), `shell` (ADR-025 layout — collapsible sidebars + 3-mode switch), `theme` (dark / light / vibrant QSS), `preferences` (persisted theme via QSettings). `widgets/` holds the Block 5 trace-display primitive and the Block 6 right-rail Phase artifact tree; the mode views that assemble them land in Blocks 7+. |
 | `myocard_egm_studio.cli` | Console-script entry points: `render` (`egm-studio-render`). |
 
@@ -136,9 +138,10 @@ trace-display widgets (`gui/widgets/trace.py`) and the `charts/pyqtgraph/`
 backend; Block 6 added the read-only Phase artifact tree
 (`gui/widgets/phase_tree.py`, fed by the `view_model` phase modules); the mode
 views that assemble them land in Blocks 7–10.
-`figures/loaders.py` is seeded now (fed `{bank_id: path}` by `--bank` /
-`--banks`); Block 7 swaps the hand-written map for phase-manifest resolution —
-see [`project/roadmap.md`](project/roadmap.md).
+The figure-data loaders now live in `loaders/`; `egm-studio-render --phase
+FOLDER` resolves a spec's bank ids through the phase manifest (the Block 6
+reader), with `--bank` / `--banks` as the ad-hoc override — see
+[`project/roadmap.md`](project/roadmap.md).
 
 ---
 

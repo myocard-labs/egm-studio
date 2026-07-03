@@ -116,8 +116,7 @@ myocard_egm_studio/
 │       ├── style.py      #     PgChartStyle (background / foreground)
 │       └── feature_distribution.py  # feature-distribution overlay (GUI twin)
 ├── figures/              # Thin headless layer over charts/matplotlib/.
-│   ├── render.py         #   render(spec, *, data, overwrite) -> Path
-│   └── loaders.py        #   bank-id -> recipe-input adapters + LOADERS registry
+│   └── render.py         #   render(spec, *, data, overwrite) -> Path (pure rendering)
 ├── gui/                  # Qt shell — imports PySide6 + pyqtgraph.
 │   ├── app.py            #   QApplication entry (`egm-studio` script)  [B4]
 │   ├── shell.py          #   Layout shell + CollapsibleSidebar    [ADR-025, B4]
@@ -137,7 +136,9 @@ myocard_egm_studio/
 ├── cli/
 │   └── render.py         #   `egm-studio-render` entry point
 │                         #   (`egm-studio` GUI script -> gui/app.py:main)
-├── loaders/              # Thin wrappers over egm-data.
+├── loaders/              # Data-loading: ids/paths -> in-memory inputs.   [B7]
+│   ├── figure_inputs.py  #   spec + {id: path} -> recipe inputs + LOADERS
+│   └── manifest.py       #   phase manifest -> {artifact_id: path} resolution
 ├── save/                 # Observation + manifest writers   [ADR-017, ADR-021]
 └── view_model/           # Prepared, Qt-free view data       [ADR-002]
     ├── builder.py        #   unified per-trace table (features + metadata)
