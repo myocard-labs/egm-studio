@@ -7,6 +7,7 @@ X-axis.
 
 from myocard_egm_studio.gui.widgets.filter import FilterPanel
 from myocard_egm_studio.gui.widgets.phase_tree import PhaseTree
+from myocard_egm_studio.gui.widgets.result_list import ResultList
 from myocard_egm_studio.gui.widgets.time_scale import TimeScaleWidget
 from myocard_egm_studio.gui.widgets.trace import TraceContainer, TraceData, TraceWidget
 from myocard_egm_studio.gui.widgets.trace_selector import BankTrace, LoadedBank, TraceSelector
@@ -17,6 +18,7 @@ __all__ = [
     "FilterPanel",
     "LoadedBank",
     "PhaseTree",
+    "ResultList",
     "TimeScaleWidget",
     "TraceContainer",
     "TraceData",
