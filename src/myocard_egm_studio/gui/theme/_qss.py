@@ -103,6 +103,14 @@ QMenu::item:selected {
     background-color: $accent;
     color: $window_bg;
 }
+QMenu::item:disabled {
+    color: $text_muted;
+}
+QMenu::separator {
+    height: 1px;
+    background-color: $border;
+    margin: 4px 6px;
+}
 QTableView {
     background-color: $surface;
     color: $text;

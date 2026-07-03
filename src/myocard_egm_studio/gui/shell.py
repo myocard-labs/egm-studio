@@ -13,6 +13,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Literal
 
+from myocard_egm_contracts import role_of
 from myocard_egm_data.phases import PhaseManifest, load_phase_dir
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -20,7 +21,9 @@ from myocard_egm_studio.gui.preferences import load_theme, save_theme
 from myocard_egm_studio.gui.sources import load_bank
 from myocard_egm_studio.gui.theme import DEFAULT_THEME, THEME_NAMES, apply_theme, plot_palette
 from myocard_egm_studio.gui.widgets import BankTrace, PhaseTree, TraceData, TraceSelector, TraceView
-from myocard_egm_studio.view_model import phase_artifact_groups
+from myocard_egm_studio.view_model import entries_by_id, phase_artifact_groups
+from myocard_egm_studio.view_model.artifact_metadata import artifact_metadata_text
+from myocard_egm_studio.view_model.phase_actions import reveal_target
 from myocard_egm_studio.view_model.phase_status import ArtifactStatus, phase_statuses
 
 _WINDOW_TITLE = "egm-studio"
@@ -197,6 +200,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._bank_name = ""
         self._phase_manifest: PhaseManifest | None = None
         self._phase_dir = Path()
+        self._last_metadata_text = ""  # last "Show metadata" text (for tests)
+        self._metadata_dialog: QtWidgets.QDialog | None = None
         self.setWindowTitle(_WINDOW_TITLE)
         self.setMinimumSize(_MIN_WIDTH, _MIN_HEIGHT)
         self._build_menu_bar()
@@ -338,6 +343,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._right_sidebar.setObjectName("rightSidebar")
         self._right_sidebar.toggleRequested.connect(lambda: self._toggle_sidebar("right"))
         self._phase_tree = PhaseTree()
+        self._phase_tree.actionRequested.connect(self._on_phase_action)
         self._right_sidebar.set_body(self._phase_tree)
 
         splitter.addWidget(self._left_sidebar)
@@ -447,6 +453,61 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage(
             f"Validated phase {self._phase_manifest.phase} — {', '.join(parts)}"
         )
+
+    # -- phase-tree right-click actions ---------------------------------------
+
+    def _on_phase_action(self, action_id: str, artifact_id: str) -> None:
+        """Execute a Phase-tree right-click action against one artifact."""
+        if self._phase_manifest is None:
+            return
+        entry = entries_by_id(self._phase_manifest).get(artifact_id)
+        if entry is None:
+            return
+        if action_id == "copy_id":
+            self._copy_to_clipboard(entry.id)
+        elif action_id == "show_metadata":
+            resolved = self._phase_dir / entry.path
+            try:
+                text = artifact_metadata_text(role_of(entry.id), resolved)
+            except Exception as exc:  # missing / malformed file -> friendly text, no crash
+                text = f"Could not read metadata for {entry.id}:\n{exc}"
+            self._show_metadata(entry.id, text)
+        elif action_id == "reveal_file":
+            self._reveal(reveal_target(self._phase_dir, entry.path))
+        elif action_id == "view_traces":
+            self._load_bank_into_view(str(self._phase_dir / entry.path))
+
+    def _copy_to_clipboard(self, text: str) -> None:
+        app = QtWidgets.QApplication.instance()
+        if isinstance(app, QtWidgets.QApplication):
+            app.clipboard().setText(text)
+        self.statusBar().showMessage(f"Copied id {text}")
+
+    def _show_metadata(self, artifact_id: str, text: str) -> None:
+        """Show an artifact's file metadata in a scrollable, non-modal dialog."""
+        self._last_metadata_text = text
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(f"{artifact_id} — metadata")
+        dialog.resize(560, 480)
+        layout = QtWidgets.QVBoxLayout(dialog)
+        view = QtWidgets.QPlainTextEdit(dialog)
+        view.setReadOnly(True)
+        view.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
+        view.setFont(QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont))
+        view.setPlainText(text)
+        layout.addWidget(view)
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Close, parent=dialog
+        )
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        self._metadata_dialog = dialog  # keep a reference so it isn't garbage-collected
+        dialog.show()  # non-modal: hand control straight back to the app
+
+    def _reveal(self, target: Path) -> None:
+        """Open ``target`` (the artifact's folder) in the OS file browser."""
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(target)))
+        self.statusBar().showMessage(f"Revealing {target}")
 
     def _show_traces(self, traces: list[TraceData], *, source: str) -> None:
         """Put a TraceContainer for ``traces`` in the work area + note it in the status bar."""

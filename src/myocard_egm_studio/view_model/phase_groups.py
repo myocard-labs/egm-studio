@@ -114,6 +114,11 @@ def _all_entries(manifest: PhaseManifest) -> Iterator[_Entry]:
         yield from section or ()
 
 
+def entries_by_id(manifest: PhaseManifest) -> dict[str, _Entry]:
+    """Every artifact id -> its manifest pointer entry (for action dispatch)."""
+    return {entry.id: entry for entry in _all_entries(manifest)}
+
+
 def phase_artifact_groups(manifest: PhaseManifest) -> list[ArtifactGroup]:
     """The ten Phase-tree display groups for ``manifest``, in pipeline order.
 

@@ -16,14 +16,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from myocard_egm_contracts import role_of
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from myocard_egm_studio.view_model import phase_actions
 from myocard_egm_studio.view_model.phase_groups import ArtifactGroup, ArtifactRow
 from myocard_egm_studio.view_model.phase_status import ArtifactStatus
 
 # Item-data role holding an item's ArtifactStatus — read by tests and, later, the
 # Block 10 curator context menu.
 STATUS_ROLE = QtCore.Qt.ItemDataRole.UserRole
+# Artifact id stashed on each artifact row so a right-click can recover it.
+ARTIFACT_ID_ROLE = QtCore.Qt.ItemDataRole.UserRole + 1
 
 _ICON_PX = 14  # status-dot canvas size
 
@@ -48,12 +52,17 @@ _ICON_CACHE: dict[ArtifactStatus, QtGui.QIcon] = {}
 class PhaseTree(QtWidgets.QTreeWidget):
     """Read-only tree of a phase's artifacts, grouped by role, with pointer details."""
 
+    # (action_id, artifact_id) from the right-click menu; the shell executes it.
+    actionRequested = QtCore.Signal(str, str)
+
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("phaseTree")
         self.setHeaderHidden(True)
         self.setColumnCount(1)
         self.setIconSize(QtCore.QSize(_ICON_PX, _ICON_PX))
+        self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._on_context_menu)
         self._items_by_id: dict[str, QtWidgets.QTreeWidgetItem] = {}
         self._groups: list[tuple[QtWidgets.QTreeWidgetItem, tuple[str, ...]]] = []
 
@@ -79,6 +88,41 @@ class PhaseTree(QtWidgets.QTreeWidget):
         for group_item, child_ids in self._groups:
             rollup = _group_status([statuses.get(cid) for cid in child_ids])
             _apply_status(group_item, rollup, colour_text=True)
+
+    # -- right-click actions --------------------------------------------------
+
+    def _on_context_menu(self, pos: QtCore.QPoint) -> None:
+        """Pop the per-artifact action menu; artifact rows only (not groups/details)."""
+        item = self.itemAt(pos)
+        artifact_id = item.data(0, ARTIFACT_ID_ROLE) if item is not None else None
+        if not artifact_id:
+            return
+        self._artifact_menu(str(artifact_id)).exec(self.viewport().mapToGlobal(pos))
+
+    def _artifact_menu(self, artifact_id: str) -> QtWidgets.QMenu:
+        """Build one artifact's context menu from its role's action policy."""
+        menu = QtWidgets.QMenu(self)
+        menu.setToolTipsVisible(True)
+        role = role_of(artifact_id)
+        specific = phase_actions.type_actions(role)
+        for action in specific:
+            self._add_action(menu, action, artifact_id)
+        if specific:
+            menu.addSeparator()
+        for action in phase_actions.info_actions(role):
+            self._add_action(menu, action, artifact_id)
+        return menu
+
+    def _add_action(
+        self, menu: QtWidgets.QMenu, action: phase_actions.ArtifactAction, artifact_id: str
+    ) -> None:
+        qaction = menu.addAction(action.label)
+        qaction.setEnabled(action.available)
+        if action.note:
+            qaction.setToolTip(action.note)
+        qaction.triggered.connect(
+            lambda _checked=False, aid=action.id: self.actionRequested.emit(aid, artifact_id)
+        )
 
 
 def _apply_status(
@@ -141,6 +185,7 @@ def _paint_dot(colour: QtGui.QColor, *, filled: bool) -> QtGui.QIcon:
 def _artifact_item(row: ArtifactRow) -> QtWidgets.QTreeWidgetItem:
     """One artifact node with its manifest pointer expanded into child detail rows."""
     item = QtWidgets.QTreeWidgetItem([row.id])
+    item.setData(0, ARTIFACT_ID_ROLE, row.id)
     item.addChild(QtWidgets.QTreeWidgetItem([f"path: {row.path}"]))
     item.addChild(QtWidgets.QTreeWidgetItem([f"produced by: {row.produced_by}"]))
     for label, value in row.details:

@@ -24,6 +24,7 @@ from myocard_egm_studio.view_model.builder import (
 from myocard_egm_studio.view_model.phase_groups import (
     ArtifactGroup,
     ArtifactRow,
+    entries_by_id,
     phase_artifact_groups,
 )
 
@@ -33,6 +34,7 @@ __all__ = [
     "ArtifactGroup",
     "ArtifactRow",
     "build_view_model",
+    "entries_by_id",
     "feature_units",
     "phase_artifact_groups",
 ]
