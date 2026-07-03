@@ -124,16 +124,18 @@ ks = distributions.ks_distance(synthetic_feature_values, iafdb_feature_values)
 | Module | What's in it |
 |---|---|
 | `myocard_egm_studio.analysis` | Pure data computation (no rendering, no Qt): `distributions` (CDF / KS / Wasserstein / histogram / KDE), `aggregation` (between-group feature distance), `similarity` (per-feature nearest). |
-| `myocard_egm_studio.view_model` | `build_view_model` — the unified per-trace table joining identity + bank metadata + the egm-features columns. |
+| `myocard_egm_studio.view_model` | Prepared, Qt-free view data. `build_view_model` — the unified per-trace table joining identity + bank metadata + egm-features columns — plus the Phase-tree view models: `phase_groups` (manifest → the ten role groups), `phase_status` (per-artifact existence + validation), `phase_actions` (right-click policy), `artifact_metadata` (file-level metadata). |
 | `myocard_egm_studio.charts.matplotlib` | The publication (static) rendering backend + the recipe registry the dispatch fills. |
 | `myocard_egm_studio.charts.pyqtgraph` | The interactive (GUI-embedded) rendering backend — pyqtgraph chart widgets that reuse `analysis/` and the shared `charts.inputs` / `charts.palette`, so a chart matches its matplotlib twin. |
 | `myocard_egm_studio.figures` | `render(spec, *, data) -> Path` — the thin headless dispatch over `charts/matplotlib` — plus `loaders` (bank → recipe-input adapters; the data-loading step). |
-| `myocard_egm_studio.gui` | The PySide6 desktop shell (Block 4): `app` (the `egm-studio` entry), `shell` (ADR-025 layout — collapsible sidebars + 3-mode switch), `theme` (dark / light / vibrant QSS), `preferences` (persisted theme via QSettings). Interactive views + widgets land in Blocks 5+. |
+| `myocard_egm_studio.gui` | The PySide6 desktop shell (Block 4): `app` (the `egm-studio` entry), `shell` (ADR-025 layout — collapsible sidebars + 3-mode switch), `theme` (dark / light / vibrant QSS), `preferences` (persisted theme via QSettings). `widgets/` holds the Block 5 trace-display primitive and the Block 6 right-rail Phase artifact tree; the mode views that assemble them land in Blocks 7+. |
 | `myocard_egm_studio.cli` | Console-script entry points: `render` (`egm-studio-render`). |
 
 The Qt shell (`gui/`) landed in Block 4 (layout + theming); Block 5 added the
 trace-display widgets (`gui/widgets/trace.py`) and the `charts/pyqtgraph/`
-backend; the mode views that assemble them land in Blocks 7–10.
+backend; Block 6 added the read-only Phase artifact tree
+(`gui/widgets/phase_tree.py`, fed by the `view_model` phase modules); the mode
+views that assemble them land in Blocks 7–10.
 `figures/loaders.py` is seeded now (fed `{bank_id: path}` by `--bank` /
 `--banks`); Block 7 swaps the hand-written map for phase-manifest resolution —
 see [`project/roadmap.md`](project/roadmap.md).
@@ -161,7 +163,7 @@ machine with no display.
 ## Project status
 
 Pre-v0.1.0; built across 13 blocks (see
-[`project/roadmap.md`](project/roadmap.md)). **Blocks 2–5 have shipped.** The
+[`project/roadmap.md`](project/roadmap.md)). **Blocks 2–6 have shipped.** The
 headless figure pipeline (Blocks 2–3): the `charts/matplotlib/` foundation, the
 `render(spec, *, data)` contract, the figure-data loaders (`egm-studio-render
 --bank/--banks`), and all eight Phase-1.5 P0 recipes — `prediction-histogram`,
@@ -174,10 +176,14 @@ launches. **Block 5** added the interactive trace-display primitive — a
 `TraceContainer` stacking N traces on a shared, pannable X-axis with a
 time-scale slider and a metadata-driven selector — plus the `charts/pyqtgraph/`
 backend (a feature-distribution chart visually equivalent to its matplotlib twin
-over the same `analysis/` output). The mode views that assemble these into
-end-user tools begin in Block 7, so the shell opens but isn't yet a complete
-analysis tool. Pins
-`myocard-egm-contracts v0.5.1`, `myocard-egm-data v0.4.1`, `myocard-egm-features
+over the same `analysis/` output). **Block 6** front-loads the meta-repo
+integration: a read-only right-rail Phase tree that loads a phase's
+`manifest.json` (through egm-data) into the ten role-based artifact groups, marks
+each artifact with an existence / validation status dot, and offers role-aware
+right-click actions — View traces plus a Show-metadata view that reads the
+artifact's own file. The mode views that assemble these into end-user tools begin
+in Block 7, so the shell opens but isn't yet a complete analysis tool. Pins
+`myocard-egm-contracts v0.5.2`, `myocard-egm-data v0.4.2`, `myocard-egm-features
 v0.1.1`.
 
 - For the design rationale (the 25 ADRs, the three-layer rendering split, the

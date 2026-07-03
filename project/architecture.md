@@ -90,7 +90,7 @@ and the architecture changes.
    scratch dir when no phase is loaded). [ADR-017, cross-artifact
    linkage design]
 8. **egm-studio is the canonical curator of the per-phase manifest.**
-   The right-rail Phase GUI updates `phase_manifest.yaml` as the
+   The right-rail Phase GUI updates `manifest.json` as the
    user saves observations, trace sets, and figure specs. Producers
    never touch the manifest — they just stamp stable IDs on their
    outputs. [ADR-021, ADR-022]
@@ -128,7 +128,7 @@ myocard_egm_studio/
 │   ├── widgets/
 │   │   ├── trace.py      #   TraceWidget + container        [ADR-024, B5]
 │   │   ├── filter.py     #   Filter / query UI              [ADR-002]
-│   │   ├── phase_tree.py #   Right-rail Phase artifact tree
+│   │   ├── phase_tree.py #   Phase artifact tree: groups, status dots, menu  [B6]
 │   │   └── ...           #   Other shared widgets
 │   └── views/
 │       ├── signal_exploration.py   # Flow A — uses charts/pyqtgraph
@@ -139,7 +139,12 @@ myocard_egm_studio/
 │                         #   (`egm-studio` GUI script -> gui/app.py:main)
 ├── loaders/              # Thin wrappers over egm-data.
 ├── save/                 # Observation + manifest writers   [ADR-017, ADR-021]
-└── view_model/           # Unified per-trace view-model      [ADR-002]
+└── view_model/           # Prepared, Qt-free view data       [ADR-002]
+    ├── builder.py        #   unified per-trace table (features + metadata)
+    ├── phase_groups.py   #   manifest -> the ten role-based groups       [B6]
+    ├── phase_status.py   #   per-artifact existence + schema validation  [B6]
+    ├── phase_actions.py  #   right-click action policy per role          [B6]
+    └── artifact_metadata.py  # file-level "Show metadata" summaries       [B6]
 ```
 
 ### The three-layer rendering split
@@ -247,8 +252,8 @@ a display. [ADR-005, ADR-013]
 
 | Repo | What egm-studio uses | Trigger |
 |---|---|---|
-| `myocard-egm-contracts` (v0.5.1+) | Schemas: `classifier_bank`, `iafdb_bank`, `noise_bank`, `epoch_record`, `model_metadata`, `predictions`, `observation`, `phase_manifest`, `figure_spec` | Runtime dep; all schemas land in v0.5.0 [ADR-014, ADR-017, ADR-021] |
-| `myocard-egm-data` (v0.4.1+) | Bank readers/writers; record + phase-artifact I/O (`phases.load_figure_spec`); `ClassifierBank.uniform_fs_hz()` (added v0.4.1) | Runtime dep [ADR-001] |
+| `myocard-egm-contracts` (v0.5.2+) | Schemas: `classifier_bank`, `iafdb_bank`, `noise_bank`, `epoch_record`, `model_metadata`, `predictions`, `observation`, `phase_manifest`, `figure_spec`; the generated `Role` / `role_of` artifact-role vocabulary (v0.5.2) | Runtime dep; all schemas land in v0.5.0 [ADR-014, ADR-017, ADR-021] |
+| `myocard-egm-data` (v0.4.2+) | Bank readers/writers; record + phase-artifact I/O (`phases.load_figure_spec`, `phases.load_phase_dir` added v0.4.2); `ClassifierBank.uniform_fs_hz()` (added v0.4.1) | Runtime dep [ADR-001] |
 | `myocard-egm-features` (v0.1.1+) | `bundle.extract_all` for the unified view-model (v0.1.1 added the py.typed marker) | Runtime dep [ADR-002] |
 | `myocard-egm-signal` (v0.2.0+) | Filter primitives; activation-peak helpers (likely Block 3+) | Runtime dep |
 | `intracardiac-platform` (workspace, not a Python dep) | Reads + writes the phase manifest, observations, and figure specs (JSON) when egm-studio saves | File-system contract via cross-artifact linkage design |

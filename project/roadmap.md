@@ -279,9 +279,11 @@ Front-loads the meta-repo file-format integration so it's not a
 surprise when Save lands later. Read-only Phase tree at this point;
 write logic lands in Block 10.
 
+**Status:** Done (2026-07-03).
+
 **Scope:**
 
-- `loaders/phase_manifest.py` — read `phase_manifest.yaml`, validate
+- `loaders/phase_manifest.py` — read `manifest.json`, validate
   via egm-contracts Pydantic model, expose typed manifest object.
 - `gui/widgets/phase_tree.py` — right-rail artifact tree grouped by
   role-based bank type + non-bank artifacts (10 groups per the
@@ -298,7 +300,7 @@ write logic lands in Block 10.
 
 - Block 4 done (shell to host the Phase tree).
 - egm-contracts v0.5.0 (phase_manifest schema).
-- A representative phase_manifest.yaml fixture (can be hand-written
+- A representative manifest.json fixture (can be hand-written
   for v0.1 testing).
 
 **Exit:**
@@ -307,6 +309,29 @@ write logic lands in Block 10.
   populates with counts.
 - Clicking an artifact shows its manifest entry inline.
 - pytest tests pass.
+
+**As built (deviations from the scope above):**
+
+- **The manifest reader lives in egm-data, not `loaders/phase_manifest.py`.**
+  egm-data owns `load_phase_dir(folder)` (reads `manifest.json`); egm-contracts
+  owns the *generated* role vocabulary (`Role` + `role_of`, single-sourced in
+  `codegen/roles.json`). egm-studio keeps only the display / interaction layer —
+  `view_model/phase_groups.py` (the ten role groups), `view_model/phase_status.py`
+  (existence + on-demand schema validation), `view_model/phase_actions.py` (the
+  right-click policy), and `view_model/artifact_metadata.py` (file-level
+  metadata) — feeding `gui/widgets/phase_tree.py`. This keeps file I/O and the
+  cross-language role vocabulary out of the GUI (invariant #1); coordinated
+  egm-contracts v0.5.2 + egm-data v0.4.2.
+- **Artifact status is shown, not just structure.** Each row carries a status
+  dot — grey (present, unvalidated) / green (ok) / amber (invalid) / red
+  (missing) — set on load (existence only) and refined by **File ▸ Validate
+  phase** (full schema validation).
+- **Right-click actions, not just inline expansion.** Every artifact has a
+  role-aware menu — View traces (wired for the egm-bank roles), Show metadata
+  (reads the file: a ClassifierBank summary, a noise-bank header, or pretty
+  JSON), Reveal file, Copy id — with not-yet-built viewers greyed and tagged to
+  the block that delivers them. The inline manifest-pointer rows remain.
+- Loaded via **File ▸ Open phase**; a folder-drop is a later convenience.
 
 **Estimated effort:** ~0.5-1 day.
 
