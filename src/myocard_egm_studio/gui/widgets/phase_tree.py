@@ -1,0 +1,148 @@
+"""Phase artifact tree — the read-only right-rail view of a phase's manifest (Block 6).
+
+Renders the ten role-based artifact groups (``view_model.phase_groups``) as a tree:
+group -> artifact -> its manifest-pointer detail rows. The count shows next to each
+group name whether the group is collapsed or expanded; expanding an artifact reveals
+its pointer (path, producer, and the relationship / usage fields).
+
+Existence / validity shows as a status **dot** beside each artifact (:meth:`set_groups`
+populates, :meth:`set_statuses` marks): a hollow grey ring = present but not yet
+validated, filled green = OK, amber = invalid, red = missing. Each group header rolls
+its children up to the worst status (dot + coloured text). Read-only — the curator
+write path lands in Block 10. [ADR-021, ADR-025]
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+
+from PySide6 import QtCore, QtGui, QtWidgets
+
+from myocard_egm_studio.view_model.phase_groups import ArtifactGroup, ArtifactRow
+from myocard_egm_studio.view_model.phase_status import ArtifactStatus
+
+# Item-data role holding an item's ArtifactStatus — read by tests and, later, the
+# Block 10 curator context menu.
+STATUS_ROLE = QtCore.Qt.ItemDataRole.UserRole
+
+_ICON_PX = 14  # status-dot canvas size
+
+# Semantic status colours, theme-independent so a dot reads the same in any theme.
+_GREEN = QtGui.QColor("#3fb950")
+_GREY = QtGui.QColor("#8b949e")
+_RED = QtGui.QColor("#f85149")
+_AMBER = QtGui.QColor("#d29922")
+_DEFAULT_BRUSH = QtGui.QBrush()  # empty brush -> inherit the theme's text colour
+
+# status -> (dot colour, filled?). PRESENT is a hollow ring: "there, unverified".
+_ICON_SPECS: dict[ArtifactStatus, tuple[QtGui.QColor, bool]] = {
+    ArtifactStatus.OK: (_GREEN, True),
+    ArtifactStatus.PRESENT: (_GREY, False),
+    ArtifactStatus.MISSING: (_RED, True),
+    ArtifactStatus.INVALID: (_AMBER, True),
+}
+_STATUS_COLOR = {status: colour for status, (colour, _) in _ICON_SPECS.items()}
+_ICON_CACHE: dict[ArtifactStatus, QtGui.QIcon] = {}
+
+
+class PhaseTree(QtWidgets.QTreeWidget):
+    """Read-only tree of a phase's artifacts, grouped by role, with pointer details."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("phaseTree")
+        self.setHeaderHidden(True)
+        self.setColumnCount(1)
+        self.setIconSize(QtCore.QSize(_ICON_PX, _ICON_PX))
+        self._items_by_id: dict[str, QtWidgets.QTreeWidgetItem] = {}
+        self._groups: list[tuple[QtWidgets.QTreeWidgetItem, tuple[str, ...]]] = []
+
+    def set_groups(self, groups: Sequence[ArtifactGroup]) -> None:
+        """Populate from a phase's display groups, replacing any prior contents."""
+        self.clear()
+        self._items_by_id = {}
+        self._groups = []
+        for group in groups:
+            group_item = QtWidgets.QTreeWidgetItem([f"{group.label}  ({group.count})"])
+            self.addTopLevelItem(group_item)
+            self._groups.append((group_item, tuple(row.id for row in group.rows)))
+            for row in group.rows:
+                item = _artifact_item(row)
+                self._items_by_id[row.id] = item
+                group_item.addChild(item)
+
+    def set_statuses(self, statuses: Mapping[str, ArtifactStatus]) -> None:
+        """Mark each artifact with a status dot and roll each group header up to the
+        worst of its children (dot + coloured text)."""
+        for artifact_id, item in self._items_by_id.items():
+            _apply_status(item, statuses.get(artifact_id), colour_text=False)
+        for group_item, child_ids in self._groups:
+            rollup = _group_status([statuses.get(cid) for cid in child_ids])
+            _apply_status(group_item, rollup, colour_text=True)
+
+
+def _apply_status(
+    item: QtWidgets.QTreeWidgetItem, status: ArtifactStatus | None, *, colour_text: bool
+) -> None:
+    """Set an item's status dot (and, for group headers, its text colour)."""
+    item.setData(0, STATUS_ROLE, status)
+    if status is None:
+        item.setIcon(0, QtGui.QIcon())
+        if colour_text:
+            item.setForeground(0, _DEFAULT_BRUSH)
+        return
+    item.setIcon(0, _status_icon(status))
+    if colour_text:
+        item.setForeground(0, QtGui.QBrush(_STATUS_COLOR[status]))
+
+
+def _group_status(child_statuses: list[ArtifactStatus | None]) -> ArtifactStatus | None:
+    """Roll a group's children up to a single status: the worst wins, empty -> None."""
+    known = [status for status in child_statuses if status is not None]
+    if not known:
+        return None
+    for worst in (ArtifactStatus.MISSING, ArtifactStatus.INVALID, ArtifactStatus.PRESENT):
+        if any(status is worst for status in known):
+            return worst
+    return ArtifactStatus.OK
+
+
+def _status_icon(status: ArtifactStatus) -> QtGui.QIcon:
+    """A cached status-dot icon (needs a running QGuiApplication, so built lazily)."""
+    icon = _ICON_CACHE.get(status)
+    if icon is None:
+        colour, filled = _ICON_SPECS[status]
+        icon = _paint_dot(colour, filled=filled)
+        _ICON_CACHE[status] = icon
+    return icon
+
+
+def _paint_dot(colour: QtGui.QColor, *, filled: bool) -> QtGui.QIcon:
+    """Paint a small circle — filled for a decided state, a ring for 'unverified'."""
+    pixmap = QtGui.QPixmap(_ICON_PX, _ICON_PX)
+    pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+    painter = QtGui.QPainter(pixmap)
+    painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+    rect = QtCore.QRectF(2.5, 2.5, _ICON_PX - 5, _ICON_PX - 5)
+    if filled:
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(colour)
+    else:
+        pen = QtGui.QPen(colour)
+        pen.setWidthF(1.6)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        rect = rect.adjusted(0.6, 0.6, -0.6, -0.6)
+    painter.drawEllipse(rect)
+    painter.end()
+    return QtGui.QIcon(pixmap)
+
+
+def _artifact_item(row: ArtifactRow) -> QtWidgets.QTreeWidgetItem:
+    """One artifact node with its manifest pointer expanded into child detail rows."""
+    item = QtWidgets.QTreeWidgetItem([row.id])
+    item.addChild(QtWidgets.QTreeWidgetItem([f"path: {row.path}"]))
+    item.addChild(QtWidgets.QTreeWidgetItem([f"produced by: {row.produced_by}"]))
+    for label, value in row.details:
+        item.addChild(QtWidgets.QTreeWidgetItem([f"{label}: {value}"]))
+    return item

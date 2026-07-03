@@ -21,10 +21,18 @@ from myocard_egm_studio.view_model.builder import (
     build_view_model,
     feature_units,
 )
+from myocard_egm_studio.view_model.phase_groups import (
+    ArtifactGroup,
+    ArtifactRow,
+    phase_artifact_groups,
+)
 
 __all__ = [
     "FEATURE_COLUMNS",
     "IDENTITY_COLUMNS",
+    "ArtifactGroup",
+    "ArtifactRow",
     "build_view_model",
     "feature_units",
+    "phase_artifact_groups",
 ]

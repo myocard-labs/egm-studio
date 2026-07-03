@@ -1,0 +1,76 @@
+{
+  "schema_version": "1",
+  "phase": 1.0,
+  "status": "in_progress",
+  "phase_summary": "Example phase manifest pointing at REAL artifacts currently in the repo collection. Paths are relative to THIS phase folder; because the artifacts live in sibling repos the bank/model/run paths climb out with ../../../ while the figure spec sits alongside in examples/. Ids + dates are illustrative. Open it in egm-studio via File > Open phase and select this example_phase folder.",
+  "egm_banks": [
+    {
+      "id": "tbank_synthegm_v1_baseline_1_2026-06-27",
+      "path": "../../../egm-classifier/banks/synthegm_v1_baseline_1.classifier.h5",
+      "produced_by_package": "synthetic-egm-pipeline",
+      "produced_by_version": "v0.3.0"
+    },
+    {
+      "id": "tbank_iafdb_healthy_sanchez_2026-06-15",
+      "path": "../../../egm-classifier/banks/iafdb_healthy_sanchez.classifier.h5",
+      "produced_by_package": "iafdb-pipeline",
+      "produced_by_version": "v0.3.0"
+    },
+    {
+      "id": "lpred_synth_small_2026-06-27",
+      "path": "../../../egm-classifier/predictions/lpred_synth_small.classifier.h5",
+      "produced_by_package": "egm-classifier",
+      "produced_by_version": "v0.4.0",
+      "model": "model_v1_baseline_bin_1_2026-06-27",
+      "source_bank": "tbank_synthegm_v1_baseline_1_2026-06-27"
+    },
+    {
+      "id": "upred_iafdb_sanchez_2026-06-27",
+      "path": "../../../egm-classifier/predictions/upred_iafdb_sanchez.classifier.h5",
+      "produced_by_package": "egm-classifier",
+      "produced_by_version": "v0.4.0",
+      "model": "model_v1_baseline_bin_1_2026-06-27",
+      "source_bank": "tbank_iafdb_healthy_sanchez_2026-06-15"
+    }
+  ],
+  "noise_banks": [
+    {
+      "id": "nbank_iafdb_noise_v1_2026-06-15",
+      "path": "../../../banks/iafdb_noise_v1.h5",
+      "produced_by_package": "iafdb-pipeline",
+      "produced_by_version": "v0.3.0"
+    }
+  ],
+  "training_runs": [
+    {
+      "id": "run_v1_baseline_bin_1_2026-06-27",
+      "path": "../../../egm-classifier/checkpoints/v1_baseline_bin_1/run.json",
+      "produced_by_package": "egm-classifier",
+      "produced_by_version": "v0.4.0",
+      "trained_on_bank": "tbank_synthegm_v1_baseline_1_2026-06-27",
+      "produced_model": "model_v1_baseline_bin_1_2026-06-27"
+    }
+  ],
+  "models": [
+    {
+      "id": "model_v1_baseline_bin_1_2026-06-27",
+      "path": "../../../egm-classifier/checkpoints/v1_baseline_bin_1/best.pt",
+      "produced_by_package": "egm-classifier",
+      "produced_by_version": "v0.4.0",
+      "trained_from_run": "run_v1_baseline_bin_1_2026-06-27"
+    }
+  ],
+  "figures": [
+    {
+      "id": "fig_feature_distribution_overlay",
+      "path": "../feature_distribution_overlay_spec.json",
+      "produced_by_package": "egm-studio",
+      "produced_by_version": "v0.1.0",
+      "consumes_banks": [
+        "tbank_synthegm_v1_baseline_1_2026-06-27",
+        "upred_iafdb_sanchez_2026-06-27"
+      ],
+      "usage_tag": "exploratory"
+    }
+  ]
+}

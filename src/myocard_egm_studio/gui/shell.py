@@ -9,15 +9,19 @@ header carries the three-mode segmented control. The theme (ADR-012) persists vi
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from typing import Literal
 
+from myocard_egm_data.phases import PhaseManifest, load_phase_dir
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from myocard_egm_studio.gui.preferences import load_theme, save_theme
 from myocard_egm_studio.gui.sources import load_bank
 from myocard_egm_studio.gui.theme import DEFAULT_THEME, THEME_NAMES, apply_theme, plot_palette
-from myocard_egm_studio.gui.widgets import BankTrace, TraceData, TraceSelector, TraceView
+from myocard_egm_studio.gui.widgets import BankTrace, PhaseTree, TraceData, TraceSelector, TraceView
+from myocard_egm_studio.view_model import phase_artifact_groups
+from myocard_egm_studio.view_model.phase_status import ArtifactStatus, phase_statuses
 
 _WINDOW_TITLE = "egm-studio"
 _MIN_WIDTH = 1100
@@ -191,6 +195,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self._bank_name = ""
+        self._phase_manifest: PhaseManifest | None = None
+        self._phase_dir = Path()
         self.setWindowTitle(_WINDOW_TITLE)
         self.setMinimumSize(_MIN_WIDTH, _MIN_HEIGHT)
         self._build_menu_bar()
@@ -206,6 +212,12 @@ class MainWindow(QtWidgets.QMainWindow):
         open_action = file_menu.addAction("&Open bank…")
         open_action.setObjectName("openBank")
         open_action.triggered.connect(self._open_bank)
+        open_phase_action = file_menu.addAction("Open &phase…")
+        open_phase_action.setObjectName("openPhase")
+        open_phase_action.triggered.connect(self._open_phase)
+        validate_action = file_menu.addAction("&Validate phase")
+        validate_action.setObjectName("validatePhase")
+        validate_action.triggered.connect(self._validate_phase)
         file_menu.addSeparator()
         file_menu.addAction("&Quit").triggered.connect(self.close)
 
@@ -319,10 +331,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._work_area.setMinimumWidth(_MAIN_MIN_W)
 
         self._right_sidebar = CollapsibleSidebar(
-            title="Phase tree", subtitle="Saved observations & artifacts (Block 6+)", side="right"
+            title="Phase tree",
+            subtitle="Open a phase (File ▸ Open phase…) to list its artifacts",
+            side="right",
         )
         self._right_sidebar.setObjectName("rightSidebar")
         self._right_sidebar.toggleRequested.connect(lambda: self._toggle_sidebar("right"))
+        self._phase_tree = PhaseTree()
+        self._right_sidebar.set_body(self._phase_tree)
 
         splitter.addWidget(self._left_sidebar)
         splitter.addWidget(self._work_area)
@@ -386,6 +402,51 @@ class MainWindow(QtWidgets.QMainWindow):
             f"Loaded {self._bank_name} — {len(loaded.traces)} traces; filter / select to view"
         )
         self._trace_selector.select_first(min(_DEFAULT_SHOWN, len(loaded.traces)))
+
+    # -- open phase (File > Open phase) ---------------------------------------
+
+    def _open_phase(self) -> None:
+        """File > Open phase…: pick a phase folder and list its artifacts in the tree."""
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Open phase folder")
+        if folder:
+            self._load_phase_into_tree(folder)
+
+    def _load_phase_into_tree(self, folder: str) -> None:
+        """Load a phase's manifest and populate the right-rail Phase tree (testable)."""
+        try:
+            manifest = load_phase_dir(folder)
+        except Exception as exc:  # a missing / malformed manifest -> status bar, tree unchanged
+            self.statusBar().showMessage(f"Could not open phase: {exc}")
+            return
+        groups = phase_artifact_groups(manifest)
+        self._phase_tree.set_groups(groups)
+        self._phase_manifest = manifest
+        self._phase_dir = Path(folder)
+        statuses = phase_statuses(manifest, self._phase_dir)
+        self._phase_tree.set_statuses(statuses)
+        total = len(statuses)
+        missing = sum(1 for status in statuses.values() if status is ArtifactStatus.MISSING)
+        note = f"{missing} missing" if missing else "all present"
+        self.statusBar().showMessage(
+            f"Loaded phase {manifest.phase} — {total} artifact(s), {note}; not yet validated"
+        )
+
+    def _validate_phase(self) -> None:
+        """File > Validate phase: run the full per-type format validation + re-mark."""
+        if self._phase_manifest is None:
+            self.statusBar().showMessage("Open a phase first.")
+            return
+        statuses = phase_statuses(self._phase_manifest, self._phase_dir, validate=True)
+        self._phase_tree.set_statuses(statuses)
+        counts = Counter(statuses.values())
+        parts = [f"{counts[ArtifactStatus.OK]} ok"]
+        if counts[ArtifactStatus.INVALID]:
+            parts.append(f"{counts[ArtifactStatus.INVALID]} invalid")
+        if counts[ArtifactStatus.MISSING]:
+            parts.append(f"{counts[ArtifactStatus.MISSING]} missing")
+        self.statusBar().showMessage(
+            f"Validated phase {self._phase_manifest.phase} — {', '.join(parts)}"
+        )
 
     def _show_traces(self, traces: list[TraceData], *, source: str) -> None:
         """Put a TraceContainer for ``traces`` in the work area + note it in the status bar."""

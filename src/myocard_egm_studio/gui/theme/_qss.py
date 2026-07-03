@@ -117,6 +117,13 @@ QHeaderView::section {
     border: none;
     padding: 3px 6px;
 }
+QTreeView {
+    background-color: $surface;
+    color: $text;
+    border: 1px solid $border;
+    selection-background-color: $accent;
+    selection-color: $window_bg;
+}
 QSplitter::handle {
     background-color: $border;
 }

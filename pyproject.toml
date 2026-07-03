@@ -61,11 +61,11 @@ dependencies = [
   # Schemas + typed models for every cross-component format (figure_spec,
   # phase_manifest, observation, bank/record schemas); the ArtifactId /
   # FigureId patterns live here. [ADR-001, ADR-014]
-  "myocard-egm-contracts @ git+https://github.com/myocard-labs/egm-contracts.git@v0.5.1",
+  "myocard-egm-contracts @ git+https://github.com/myocard-labs/egm-contracts.git@v0.5.2",
   # All bank + phase-artifact I/O: load_classifier_bank, phases.load_figure_spec,
   # etc. egm-studio never opens an HDF5/JSON directly [ADR-001]. No [torch]
   # extra — egm-studio neither trains nor runs models.
-  "myocard-egm-data @ git+https://github.com/myocard-labs/egm-data.git@v0.4.1",
+  "myocard-egm-data @ git+https://github.com/myocard-labs/egm-data.git@v0.4.2",
   # Per-trace feature extractors (bundle.extract_all) for the unified
   # per-trace view-model. [ADR-002]
   "myocard-egm-features @ git+https://github.com/myocard-labs/egm-features.git@v0.1.1",
