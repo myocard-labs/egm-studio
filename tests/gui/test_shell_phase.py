@@ -111,6 +111,6 @@ def test_view_traces_action_routes_to_bank_loader(
 ) -> None:
     window = _loaded_window(qtbot)
     opened: list[str] = []
-    monkeypatch.setattr(window, "_load_bank_into_view", opened.append)
+    monkeypatch.setattr(window, "_open_bank_explore", opened.append)
     window._on_phase_action("view_traces", _BANK_ID)
     assert opened == [str(_FIXTURE_DIR / _BANK_PATH)]

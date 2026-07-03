@@ -20,11 +20,14 @@ _UNIVERSAL_IDS = ("reveal_file", "copy_id")
 
 
 def test_input_bank_viewers() -> None:
-    ids = [a.id for a in type_actions(Role.training_bank)]
-    assert ids == ["view_traces", "explore_signal", "view_feature_distributions"]
-    view_traces, *planned = type_actions(Role.training_bank)
-    assert view_traces.available is True  # wired now
-    assert all(not a.available and a.note for a in planned)  # greyed + block-tagged
+    view_traces, explore, feature_dist = type_actions(Role.training_bank)
+    assert [view_traces.id, explore.id, feature_dist.id] == [
+        "view_traces",
+        "explore_signal",
+        "view_feature_distributions",
+    ]
+    assert view_traces.available and explore.available  # View traces + Explore are wired (B7)
+    assert not feature_dist.available and feature_dist.note  # feature distributions still planned
 
 
 def test_prediction_bank_adds_ml_actions() -> None:

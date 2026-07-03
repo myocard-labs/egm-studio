@@ -10,14 +10,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 from myocard_egm_data.banks import ClassifierBank, write_classifier_bank
 from PySide6 import QtGui, QtWidgets
 from pytestqt.qtbot import QtBot
 
 from myocard_egm_studio.gui.shell import CollapsibleSidebar, MainWindow
 from myocard_egm_studio.gui.theme import plot_palette
-from myocard_egm_studio.gui.widgets import TraceContainer, TraceData, TraceView
+from myocard_egm_studio.gui.widgets import TraceContainer, TraceView
+from myocard_egm_studio.view_model.filtering import Condition, FilterSpec
 
 
 def test_shell_builds_with_three_columns(qtbot: QtBot) -> None:
@@ -85,39 +85,54 @@ def test_mode_control_is_exclusive(qtbot: QtBot) -> None:
     assert not buttons[0].isChecked()
 
 
-def test_open_bank_shows_trace_container(qtbot: QtBot) -> None:
+def _open(qtbot: QtBot, bank: ClassifierBank, tmp_path: Path) -> MainWindow:
+    path = tmp_path / "bank.h5"
+    write_classifier_bank(bank, path)
     window = MainWindow()
     qtbot.addWidget(window)
+    window._open_bank_explore(str(path))
+    return window
 
-    t = np.arange(200, dtype=np.float64) / 1000.0
-    traces = [TraceData(np.sin(2.0 * np.pi * 5.0 * t), 1000.0, f"t{i}") for i in range(3)]
-    window._show_traces(traces, source="demo.h5")
+
+def test_open_bank_populates_result_list(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    window = _open(qtbot, tiny_classifier_bank, tmp_path)
+    table = window._explore_view.result_list._table
+    assert table.rowCount() == len(tiny_classifier_bank.traces)
+    assert "Loaded" in window.statusBar().currentMessage()
+
+
+def test_selecting_a_trace_shows_the_detail(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    window = _open(qtbot, tiny_classifier_bank, tmp_path)
+    window._explore_view.result_list._table.selectRow(0)
     assert window.findChild(TraceContainer) is not None
 
 
-def test_theme_change_restyles_open_traces(qtbot: QtBot, qapp: QtWidgets.QApplication) -> None:
-    window = MainWindow()
-    qtbot.addWidget(window)
+def test_filter_narrows_the_result_list(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    window = _open(qtbot, tiny_classifier_bank, tmp_path)
+    total = window._explore_view.result_list._table.rowCount()
+    window._on_filter_changed(FilterSpec((Condition("label_name", "==", "fibrotic"),)))
+    kept = window._explore_view.result_list._table.rowCount()
+    assert 0 < kept < total
+    assert "match" in window.statusBar().currentMessage()
 
-    t = np.arange(100, dtype=np.float64) / 1000.0
-    window._show_traces([TraceData(np.sin(t), 1000.0, "x")], source="d.h5")
+
+def test_theme_change_restyles_the_detail(
+    qtbot: QtBot,
+    qapp: QtWidgets.QApplication,
+    tiny_classifier_bank: ClassifierBank,
+    tmp_path: Path,
+) -> None:
+    window = _open(qtbot, tiny_classifier_bank, tmp_path)
+    window._explore_view.result_list._table.selectRow(0)
     light = window.findChild(QtGui.QAction, "themeAction_light")
     assert light is not None
     light.trigger()
-
-    content = window._work_area.content
+    content = window._explore_view._detail.content
     assert isinstance(content, TraceView)
     assert content.container.palette == plot_palette("light")
-
-
-def test_open_bank_populates_selector_and_view(
-    qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
-) -> None:
-    path = tmp_path / "bank.h5"
-    write_classifier_bank(tiny_classifier_bank, path)
-    window = MainWindow()
-    qtbot.addWidget(window)
-
-    window._load_bank_into_view(str(path))
-    assert len(window._trace_selector.selected_traces()) == min(3, len(tiny_classifier_bank.traces))
-    assert window.findChild(TraceContainer) is not None
