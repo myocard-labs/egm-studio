@@ -1,0 +1,182 @@
+"""Composable filter panel over the per-trace view-model (Block 7, ADR-002).
+
+A flat list of condition rows (column / operator / value) combined by one
+"Match all" (AND) / "Match any" (OR); it emits a :class:`FilterSpec` whenever it
+changes. The logic is pure (:mod:`view_model.filtering`) — this widget only edits
+a spec. Each row's editor follows its column: numeric columns get a validated
+value field + threshold operators; categorical ones get a value dropdown of the
+column's known values + equality operators, so an invalid spec can't be built.
+
+Feeds the result list (B7.4); the signal-exploration view (B7.5) hands in
+``filter_columns(df)`` and applies the emitted spec.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+from PySide6 import QtCore, QtGui, QtWidgets
+
+from myocard_egm_studio.view_model.filtering import Condition, FilterColumn, FilterSpec
+
+_COMBINE_LABELS = ("Match all", "Match any")  # index 0 -> "and", index 1 -> "or"
+
+
+def _is_number(text: str) -> bool:
+    try:
+        float(text)
+    except ValueError:
+        return False
+    return True
+
+
+class _ConditionRow(QtWidgets.QWidget):
+    """One ``column op value`` row; emits :attr:`changed` on edit, :attr:`removed` on delete."""
+
+    changed = QtCore.Signal()
+    removed = QtCore.Signal()
+
+    def __init__(
+        self, columns: Sequence[FilterColumn], parent: QtWidgets.QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
+        self._by_name = {column.name: column for column in columns}
+
+        self._column = QtWidgets.QComboBox()
+        self._column.addItems([column.name for column in columns])
+        self._op = QtWidgets.QComboBox()
+        self._value = QtWidgets.QStackedWidget()
+        self._line = QtWidgets.QLineEdit()
+        self._line.setValidator(QtGui.QDoubleValidator())
+        self._line.setPlaceholderText("value")
+        self._choice = QtWidgets.QComboBox()
+        self._value.addWidget(self._line)  # page 0 — numeric
+        self._value.addWidget(self._choice)  # page 1 — categorical
+        remove = QtWidgets.QToolButton()
+        remove.setText("×")  # noqa: RUF001 — deliberate remove-button glyph
+        remove.setToolTip("Remove condition")
+
+        row = QtWidgets.QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(self._column, 3)
+        row.addWidget(self._op, 2)
+        row.addWidget(self._value, 3)
+        row.addWidget(remove, 0)
+
+        self._column.currentIndexChanged.connect(self._on_column)
+        self._op.currentIndexChanged.connect(self.changed)
+        self._line.textChanged.connect(self.changed)
+        self._choice.currentIndexChanged.connect(self.changed)
+        remove.clicked.connect(self.removed)
+        self._on_column()
+
+    def _on_column(self) -> None:
+        column = self._current_column()
+        if column is None:
+            return
+        self._op.blockSignals(True)
+        self._op.clear()
+        self._op.addItems(column.ops)
+        self._op.blockSignals(False)
+        if column.numeric:
+            self._value.setCurrentIndex(0)
+        else:
+            self._choice.blockSignals(True)
+            self._choice.clear()
+            self._choice.addItems(column.choices)
+            self._choice.blockSignals(False)
+            self._value.setCurrentIndex(1)
+        self.changed.emit()
+
+    def _current_column(self) -> FilterColumn | None:
+        return self._by_name.get(self._column.currentText())
+
+    def condition(self) -> Condition | None:
+        """The row's Condition, or None if incomplete (blank / non-numeric value)."""
+        column = self._current_column()
+        if column is None:
+            return None
+        if column.numeric:
+            value = self._line.text().strip()
+            if not _is_number(value):
+                return None
+        else:
+            value = self._choice.currentText()
+            if not value:
+                return None
+        return Condition(column=column.name, op=self._op.currentText(), value=value)
+
+
+class FilterPanel(QtWidgets.QWidget):
+    """Edits a FilterSpec over the view-model and emits it on every change."""
+
+    filterChanged = QtCore.Signal(object)  # a view_model.FilterSpec
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("filterPanel")
+        self._columns: list[FilterColumn] = []
+        self._rows: list[_ConditionRow] = []
+
+        self._combine = QtWidgets.QComboBox()
+        self._combine.setObjectName("filterCombine")
+        self._combine.addItems(_COMBINE_LABELS)
+        self._combine.currentIndexChanged.connect(self._emit)
+
+        self._rows_box = QtWidgets.QVBoxLayout()
+        self._rows_box.setContentsMargins(0, 0, 0, 0)
+        rows_host = QtWidgets.QWidget()
+        rows_host.setLayout(self._rows_box)
+
+        self._add_button = QtWidgets.QPushButton("+ Add condition")
+        self._add_button.setObjectName("addCondition")
+        self._add_button.clicked.connect(self._add_row)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        top = QtWidgets.QHBoxLayout()
+        top.addWidget(QtWidgets.QLabel("Match"))
+        top.addWidget(self._combine, 1)
+        layout.addLayout(top)
+        layout.addWidget(rows_host)
+        layout.addWidget(self._add_button)
+        layout.addStretch(1)
+
+    def set_columns(self, columns: Sequence[FilterColumn]) -> None:
+        """Set the offered columns (from ``filter_columns(df)``) and reset the rows."""
+        self._columns = list(columns)
+        self._clear_rows()
+        self._add_button.setEnabled(bool(self._columns))
+        self._emit()
+
+    def spec(self) -> FilterSpec:
+        """The current FilterSpec (incomplete rows are dropped)."""
+        conditions = tuple(c for c in (row.condition() for row in self._rows) if c is not None)
+        combine = "or" if self._combine.currentIndex() == 1 else "and"
+        return FilterSpec(conditions=conditions, combine=combine)
+
+    def _add_row(self) -> None:
+        if not self._columns:
+            return
+        row = _ConditionRow(self._columns)
+        row.changed.connect(self._emit)
+        row.removed.connect(lambda: self._remove_row(row))
+        self._rows.append(row)
+        self._rows_box.addWidget(row)
+        self._emit()
+
+    def _remove_row(self, row: _ConditionRow) -> None:
+        if row in self._rows:
+            self._rows.remove(row)
+            self._rows_box.removeWidget(row)
+            row.deleteLater()
+            self._emit()
+
+    def _clear_rows(self) -> None:
+        for row in self._rows:
+            self._rows_box.removeWidget(row)
+            row.deleteLater()
+        self._rows = []
+
+    def _emit(self) -> None:
+        self.filterChanged.emit(self.spec())

@@ -5,6 +5,7 @@ renders one trace, :class:`~.trace.TraceContainer` stacks N of them with a share
 X-axis.
 """
 
+from myocard_egm_studio.gui.widgets.filter import FilterPanel
 from myocard_egm_studio.gui.widgets.phase_tree import PhaseTree
 from myocard_egm_studio.gui.widgets.time_scale import TimeScaleWidget
 from myocard_egm_studio.gui.widgets.trace import TraceContainer, TraceData, TraceWidget
@@ -13,6 +14,7 @@ from myocard_egm_studio.gui.widgets.trace_view import TraceView
 
 __all__ = [
     "BankTrace",
+    "FilterPanel",
     "LoadedBank",
     "PhaseTree",
     "TimeScaleWidget",

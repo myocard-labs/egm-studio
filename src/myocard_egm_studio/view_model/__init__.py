@@ -21,6 +21,13 @@ from myocard_egm_studio.view_model.builder import (
     build_view_model,
     feature_units,
 )
+from myocard_egm_studio.view_model.filtering import (
+    Condition,
+    FilterColumn,
+    FilterSpec,
+    apply_filter,
+    filter_columns,
+)
 from myocard_egm_studio.view_model.phase_groups import (
     ArtifactGroup,
     ArtifactRow,
@@ -33,8 +40,13 @@ __all__ = [
     "IDENTITY_COLUMNS",
     "ArtifactGroup",
     "ArtifactRow",
+    "Condition",
+    "FilterColumn",
+    "FilterSpec",
+    "apply_filter",
     "build_view_model",
     "entries_by_id",
     "feature_units",
+    "filter_columns",
     "phase_artifact_groups",
 ]
