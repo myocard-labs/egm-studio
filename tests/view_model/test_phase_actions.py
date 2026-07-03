@@ -1,0 +1,88 @@
+"""Tests for the per-artifact action policy (view_model.phase_actions)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from myocard_egm_contracts import Role
+
+from myocard_egm_studio.view_model import phase_actions
+from myocard_egm_studio.view_model.artifact_metadata import has_metadata_view
+from myocard_egm_studio.view_model.phase_actions import (
+    UNIVERSAL_ACTIONS,
+    actions_for,
+    info_actions,
+    reveal_target,
+    type_actions,
+)
+
+_UNIVERSAL_IDS = ("reveal_file", "copy_id")
+
+
+def test_input_bank_viewers() -> None:
+    ids = [a.id for a in type_actions(Role.training_bank)]
+    assert ids == ["view_traces", "explore_signal", "view_feature_distributions"]
+    view_traces, *planned = type_actions(Role.training_bank)
+    assert view_traces.available is True  # wired now
+    assert all(not a.available and a.note for a in planned)  # greyed + block-tagged
+
+
+def test_prediction_bank_adds_ml_actions() -> None:
+    ids = [a.id for a in type_actions(Role.labeled_prediction_bank)]
+    assert ids == [
+        "view_traces",
+        "explore_signal",
+        "view_feature_distributions",
+        "view_ml_diagnostics",
+        "compare_bank",
+    ]
+
+
+def test_training_run_view_is_planned_not_wired() -> None:
+    (action,) = type_actions(Role.training_run)
+    assert action.id == "view_curves"
+    assert action.available is False
+    assert action.note  # explains where it lands
+
+
+def test_model_has_viewers_but_no_metadata() -> None:
+    assert [a.id for a in type_actions(Role.model)] == ["go_to_run", "view_architecture"]
+    # model + paper are Reveal / Copy only — no Show metadata
+    assert info_actions(Role.model) == UNIVERSAL_ACTIONS
+    assert info_actions(Role.paper) == UNIVERSAL_ACTIONS
+    assert "show_metadata" not in {a.id for a in actions_for(Role.model)}
+
+
+def test_metadata_roles_lead_the_info_group() -> None:
+    info = info_actions(Role.figure)
+    assert [a.id for a in info] == ["show_metadata", *_UNIVERSAL_IDS]
+    assert tuple(a.id for a in UNIVERSAL_ACTIONS) == _UNIVERSAL_IDS
+
+
+def test_actions_for_is_viewers_then_info() -> None:
+    ids = [a.id for a in actions_for(Role.training_bank)]
+    assert ids == [
+        "view_traces",
+        "explore_signal",
+        "view_feature_distributions",
+        "show_metadata",
+        "reveal_file",
+        "copy_id",
+    ]
+    assert [a.id for a in actions_for(Role.paper)] == list(
+        _UNIVERSAL_IDS
+    )  # no viewers, no metadata
+
+
+def test_metadata_roles_match_readers() -> None:
+    # the roles offered Show metadata must be exactly those artifact_metadata can read
+    readable = {role for role in Role if has_metadata_view(role)}
+    assert readable == phase_actions._METADATA_ROLES
+
+
+def test_reveal_target_dwims_file_vs_dir(tmp_path: Path) -> None:
+    (tmp_path / "f.h5").write_bytes(b"")
+    (tmp_path / "sub").mkdir()
+    assert reveal_target(tmp_path, "f.h5") == tmp_path  # a file -> its folder
+    assert reveal_target(tmp_path, "sub") == tmp_path / "sub"  # a dir -> itself
+    assert reveal_target(tmp_path, "gone/x.h5") == tmp_path / "gone"  # missing -> its folder

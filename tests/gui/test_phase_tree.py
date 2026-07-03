@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from myocard_egm_data.phases import load_phase_dir
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 from pytestqt.qtbot import QtBot
 
 from myocard_egm_studio.gui.widgets.phase_tree import STATUS_ROLE, PhaseTree
@@ -90,3 +90,54 @@ def test_present_status_is_grey_and_dotted(qtbot: QtBot) -> None:
     assert item.data(0, STATUS_ROLE) is ArtifactStatus.PRESENT
     assert not item.icon(0).isNull()  # unverified items still show a (ring) dot
     assert _top(tree, 0).foreground(0).color().name() == "#8b949e"  # group grey while unverified
+
+
+def _menu_labels(menu: QtWidgets.QMenu) -> list[str]:
+    return [action.text() for action in menu.actions() if not action.isSeparator()]
+
+
+def _menu_action(menu: QtWidgets.QMenu, text: str) -> QtGui.QAction:
+    return next(action for action in menu.actions() if action.text() == text)
+
+
+def test_context_menu_policy_is_custom(qtbot: QtBot) -> None:
+    tree = _populated(qtbot)
+    assert tree.contextMenuPolicy() == QtCore.Qt.ContextMenuPolicy.CustomContextMenu
+
+
+def test_bank_menu_lists_viewers_then_info(qtbot: QtBot) -> None:
+    tree = _populated(qtbot)
+    menu = tree._artifact_menu(_child(_top(tree, 0), 0).text(0))  # a training bank
+    assert _menu_labels(menu) == [
+        "View traces",
+        "Explore in Signal exploration",
+        "View feature distributions",
+        "Show metadata",
+        "Reveal file",
+        "Copy id",
+    ]
+    assert any(action.isSeparator() for action in menu.actions())  # divider before the info group
+
+
+def test_run_menu_disables_planned_action(qtbot: QtBot) -> None:
+    tree = _populated(qtbot)
+    menu = tree._artifact_menu(_child(_top(tree, 5), 0).text(0))  # a training run
+    assert _menu_action(menu, "View training curves").isEnabled() is False
+    assert _menu_action(menu, "Show metadata").isEnabled() is True
+
+
+def test_model_menu_has_no_show_metadata(qtbot: QtBot) -> None:
+    tree = _populated(qtbot)
+    labels = _menu_labels(tree._artifact_menu(_child(_top(tree, 6), 0).text(0)))  # a model
+    assert "Go to training run" in labels
+    assert "Show metadata" not in labels  # .pt checkpoints have no cheap file view
+    assert labels[-2:] == ["Reveal file", "Copy id"]
+
+
+def test_triggering_action_emits_signal(qtbot: QtBot) -> None:
+    tree = _populated(qtbot)
+    bank_id = _child(_top(tree, 0), 0).text(0)
+    menu = tree._artifact_menu(bank_id)
+    with qtbot.waitSignal(tree.actionRequested) as blocker:
+        _menu_action(menu, "Copy id").trigger()
+    assert blocker.args == ["copy_id", bank_id]
