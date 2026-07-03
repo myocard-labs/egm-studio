@@ -15,7 +15,7 @@ recipe only plots.
 
 ``positive_label`` (via ``inputs.positive_label``, default 1) selects the
 positive class and must match what the loader used to build ``probs`` — the same
-key :func:`...figures.loaders.load_prediction_groups` reads.
+key :func:`...loaders.load_prediction_groups` reads.
 """
 
 from __future__ import annotations

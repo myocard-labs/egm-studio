@@ -4,12 +4,12 @@ This is the renderer's *loading step*: the bridge between egm-data banks on disk
 and the in-memory inputs that recipes draw (``charts/matplotlib/inputs``). A
 recipe stays pure plotting; this module does the I/O + adaptation.
 
-Block 7 will resolve a spec's ``inputs.groups`` bank ids to file paths through
-the phase manifest. Until then the caller supplies the id->path map by hand (the
-``egm-studio-render --bank ID=PATH`` / ``--banks map.json`` flags), which is a
-proto-manifest: the same ``{bank_id: path}`` resolution the manifest reader will
-do later. The *adapter* below (bank -> PredictionGroup) is permanent and reused
-unchanged once the manifest lands; only the source of the path map changes.
+:func:`resolve_recipe_data` takes the spec + a ``{artifact_id: path}`` map. That
+map comes either from a phase folder's manifest (:func:`..manifest.bank_paths_from_phase`,
+the ``egm-studio-render --phase`` path) or, for ad-hoc rendering, from the CLI's
+hand-supplied ``--bank`` / ``--banks`` flags — both are the same ``{id: path}``
+shape. The bank -> recipe-input adapters below (e.g. :func:`prediction_group_from_bank`)
+are permanent and source-agnostic.
 
 Loaders register per recipe (mirroring the ``charts/matplotlib`` recipe
 registry): :func:`resolve_recipe_data` dispatches on ``spec.recipe`` into

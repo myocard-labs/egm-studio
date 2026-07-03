@@ -5,12 +5,13 @@ Reads a figure_spec ``.json``, validates it through egm-data's typed loader
 :func:`myocard_egm_studio.figures.render`, and writes the image. Importable as
 ``main`` for tests; wired as the ``egm-studio-render`` console script.
 
-Real-data rendering before Block 7: a spec's ``inputs.groups`` carry bank *ids*,
-not paths. Block 7 resolves those ids through the phase manifest; until then
-pass the id->path map by hand with ``--banks MAP.json`` (a ``{bank_id: path}``
-JSON, i.e. a proto-manifest) and/or repeated ``--bank BANK_ID=PATH``. With a
-map supplied the CLI loads the banks and renders real data; with none it exits 4
-asking for one.
+Real-data rendering: a spec's ``inputs.groups`` carry bank *ids*, not paths.
+Point ``--phase FOLDER`` at a phase directory and the ids resolve through its
+``manifest.json`` (the manifest-driven path); or, for ad-hoc rendering, pass the
+id->path map by hand with ``--banks MAP.json`` (a ``{bank_id: path}`` JSON)
+and/or repeated ``--bank BANK_ID=PATH`` (these override the manifest per id).
+With a map resolved the CLI loads the banks and renders real data; with none it
+exits 4 asking for one.
 
 If the output file already exists the CLI skips it (exit 0) *before* loading any
 data, so re-running a phase's specs only renders what's missing; pass
@@ -20,7 +21,7 @@ Usage
 -----
 ::
 
-    egm-studio-render SPEC.json [-o OUTPUT] [--banks MAP.json] [--bank ID=PATH ...] [--overwrite]
+    egm-studio-render SPEC.json [-o OUTPUT] [--phase FOLDER] [--banks MAP.json] [--bank ID=PATH ...] [--overwrite]
 
 Exit codes: 0 success (or output already exists and was skipped); 1 file/render
 error; 2 invalid spec (malformed JSON or schema mismatch); 3 unknown recipe; 4
@@ -40,9 +41,12 @@ from pydantic import ValidationError
 
 from myocard_egm_studio.figures import (
     FigureDataNotLoadedError,
-    LoaderNotRegisteredError,
     UnknownRecipeError,
     render,
+)
+from myocard_egm_studio.loaders import (
+    LoaderNotRegisteredError,
+    bank_paths_from_phase,
     resolve_recipe_data,
 )
 
@@ -59,6 +63,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Override the spec's output.path (where the rendered image is written).",
+    )
+    p.add_argument(
+        "-p",
+        "--phase",
+        type=Path,
+        default=None,
+        metavar="FOLDER",
+        help=(
+            "A phase folder (containing manifest.json). Resolves the spec's bank ids "
+            "to paths through the manifest — the manifest-driven alternative to "
+            "--bank / --banks, which still override individual ids."
+        ),
     )
     p.add_argument(
         "--banks",
@@ -90,13 +106,20 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 def _collect_bank_paths(
     args: argparse.Namespace, parser: argparse.ArgumentParser
-) -> dict[str, str]:
-    """Build the ``{bank_id: path}`` map from ``--banks`` (JSON) + ``--bank`` flags.
+) -> dict[str, str | Path]:
+    """Build the ``{bank_id: path}`` map: ``--phase`` manifest (if given), then
+    ``--banks`` (JSON), then ``--bank`` flags — each overriding the previous.
 
-    ``--bank`` entries override ``--banks`` keys. Malformed input is reported via
-    ``parser.error`` (exit 2), the argparse convention.
+    Malformed input (a bad ``--phase`` folder / manifest, ``--banks`` JSON, or a
+    ``--bank`` entry) is reported via ``parser.error`` (exit 2), the argparse
+    convention.
     """
-    paths: dict[str, str] = {}
+    paths: dict[str, str | Path] = {}
+    if args.phase is not None:
+        try:
+            paths.update(bank_paths_from_phase(args.phase))
+        except (OSError, ValueError, ValidationError) as exc:
+            parser.error(f"cannot resolve --phase {args.phase}: {exc}")
     if args.banks is not None:
         try:
             raw = json.loads(Path(args.banks).read_text(encoding="utf-8"))
@@ -165,9 +188,9 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     except FigureDataNotLoadedError:
         print(
-            "ERROR: no figure data provided. Pass --banks MAP.json or repeated "
-            "--bank BANK_ID=PATH to render from real predictions banks. "
-            "(Spec-driven loading via the phase manifest lands in Block 7.)",
+            "ERROR: no figure data provided. Pass --phase FOLDER to resolve the "
+            "spec's bank ids through a phase manifest, or --banks MAP.json / "
+            "repeated --bank BANK_ID=PATH to map them by hand.",
             file=sys.stderr,
         )
         return 4

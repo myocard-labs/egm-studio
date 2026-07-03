@@ -1,9 +1,9 @@
-"""Tests for figures.loaders — the bank -> recipe-input adapter + resolution.
+"""Tests for loaders.figure_inputs — the bank -> recipe-input adapter + resolution.
 
-The adapter (``prediction_group_from_bank``) is permanent Block-7 code; these
-tests pin its softmax derivation and its labeled/unlabeled/error handling. The
-loader + ``resolve_recipe_data`` tests cover the ``{bank_id: path}`` resolution
-the CLI drives (and the manifest will drive later).
+The adapter (``prediction_group_from_bank``) is permanent code; these tests pin
+its softmax derivation and its labeled/unlabeled/error handling. The loader +
+``resolve_recipe_data`` tests cover the ``{bank_id: path}`` resolution both the
+CLI's --bank/--banks flags and the phase manifest drive.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from myocard_egm_data.records import (
     write_training_run_record,
 )
 
-from myocard_egm_studio.figures.loaders import (
+from myocard_egm_studio.loaders import (
     LoaderNotRegisteredError,
     UnmappedBankIdError,
     load_feature_groups,

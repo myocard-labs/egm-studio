@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from myocard_egm_data.banks import ClassifierBank, write_classifier_bank
+from myocard_egm_data.phases import PhaseManifest, write_phase_manifest
 
 from myocard_egm_studio.cli.render import main
 
@@ -185,3 +186,49 @@ def test_render_overwrite_replaces_existing(
     rc = main([str(spec_path), "--bank", f"{_FIXTURE_PRED_ID}={bank_path}", "--overwrite"])
     assert rc == 0
     assert out.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"  # real PNG header, not the sentinel
+
+
+# --- real-data rendering via --phase (manifest resolution) --------------- #
+
+
+def test_render_with_phase_manifest(
+    tiny_predictions_bank: ClassifierBank,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--phase FOLDER resolves the spec's bank id through the manifest and renders."""
+    phase = tmp_path / "phase_1_5"
+    phase.mkdir()
+    write_classifier_bank(tiny_predictions_bank, phase / "preds.h5")
+    manifest = PhaseManifest.model_validate(
+        {
+            "schema_version": "1",
+            "phase": 1.5,
+            "status": "in_progress",
+            "egm_banks": [
+                {
+                    "id": _FIXTURE_PRED_ID,
+                    "path": "preds.h5",
+                    "produced_by_package": "egm-classifier",
+                    "produced_by_version": "v0.4.0",
+                }
+            ],
+        }
+    )
+    write_phase_manifest(phase / "manifest.json", manifest)
+    out = tmp_path / "fig.png"
+    spec_path = tmp_path / "spec.json"
+    _write_ph_spec(spec_path, bank_id=_FIXTURE_PRED_ID, out=out)
+    rc = main([str(spec_path), "--phase", str(phase)])
+    assert rc == 0
+    assert out.exists()
+    assert "Wrote" in capsys.readouterr().out
+
+
+def test_bad_phase_folder_exits_2(tmp_path: Path) -> None:
+    """--phase at a folder with no manifest.json is an argparse usage error (exit 2)."""
+    spec_path = tmp_path / "spec.json"
+    _write_ph_spec(spec_path, bank_id=_FIXTURE_PRED_ID, out=tmp_path / "fig.png")
+    with pytest.raises(SystemExit) as excinfo:
+        main([str(spec_path), "--phase", str(tmp_path / "no_such_phase")])
+    assert excinfo.value.code == 2
