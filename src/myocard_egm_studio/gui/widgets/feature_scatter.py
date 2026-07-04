@@ -56,6 +56,7 @@ class FeatureScatterView(QtWidgets.QWidget):
         self._x = ""
         self._y = ""
         self._items: list[pg.ScatterPlotItem] = []
+        self._front_source: str | None = None  # a source raised above the others (B7-scatter-front)
 
         self._x_combo = QtWidgets.QComboBox()
         self._x_combo.setObjectName("scatterX")
@@ -112,6 +113,20 @@ class FeatureScatterView(QtWidgets.QWidget):
     def recenter(self) -> None:
         """Fit the view back to the current points (after a manual pan / zoom)."""
         self._plot.getPlotItem().getViewBox().autoRange()
+
+    def bring_to_front(self, source: str) -> None:
+        """Raise ``source``'s points above the others, so a huge bank doesn't bury them.
+
+        Draw order (hence overplotting) is load order, so a large bank loaded last hides
+        the rest; this stacks the chosen source on top by z-value. The choice persists
+        across redraws (a filter apply / axis change re-applies it).
+        """
+        self._front_source = source
+        self._apply_front_order()
+
+    def _apply_front_order(self) -> None:
+        for source, item in zip(self._series, self._items, strict=True):
+            item.setZValue(1 if source.name == self._front_source else 0)
 
     def x_feature(self) -> str:
         return self._x
@@ -174,6 +189,7 @@ class FeatureScatterView(QtWidgets.QWidget):
         for item in self._items:
             item.sigClicked.connect(self._on_points_clicked)
         self._legend.set_entries([(s.name, color_for(i)) for i, s in enumerate(self._series)])
+        self._apply_front_order()  # re-raise the chosen source after the redraw rebuilt items
         plot.getViewBox().autoRange()  # recenter to the new data (filter / axis change)
 
     def _on_axis(self, _index: int) -> None:

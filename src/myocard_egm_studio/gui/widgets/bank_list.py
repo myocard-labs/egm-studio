@@ -2,9 +2,11 @@
 
 A small vertical list, one row per loaded bank: a colour swatch (the bank's
 overlay colour, so the list, the summary curves, and the legend agree), the
-bank's label, and a remove button. Emits :attr:`removeRequested` with the bank's
-path; the shell drops it and rebuilds the combined view. Dumb + rebuildable —
-:meth:`set_banks` re-renders the whole roster from the shell's state.
+bank's label, a bring-to-front button, and a remove button. Emits
+:attr:`removeRequested` with the bank's path (the shell drops it and rebuilds) and
+:attr:`bringToFrontRequested` with the path (the shell raises that bank's scatter
+points above the others, so a huge bank loaded last doesn't bury a smaller one).
+Dumb + rebuildable — :meth:`set_banks` re-renders the whole roster from state.
 """
 
 from __future__ import annotations
@@ -13,14 +15,15 @@ from collections.abc import Sequence
 
 from PySide6 import QtCore, QtWidgets
 
-#: One roster row: (label, path, swatch colour hex). ``path`` is the remove key.
+#: One roster row: (label, path, swatch colour hex). ``path`` is the row key.
 BankRow = tuple[str, str, str]
 
 
 class LoadedBanksList(QtWidgets.QWidget):
-    """The left-sidebar list of loaded banks; emits the path to remove on request."""
+    """The left-sidebar list of loaded banks; emits the bank path for row actions."""
 
     removeRequested = QtCore.Signal(str)  # the bank path to drop
+    bringToFrontRequested = QtCore.Signal(str)  # the bank path to raise in the scatter
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -66,6 +69,13 @@ class LoadedBanksList(QtWidgets.QWidget):
         name.setObjectName("bankRowName")
         name.setToolTip(path)
         layout.addWidget(name, 1)
+
+        front = QtWidgets.QToolButton()
+        front.setObjectName("bankRowFront")
+        front.setText("⤒")  # up-arrow-to-bar: bring this bank's points to the front
+        front.setToolTip(f"Bring {label} to the front of the scatter")
+        front.clicked.connect(lambda: self.bringToFrontRequested.emit(path))
+        layout.addWidget(front)
 
         remove = QtWidgets.QToolButton()
         remove.setObjectName("bankRowRemove")

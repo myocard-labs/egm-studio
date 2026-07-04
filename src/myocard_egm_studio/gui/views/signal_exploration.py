@@ -293,6 +293,10 @@ class SignalExplorationView(QtWidgets.QWidget):
     def show_explore(self) -> None:
         self._tabs.setCurrentIndex(_TAB_EXPLORE)
 
+    def bring_scatter_to_front(self, source: str) -> None:
+        """Raise a source's points above the others in the scatter (roster button)."""
+        self._scatter.bring_to_front(source)
+
     @property
     def result_list(self) -> ResultList:
         return self._result_list

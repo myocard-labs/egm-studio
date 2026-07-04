@@ -343,6 +343,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._left_sidebar.toggleRequested.connect(lambda: self._toggle_sidebar("left"))
         self._bank_list = LoadedBanksList()
         self._bank_list.removeRequested.connect(self._remove_bank)
+        self._bank_list.bringToFrontRequested.connect(self._on_bring_to_front)
         self._filter_panel = FilterPanel()
         self._filter_panel.recalculateRequested.connect(self._on_recalculate)
         left_body = QtWidgets.QWidget()
@@ -543,6 +544,13 @@ class MainWindow(QtWidgets.QMainWindow):
         """Drop the loaded bank at ``path`` (the loaded-banks list remove button)."""
         self._loaded_banks = [b for b in self._loaded_banks if b.path != path]
         self._refresh_loaded(focus=None)
+
+    def _on_bring_to_front(self, path: str) -> None:
+        """Raise the roster bank's points to the front of the scatter (by its source label)."""
+        for bank in self._loaded_banks:
+            if bank.path == path:
+                self._explore_view.bring_scatter_to_front(bank.label)
+                return
 
     def _refresh_loaded(
         self,
