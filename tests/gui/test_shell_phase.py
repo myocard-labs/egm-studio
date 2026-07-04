@@ -106,11 +106,9 @@ def test_reveal_action_targets_the_artifact_folder(
     assert captured == [reveal_target(_FIXTURE_DIR, _BANK_PATH)]
 
 
-def test_view_traces_action_routes_to_bank_loader(
-    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_explore_action_opens_the_bank(qtbot: QtBot, monkeypatch: pytest.MonkeyPatch) -> None:
     window = _loaded_window(qtbot)
     opened: list[str] = []
     monkeypatch.setattr(window, "_open_bank_explore", opened.append)
-    window._on_phase_action("view_traces", _BANK_ID)
+    window._on_phase_action("explore_signal", _BANK_ID)
     assert opened == [str(_FIXTURE_DIR / _BANK_PATH)]

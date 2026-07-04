@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from myocard_egm_data.banks import ClassifierBank
+from PySide6 import QtWidgets
 from pytestqt.qtbot import QtBot
 
 from myocard_egm_studio.gui.sources import traces_from_bank
@@ -10,6 +11,7 @@ from myocard_egm_studio.gui.theme import plot_palette
 from myocard_egm_studio.gui.views import SignalExplorationView
 from myocard_egm_studio.gui.widgets import TraceView
 from myocard_egm_studio.view_model import build_view_model
+from myocard_egm_studio.view_model.builder import FEATURE_COLUMNS
 
 
 def _view(qtbot: QtBot, bank: ClassifierBank) -> SignalExplorationView:
@@ -20,17 +22,27 @@ def _view(qtbot: QtBot, bank: ClassifierBank) -> SignalExplorationView:
     return view
 
 
+def _top(view: SignalExplorationView, index: int) -> QtWidgets.QTreeWidgetItem:
+    item = view._detail_table.topLevelItem(index)
+    assert item is not None
+    return item
+
+
 def test_results_populate_the_list(qtbot: QtBot, tiny_classifier_bank: ClassifierBank) -> None:
     view = _view(qtbot, tiny_classifier_bank)
     assert view.result_list._table.rowCount() == len(tiny_classifier_bank.traces)
 
 
-def test_selecting_rows_shows_a_traceview(
+def test_selecting_rows_shows_waveforms_and_detail(
     qtbot: QtBot, tiny_classifier_bank: ClassifierBank
 ) -> None:
     view = _view(qtbot, tiny_classifier_bank)
     view.result_list._table.selectRow(0)
-    assert isinstance(view._detail.content, TraceView)
+    assert view._detail_stack.currentIndex() == 1  # the waveform + detail page
+    assert isinstance(view._waveforms.content, TraceView)
+    assert [_top(view, 0).text(0), _top(view, 1).text(0)] == ["Features", "Metadata"]
+    assert _top(view, 0).childCount() == len(FEATURE_COLUMNS)  # the 11 egm-features
+    assert _top(view, 1).childCount() > 0  # metadata rows
 
 
 def test_clearing_selection_returns_to_placeholder(
@@ -38,13 +50,13 @@ def test_clearing_selection_returns_to_placeholder(
 ) -> None:
     view = _view(qtbot, tiny_classifier_bank)
     view.result_list._table.selectRow(0)
-    assert isinstance(view._detail.content, TraceView)
+    assert view._detail_stack.currentIndex() == 1
     view.result_list._table.clearSelection()
-    assert not isinstance(view._detail.content, TraceView)  # back to the prompt
+    assert view._detail_stack.currentIndex() == 0  # back to the prompt
 
 
 def test_detail_caps_at_three_traces(qtbot: QtBot, tiny_classifier_bank: ClassifierBank) -> None:
     view = _view(qtbot, tiny_classifier_bank)
     view._show_detail(list(range(len(tiny_classifier_bank.traces))))  # "select all 12"
-    detail = view._detail.content
-    assert isinstance(detail, TraceView)  # capped to 3 internally, no crash
+    assert isinstance(view._waveforms.content, TraceView)  # capped to 3 internally
+    assert view._detail_table.columnCount() == 1 + 3  # attribute column + 3 trace columns

@@ -109,8 +109,7 @@ def test_bank_menu_lists_viewers_then_info(qtbot: QtBot) -> None:
     tree = _populated(qtbot)
     menu = tree._artifact_menu(_child(_top(tree, 0), 0).text(0))  # a training bank
     assert _menu_labels(menu) == [
-        "View traces",
-        "Explore in Signal exploration",
+        "Explore signal",
         "View feature distributions",
         "Show metadata",
         "Reveal file",

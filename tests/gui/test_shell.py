@@ -133,6 +133,6 @@ def test_theme_change_restyles_the_detail(
     light = window.findChild(QtGui.QAction, "themeAction_light")
     assert light is not None
     light.trigger()
-    content = window._explore_view._detail.content
+    content = window._explore_view._waveforms.content
     assert isinstance(content, TraceView)
     assert content.container.palette == plot_palette("light")

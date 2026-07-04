@@ -20,20 +20,15 @@ _UNIVERSAL_IDS = ("reveal_file", "copy_id")
 
 
 def test_input_bank_viewers() -> None:
-    view_traces, explore, feature_dist = type_actions(Role.training_bank)
-    assert [view_traces.id, explore.id, feature_dist.id] == [
-        "view_traces",
-        "explore_signal",
-        "view_feature_distributions",
-    ]
-    assert view_traces.available and explore.available  # View traces + Explore are wired (B7)
+    explore, feature_dist = type_actions(Role.training_bank)
+    assert [explore.id, feature_dist.id] == ["explore_signal", "view_feature_distributions"]
+    assert explore.available  # Explore signal is wired (B7)
     assert not feature_dist.available and feature_dist.note  # feature distributions still planned
 
 
 def test_prediction_bank_adds_ml_actions() -> None:
     ids = [a.id for a in type_actions(Role.labeled_prediction_bank)]
     assert ids == [
-        "view_traces",
         "explore_signal",
         "view_feature_distributions",
         "view_ml_diagnostics",
@@ -65,7 +60,6 @@ def test_metadata_roles_lead_the_info_group() -> None:
 def test_actions_for_is_viewers_then_info() -> None:
     ids = [a.id for a in actions_for(Role.training_bank)]
     assert ids == [
-        "view_traces",
         "explore_signal",
         "view_feature_distributions",
         "show_metadata",
