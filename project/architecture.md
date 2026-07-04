@@ -103,7 +103,7 @@ myocard_egm_studio/
 │   ├── distributions.py  #   CDFs, KS / Wasserstein distance, histogram, KDE
 │   ├── aggregation.py    #   between-group feature distance + aggregate roll-up
 │   ├── similarity.py     #   per-feature nearest-trace lookup        [ADR-020]
-│   ├── metrics.py        #   ROC / AUROC + reliability / ECE (synth-val only)
+│   ├── metrics.py        #   ROC / AUROC + reliability / ECE + confusion (synth-val only)
 │   └── ...               #   one module per analytical concern
 ├── charts/               # Chart-building primitives, dual backend.
 │   ├── inputs.py         #   prepared recipe-input dataclasses (shared, framework-free)
@@ -115,7 +115,10 @@ myocard_egm_studio/
 │   └── pyqtgraph/        #   interactive, GUI-embedded chart recipes
 │       ├── style.py      #     PgChartStyle (background / foreground)
 │       ├── feature_distribution.py  # feature-distribution overlay (GUI twin)
-│       └── feature_scatter.py       # 2-D feature scatter (GUI-only; no mpl twin) [B7.9]
+│       ├── feature_scatter.py       # 2-D feature scatter (GUI-only; no mpl twin) [B7.9]
+│       ├── output_distribution.py   # Flow B: P(positive) per source            [B8e]
+│       ├── metrics.py               # Flow B: ROC / calibration / confusion      [B8f]
+│       └── training.py              # Flow B: loss + metric curves               [B8f]
 ├── figures/              # Thin headless layer over charts/matplotlib/.
 │   └── render.py         #   render(spec, *, data, overwrite) -> Path (pure rendering)
 ├── gui/                  # Qt shell — imports PySide6 + pyqtgraph.
@@ -129,11 +132,12 @@ myocard_egm_studio/
 │   │   ├── trace.py      #   TraceWidget + container        [ADR-024, B5]
 │   │   ├── filter.py     #   Filter / query UI              [ADR-002]
 │   │   ├── phase_tree.py #   Phase artifact tree: groups, status dots, menu  [B6]
-│   │   └── ...           #   Other shared widgets
+│   │   ├── explore_detail.py  # shared per-trace detail + pluggable finds (both flows) [B8g]
+│   │   └── ...           #   Other shared widgets (result_list, feature_grid, metrics_view, ...)
 │   └── views/
-│       ├── signal_exploration.py   # Flow A — uses charts/pyqtgraph
-│       ├── ml_diagnostics.py       # Flow B — uses charts/pyqtgraph
-│       └── paper_figure_prep.py    # Flow C — wraps figures/
+│       ├── signal_exploration.py   # Flow A — Summary/Explore/Scatter tabs      [B7]
+│       ├── ml_diagnostics.py       # Flow B — Output/Metrics/Training/Explore    [B8]
+│       └── paper_figure_prep.py    # Flow C — wraps figures/        (Block 9, pending)
 ├── cli/
 │   └── render.py         #   `egm-studio-render` entry point
 │                         #   (`egm-studio` GUI script -> gui/app.py:main)
@@ -142,11 +146,12 @@ myocard_egm_studio/
 │   └── manifest.py       #   phase manifest -> {artifact_id: path} resolution
 ├── save/                 # Observation + manifest writers   [ADR-017, ADR-021]
 └── view_model/           # Prepared, Qt-free view data       [ADR-002]
-    ├── builder.py        #   unified per-trace table (features + metadata)
+    ├── builder.py        #   unified per-trace table (features + metadata + ML outcomes)
+    ├── ml_outcomes.py    #   predictions-bank -> ML columns; ML_COLUMNS         [B8a]
     ├── combine.py        #   pool N banks into one frame (global row_id)  [B7.8]
     ├── summary.py        #   bank stats for the Flow A summary landing    [B7.7]
-    ├── trace_detail.py   #   per-trace feature + metadata detail + deltas [B7.6]
-    ├── similar.py        #   nearest trace in each other bank per feature [B7.10]
+    ├── trace_detail.py   #   per-trace feature + metadata + ML detail + deltas [B7.6, B8g]
+    ├── similar.py        #   nearest-in-other-bank + correct-pair / in-class finds [B7.10, B8b]
     ├── phase_groups.py   #   manifest -> the ten role-based groups       [B6]
     ├── phase_status.py   #   per-artifact existence + schema validation  [B6]
     ├── phase_actions.py  #   right-click action policy per role          [B6]
@@ -321,7 +326,14 @@ checkmarks stay in sync. Region content stays placeholder until Blocks 5+.
 - **Filter-and-sort-first** as the universal entry: every view
   opens with the query / filter bar [ADR-002].
 - **Pair-comparison** is a first-class UI pattern — Δfeature pairs
-  and similarity-driven pairs both supported [ADR-002, ADR-020].
+  and similarity-driven pairs both supported [ADR-002, ADR-020]. Both
+  flows share one pane: Flow A's detail was extracted into a reusable
+  `ExploreDetail` (waveforms + value table + pluggable finds) [B8g].
+- **One Open-bank path, mode auto-detected** [B8]: the single Open-bank
+  action builds the view-model, and `gui/sources.frame_eval_mode` reads
+  whether it carries predictions (+ labels) to populate Flow B — no
+  separate "load evaluated bank" entry. One filter panel narrows both
+  flows.
 - **Live-preview** via `@interact`-equivalent: Qt sliders bound to
   PyQtGraph redraw callbacks with debouncing; manual-trigger button
   for expensive operations [ADR-019].

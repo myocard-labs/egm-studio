@@ -1467,9 +1467,12 @@ Key points relevant to egm-studio:
   `run_` / `model_` / `obs_` / `fig_` / `paper_`).
 - Stable IDs are assigned at write time by the producer and live in
   the artifact's provenance record.
-- egm-studio uses the role prefix to drive UI behavior — e.g.
-  Flow B's "Load Evaluated Bank" reads the prefix to know whether
-  truth labels are present and which analysis branch to take.
+- egm-studio uses the role prefix to drive UI behavior — e.g. the
+  `lpred_` / `upred_` split tells Flow B whether a loaded predictions
+  bank carries truth labels, selecting the full-metrics vs qualitative
+  branch. (As shipped in Block 8 this routes off the loaded bank's
+  outcome columns via `gui/sources.frame_eval_mode`, on the single
+  Open-bank path — there is no separate "Load Evaluated Bank" entry.)
 
 ### Consequences
 

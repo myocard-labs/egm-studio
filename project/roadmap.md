@@ -485,11 +485,70 @@ MVP-only exit).
 
 ### Block 8 — Flow B ML diagnostics
 
-Extends the view-model with predictions-bank outcomes; adds the
-3-way comparison view that anchored Flow B in
-`user_flow_walkthroughs.md`.
+Extends the view-model with predictions-bank outcomes and builds the
+ML-diagnostics mode: an Output / Metrics / Training / Explore tab set over an
+evaluated bank, anchored on the v1-vs-v1.5 output-distribution comparison from
+`user_flow_walkthroughs.md`. **✓ Shipped 2026-07-04.** The plan below is
+retained; the sub-block notes record what actually shipped and where it deviated.
 
-**Scope:**
+**Shipped (by sub-block):**
+
+- **B8a — view-model ML-outcome join.** **✓ Shipped** — `build_view_model` joins
+  the predictions columns onto the per-trace frame when a bank carries them
+  (`view_model/ml_outcomes.py`, `ML_COLUMNS`: `predicted_prob`, `predicted_class`,
+  `correctness_bucket` (TP/TN/FP/FN), `per_trace_loss`, `calibration_residual`).
+  `frame_eval_mode` reads the result — `"full"` for a labelled eval bank,
+  `"qualitative"` for an unlabelled (IAFDB-shaped) one, `None` for a raw bank.
+- **B8b — similarity + confusion primitives.** **✓ Shipped** — extended the Block 2
+  per-feature scaffold (`view_model/similar.py`) with `nearest_correct_pair` (a
+  misclassification → its nearest correctly-classified opposite-label trace) and
+  `within_class_neighborhood` (a trace's k nearest same-label peers) per ADR-020;
+  the feature axis is a UI dropdown. Added `confusion` to `analysis/metrics.py`.
+- **B8c — evaluated-bank + training-run loaders.** **✓ Shipped** —
+  `prediction_groups_by_source` / `confusion_by_source` split an evaluated frame
+  per source for the Output + Metrics tabs; a separate `run.json` path loads a
+  training record into a `TrainingCurve` for the Training tab.
+- **B8d — view scaffold + shell mount.** **✓ Shipped** — `gui/views/ml_diagnostics.py`
+  mounts in the shell's ML-diagnostics mode with the four-tab layout.
+- **B8d-fix — single Open-bank path feeds both flows (deviation).** **✓ Shipped** —
+  the planned **"Load Evaluated Bank"** unified entry with a conditional
+  no-predictions / predictions-only / predictions+labels warning branch was
+  **dropped**. Instead the one **Open bank** action (shared with Flow A) auto-detects
+  predictions via `frame_eval_mode` and populates Flow B — no separate entry, no
+  warning dialog. (Recorded as superseded in `user_flow_walkthroughs.md` Flow B
+  step 2.)
+- **B8e — output-distribution overlay.** **✓ Shipped** — the **Output** tab is Flow
+  B's headline: a P(positive)-per-source overlay (`charts/pyqtgraph/output_distribution.py`),
+  generalized from the planned 3-way (v1 / v1.5 / IAFDB) to N sources. Flow B lands
+  here on load.
+- **B8f — the metric suite (beyond plan).** **✓ Shipped** — a **Metrics** tab
+  (`charts/pyqtgraph/metrics.py`, `gui/widgets/metrics_view.py`): ROC + calibration
+  reliability + a per-source confusion matrix with a **counts / overall% / row% /
+  col%** normalization selector (persisted); labelled sets only, a message otherwise.
+  Plus a **Training** tab (`charts/pyqtgraph/training.py`, `gui/widgets/training_view.py`):
+  loss + metric curves fed by the independent *File ▸ Open training run* path, train
+  vs val by colour, and a loaded-runs roster (`gui/widgets/run_list.py`) with removal.
+  Phase-tree right-click *View ML diagnostics* / *View training curves* wired here.
+- **B8g — ML-outcome filter + pair comparison.** **✓ Shipped** — extracted Flow A's
+  detail pane into a **shared `ExploreDetail` widget** (`gui/widgets/explore_detail.py`:
+  waveforms + Features/Model/Metadata table + pluggable `Finder` controls); both flows
+  mount it with their own finds. Flow B's **Explore** tab is a result list over that
+  detail with two finds — `nearest_correct_pair` and `within_class_neighborhood`. On
+  review the Flow-B-specific filter was **removed in favour of the shell's single
+  Banks-&-filter panel** driving Flow A + Flow B's Explore list together (the metric
+  tabs keep the full eval set); a find button hides unless it applies to the selected
+  trace ("Find nearest correct" only for an FP / FN); and a find drops the ML-outcome +
+  truth-label filter conditions so narrowing the list to FP / FN still reaches the
+  correct counterparts.
+- **B8h — docs pass.** **✓ Shipped** — this section + README Flow B refresh +
+  architecture module-map + the walkthroughs as-built note.
+
+**This closes Block 8 — the Flow B ML-diagnostics mode is complete.** The
+two-column pair-comparison (ADR-025) shipped as the shared ExploreDetail's
+source-first 3-pane compare (the same machinery as Flow A's B7.10), not a separate
+two-column layout.
+
+**Original plan (retained):**
 
 - Predictions-bank loader (joins predictions onto the per-trace
   view-model: predicted_prob, predicted_class, correctness_bucket,

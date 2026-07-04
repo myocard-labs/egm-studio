@@ -583,3 +583,15 @@ resolution. The other four (018, 019, 020, 023) can be resolved
 independently.
 
 Pending Daniel review-pass-2.
+
+**As-built (2026-07-04):** Flow A shipped in Block 7 and **Flow B shipped in
+Block 8** — the ML-diagnostics mode is **Output / Metrics / Training / Explore**
+tabs over an evaluated bank (see roadmap Block 8). Deviations from this
+walkthrough: the **"Load Evaluated Bank"** unified entry was folded into the
+single **Open bank** path (predictions auto-detected; no warning branch — Flow B
+step 2, already annotated above); the **3-way** output comparison generalized to
+**N sources** (the Output tab); the **pair-comparison** shipped as the shared
+`ExploreDetail`'s source-first 3-pane compare (same machinery as Flow A's B7.10),
+not a distinct two-column layout; and the **filter-by-ML-outcome** became the
+shell's *shared* filter panel driving both flows rather than a Flow-B-specific
+control. Flow C (figure prep) remains pending (Block 9).
