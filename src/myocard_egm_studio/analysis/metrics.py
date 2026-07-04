@@ -20,17 +20,42 @@ serve too — but we always pass the probability, hence the concrete name.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy import stats
 
 __all__ = [
     "auroc",
+    "confusion_matrix",
     "expected_calibration_error",
     "positive_prob",
     "reliability_curve",
     "roc_curve",
 ]
+
+
+def confusion_matrix(
+    y_true: ArrayLike, y_pred: ArrayLike, *, labels: Sequence[int] | None = None
+) -> NDArray[np.int64]:
+    """Counts matrix ``M[i, j]`` = traces of true class ``labels[i]`` predicted ``labels[j]``.
+
+    ``labels`` fixes the row / column order (default: the sorted union of the classes
+    present in ``y_true`` / ``y_pred``). Pure counting; the confusion-diagram recipe /
+    the Flow B metric panel lay it out. ``y_true`` and ``y_pred`` must share a shape.
+    """
+    truth = np.asarray(y_true)
+    pred = np.asarray(y_pred)
+    if truth.shape != pred.shape:
+        raise ValueError(f"y_true {truth.shape} and y_pred {pred.shape} must have the same shape.")
+    order = sorted(set(truth.tolist()) | set(pred.tolist())) if labels is None else list(labels)
+    index = {label: i for i, label in enumerate(order)}
+    matrix = np.zeros((len(order), len(order)), dtype=np.int64)
+    for true_label, pred_label in zip(truth.tolist(), pred.tolist(), strict=True):
+        if true_label in index and pred_label in index:
+            matrix[index[true_label], index[pred_label]] += 1
+    return matrix
 
 
 def positive_prob(logits: dict[int, float], positive_label: int = 1) -> float:

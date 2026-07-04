@@ -37,7 +37,11 @@ from myocard_egm_studio.view_model.phase_groups import (
     entries_by_id,
     phase_artifact_groups,
 )
-from myocard_egm_studio.view_model.similar import similar_in_other_sources
+from myocard_egm_studio.view_model.similar import (
+    nearest_correct_pair,
+    similar_in_other_sources,
+    within_class_neighborhood,
+)
 from myocard_egm_studio.view_model.summary import BankSummary, bank_summary
 from myocard_egm_studio.view_model.trace_detail import DetailRow, TraceDetail, trace_detail
 
@@ -63,7 +67,9 @@ __all__ = [
     "feature_units",
     "filter_columns",
     "ml_outcome_frame",
+    "nearest_correct_pair",
     "phase_artifact_groups",
     "similar_in_other_sources",
     "trace_detail",
+    "within_class_neighborhood",
 ]
