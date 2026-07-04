@@ -29,11 +29,17 @@ _METADATA_LEAD = ("label_name", "source", "split")
 
 @dataclass(frozen=True)
 class DetailRow:
-    """One attribute across the selected traces: its label, per-trace values, unit."""
+    """One attribute across the selected traces: label, per-trace values, unit, deltas.
+
+    ``deltas`` (feature rows only) is the signed change of each column vs the first
+    (the compare's source / left-most trace) — ``""`` for the source column, unitless
+    metadata, and non-comparable (NaN) cells. It powers the B7.10 compare-with-deltas.
+    """
 
     label: str
     values: tuple[str, ...]
     unit: str = ""
+    deltas: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -55,7 +61,7 @@ def trace_detail(frame: pd.DataFrame, row_ids: Sequence[int]) -> TraceDetail:
     headers = tuple(f"#{int(row['trace_idx'])}" for row in rows)
     units = feature_units(rows[0].get("amp_type") if rows else None)
     features = tuple(
-        DetailRow(column, tuple(_fmt(row.get(column)) for row in rows), units.get(column, ""))
+        _feature_row(column, rows, units.get(column, ""))
         for column in FEATURE_COLUMNS
         if column in frame.columns
     )
@@ -64,6 +70,26 @@ def trace_detail(frame: pd.DataFrame, row_ids: Sequence[int]) -> TraceDetail:
         for column in _metadata_columns(frame)
     )
     return TraceDetail(headers=headers, features=features, metadata=metadata)
+
+
+def _feature_row(column: str, rows: list[pd.Series], unit: str) -> DetailRow:
+    """A feature row: formatted per-trace values + each column's delta vs the first."""
+    raw = [row.get(column) for row in rows]
+    return DetailRow(column, tuple(_fmt(v) for v in raw), unit, _deltas(raw))
+
+
+def _deltas(raw: list[Any]) -> tuple[str, ...]:
+    """Signed change of each column vs the first; ``""`` for the first + non-finite cells."""
+    if not raw:
+        return ()
+    base = raw[0]
+    out = [""]  # the source column is the baseline — no delta
+    for value in raw[1:]:
+        if pd.isna(base) or pd.isna(value):
+            out.append("")
+        else:
+            out.append(f"{float(value) - float(base):+g}")
+    return tuple(out)
 
 
 def _rows_for(frame: pd.DataFrame, row_ids: Sequence[int]) -> list[pd.Series]:

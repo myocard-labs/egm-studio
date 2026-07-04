@@ -67,6 +67,7 @@ class ResultList(QtWidgets.QWidget):
     """A sortable table of view-model rows; emits the selected rows' ``row_id``."""
 
     selectionChanged = QtCore.Signal(list)  # list[int] of row_id
+    findSimilarRequested = QtCore.Signal(int)  # row_id of the right-clicked row (B7.10)
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -86,6 +87,8 @@ class ResultList(QtWidgets.QWidget):
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.horizontalHeader().setResizeContentsPrecision(_RESIZE_PRECISION)
         self._table.itemSelectionChanged.connect(self._emit_selection)
+        self._table.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._show_context_menu)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -168,3 +171,22 @@ class ResultList(QtWidgets.QWidget):
 
     def _emit_selection(self) -> None:
         self.selectionChanged.emit(self.selected_row_ids())
+
+    def _show_context_menu(self, pos: QtCore.QPoint) -> None:
+        """Right-click a row -> 'Find similar in other bank', emitting that row's row_id."""
+        item = self._table.itemAt(pos)
+        row_id = self._row_id_at(item.row()) if item is not None else None
+        if row_id is None:
+            return
+        menu = QtWidgets.QMenu(self)
+        menu.addAction("Find similar in other bank").triggered.connect(
+            lambda *_: self.findSimilarRequested.emit(row_id)
+        )
+        menu.exec(self._table.viewport().mapToGlobal(pos))
+
+    def _row_id_at(self, row: int) -> int | None:
+        """The ``row_id`` at table ``row`` (hidden column), or None if unavailable."""
+        if _ROW_ID not in self._columns:
+            return None
+        item = self._table.item(row, self._columns.index(_ROW_ID))
+        return int(item.data(_SORT_KEY)) if item is not None else None

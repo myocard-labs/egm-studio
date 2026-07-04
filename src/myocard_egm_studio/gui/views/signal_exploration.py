@@ -37,8 +37,10 @@ from myocard_egm_studio.loaders import feature_groups_by_source, scatter_series_
 from myocard_egm_studio.view_model import (
     FEATURE_COLUMNS,
     BankSummary,
+    DetailRow,
     TraceDetail,
     bank_summary,
+    similar_in_other_sources,
     trace_detail,
 )
 
@@ -54,6 +56,16 @@ def _placeholder(text: str) -> QtWidgets.QLabel:
     label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
     label.setWordWrap(True)
     return label
+
+
+def _cells_with_deltas(row: DetailRow) -> list[str]:
+    """Per-trace value cells; feature rows append each column's delta vs the source (B7.10)."""
+    if not row.deltas:
+        return list(row.values)
+    return [
+        f"{value}  ({delta})" if delta else value
+        for value, delta in zip(row.values, row.deltas, strict=True)
+    ]
 
 
 def _provenance_text(summary: BankSummary) -> str:
@@ -179,7 +191,7 @@ class _TraceDetailTable(QtWidgets.QTreeWidget):
         self.addTopLevelItem(section)
         for row in rows:
             label = f"{row.label} ({row.unit})" if row.unit else row.label
-            section.addChild(QtWidgets.QTreeWidgetItem([label, *row.values]))
+            section.addChild(QtWidgets.QTreeWidgetItem([label, *_cells_with_deltas(row)]))
 
 
 class SignalExplorationView(QtWidgets.QWidget):
@@ -196,6 +208,7 @@ class SignalExplorationView(QtWidgets.QWidget):
         self._palette = palette
         self._traces: list[TraceData] = []
         self._frame = pd.DataFrame()
+        self._source_row_id: int | None = None  # the single selected trace, for Find similar
 
         self._tabs = QtWidgets.QTabWidget()
         self._tabs.setObjectName("flowATabs")
@@ -225,7 +238,8 @@ class SignalExplorationView(QtWidgets.QWidget):
     def _build_explore_page(self) -> QtWidgets.QWidget:
         """The Explore tab: the sortable result list over the per-trace detail."""
         self._result_list = ResultList()
-        self._result_list.selectionChanged.connect(self._show_detail)
+        self._result_list.selectionChanged.connect(self._on_selection)
+        self._result_list.findSimilarRequested.connect(self._find_similar)  # right-click action
 
         self._waveforms = _WaveformHost()
         self._detail_table = _TraceDetailTable()
@@ -235,9 +249,15 @@ class SignalExplorationView(QtWidgets.QWidget):
         detail.setStretchFactor(0, 3)
         detail.setStretchFactor(1, 2)
 
+        detail_page = QtWidgets.QWidget()
+        detail_layout = QtWidgets.QVBoxLayout(detail_page)
+        detail_layout.setContentsMargins(0, 0, 0, 0)
+        detail_layout.addLayout(self._build_find_control())
+        detail_layout.addWidget(detail, 1)
+
         self._detail_stack = QtWidgets.QStackedWidget()
         self._detail_stack.addWidget(_placeholder(_SELECT_PROMPT))  # page 0 — nothing selected
-        self._detail_stack.addWidget(detail)  # page 1 — waveforms + values
+        self._detail_stack.addWidget(detail_page)  # page 1 — Find similar + waveforms + values
 
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         splitter.setObjectName("exploreSplitter")
@@ -251,6 +271,23 @@ class SignalExplorationView(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(splitter)
         return page
+
+    def _build_find_control(self) -> QtWidgets.QHBoxLayout:
+        """The 'Find similar in other bank along [feature]' row above the detail (B7.10)."""
+        self._feature_combo = QtWidgets.QComboBox()
+        self._feature_combo.setObjectName("similarFeature")
+        self._feature_combo.addItems(FEATURE_COLUMNS)
+        self._find_button = QtWidgets.QPushButton("Find similar")
+        self._find_button.setObjectName("findSimilar")
+        self._find_button.setToolTip("Show the nearest trace in each other bank along this feature")
+        self._find_button.clicked.connect(self._on_find_similar_clicked)
+        row = QtWidgets.QHBoxLayout()
+        row.setContentsMargins(8, 4, 8, 0)
+        row.addWidget(QtWidgets.QLabel("Find similar in other bank along"))
+        row.addWidget(self._feature_combo)
+        row.addWidget(self._find_button)
+        row.addStretch(1)
+        return row
 
     def _build_scatter_page(self, chart_style: PgChartStyle) -> QtWidgets.QWidget:
         """The Scatter tab: a 2-D feature scatter of the filtered result (click -> detail)."""
@@ -319,6 +356,33 @@ class SignalExplorationView(QtWidgets.QWidget):
         """
         self._result_list.select_row_ids([row_id])
         self.show_explore()
+
+    def _on_selection(self, row_ids: list[int]) -> None:
+        """Track the single-selected source trace (for Find similar), then show the detail."""
+        self._source_row_id = row_ids[0] if len(row_ids) == 1 else None
+        self._update_find_enabled()
+        self._show_detail(row_ids)
+
+    def _update_find_enabled(self) -> None:
+        """Enable Find similar only with a single source trace + at least one other bank."""
+        has_others = "source" in self._frame.columns and self._frame["source"].nunique() > 1
+        self._find_button.setEnabled(self._source_row_id is not None and has_others)
+
+    def _on_find_similar_clicked(self) -> None:
+        if self._source_row_id is not None:
+            self._find_similar(self._source_row_id)
+
+    def _find_similar(self, source_row_id: int) -> None:
+        """Show ``source_row_id`` beside its nearest trace in each other bank (B7.10).
+
+        Shared by the detail-pane button (the current single selection) and the result
+        list's right-click action (the clicked row). The match search runs over the
+        current result frame — so any active filter is respected — along the chosen
+        feature; source + matches fill the (up-to-3) compare panes, source first.
+        """
+        feature = self._feature_combo.currentText()
+        matches = similar_in_other_sources(self._frame, source_row_id, feature)
+        self._show_detail([source_row_id, *matches])
 
     def _show_detail(self, row_ids: list[int]) -> None:
         # row_id is the global position in the combined traces list (B7.8).
