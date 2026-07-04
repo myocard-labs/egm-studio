@@ -18,6 +18,8 @@ already-prepared data). All file reads go through egm-data — never raw file I/
 from __future__ import annotations
 
 from myocard_egm_studio.loaders.feature_group import (
+    confusion_by_source,
+    confusion_from_frame,
     feature_group_from_frame,
     feature_groups_by_source,
     prediction_group_from_frame,
@@ -52,6 +54,8 @@ __all__ = [
     "RecipeLoaderFn",
     "UnmappedBankIdError",
     "bank_paths_from_phase",
+    "confusion_by_source",
+    "confusion_from_frame",
     "feature_group_from_frame",
     "feature_groups_by_source",
     "load_bar_chart_distances",

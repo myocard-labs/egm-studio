@@ -21,6 +21,7 @@ from numpy.typing import NDArray
 
 __all__ = [
     "BarChartData",
+    "ConfusionCounts",
     "FeatureGroup",
     "PredictionGroup",
     "ScatterSeries",
@@ -54,6 +55,29 @@ class PredictionGroup:
     probs: NDArray[np.float64]
     labels: NDArray[np.int64] | None = None
     label_names: dict[int, str] | None = None
+
+
+@dataclass(frozen=True)
+class ConfusionCounts:
+    """One source's confusion matrix for the Flow B metrics view (B8f).
+
+    Attributes
+    ----------
+    name
+        Source / model label titling the panel — the metrics view tiles one per
+        source (small multiples).
+    matrix
+        ``(K, K)`` integer counts, ``matrix[i, j]`` = traces of true class ``i``
+        predicted class ``j`` (the shape
+        :func:`...analysis.metrics.confusion_matrix` returns).
+    labels
+        ``K`` class display names, row / column aligned with ``matrix`` (e.g.
+        ``["healthy", "fibrotic"]``).
+    """
+
+    name: str
+    matrix: NDArray[np.int64]
+    labels: list[str]
 
 
 @dataclass(frozen=True)

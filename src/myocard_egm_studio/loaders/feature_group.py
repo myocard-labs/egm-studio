@@ -15,11 +15,20 @@ from collections.abc import Iterator
 
 import numpy as np
 import pandas as pd
+from numpy.typing import NDArray
 
-from myocard_egm_studio.charts.inputs import FeatureGroup, PredictionGroup, ScatterSeries
+from myocard_egm_studio.analysis.metrics import confusion_matrix
+from myocard_egm_studio.charts.inputs import (
+    ConfusionCounts,
+    FeatureGroup,
+    PredictionGroup,
+    ScatterSeries,
+)
 from myocard_egm_studio.view_model import FEATURE_COLUMNS, ROW_ID, feature_units
 
 __all__ = [
+    "confusion_by_source",
+    "confusion_from_frame",
     "feature_group_from_frame",
     "feature_groups_by_source",
     "prediction_group_from_frame",
@@ -116,17 +125,67 @@ def prediction_groups_by_source(frame: pd.DataFrame) -> list[PredictionGroup]:
 
 
 def prediction_group_from_frame(frame: pd.DataFrame, *, name: str | None = None) -> PredictionGroup:
-    """Pull ``predicted_prob`` out of ``frame`` as one named PredictionGroup.
+    """Pull ``predicted_prob`` (+ truth, when present) out of ``frame`` as a PredictionGroup.
 
     ``name`` resolves as in :func:`feature_group_from_frame` (source, else source bank
     id, else ``"bank"``). The frame must carry ``predicted_prob`` (the ML-outcome join,
-    B8a) — the caller (Flow B) only builds these for an evaluated set. ``labels`` is left
-    unset: the Output overlay compares sources, not classes; the labelled per-class facet
-    arrives with the metric suite (B8f).
+    B8a) — the caller (Flow B) only builds these for an evaluated set. When every row
+    also carries a truth ``label``, ``labels`` + ``label_names`` are filled (so the ROC /
+    calibration metric charts, B8f, can score the group); an unlabelled source (the IAFDB
+    shape) leaves them ``None`` — the Output overlay uses only ``probs`` regardless.
     """
     label = name or _first(frame, "source") or _first(frame, "source_bank_id") or "bank"
     probs = frame["predicted_prob"].to_numpy(dtype=np.float64)
-    return PredictionGroup(name=label, probs=probs)
+    labels: NDArray[np.int64] | None = None
+    label_names: dict[int, str] | None = None
+    if "label" in frame.columns and len(frame.index) and frame["label"].notna().all():
+        labels = frame["label"].to_numpy(dtype=np.int64)
+        label_names = _label_names(frame) or None
+    return PredictionGroup(name=label, probs=probs, labels=labels, label_names=label_names)
+
+
+def confusion_by_source(frame: pd.DataFrame, *, positive_label: int = 1) -> list[ConfusionCounts]:
+    """One :class:`ConfusionCounts` per labelled source, in load order.
+
+    The metrics view tiles these as small multiples (one matrix per source). A source
+    without truth (the IAFDB shape) is skipped — a confusion matrix needs ground truth.
+    ``positive_label`` is accepted for signature parity with the other metric builders;
+    the matrix itself is multi-class-agnostic (it counts every class present).
+    """
+    if not len(frame.index):
+        return []
+    built = (confusion_from_frame(sub, name=name) for name, sub in _iter_sources(frame))
+    return [counts for counts in built if counts is not None]
+
+
+def confusion_from_frame(frame: pd.DataFrame, *, name: str | None = None) -> ConfusionCounts | None:
+    """A source's confusion matrix from its ``label`` (truth) + ``predicted_class`` columns.
+
+    ``None`` when the frame lacks either column or carries no truth-labelled row (nothing
+    to score). Row / column classes are the sorted union present; display names come from
+    the frame's ``label_name`` map, falling back to the integer class.
+    """
+    if not {"label", "predicted_class"}.issubset(frame.columns):
+        return None
+    scored = frame.dropna(subset=["label", "predicted_class"])
+    if scored.empty:
+        return None
+    y_true = scored["label"].to_numpy(dtype=np.int64)
+    y_pred = scored["predicted_class"].to_numpy(dtype=np.int64)
+    classes = sorted(set(y_true.tolist()) | set(y_pred.tolist()))
+    matrix = confusion_matrix(y_true, y_pred, labels=classes)
+    names = _label_names(scored)
+    display = [names.get(cls, str(cls)) for cls in classes]
+    label = name or _first(scored, "source") or _first(scored, "source_bank_id") or "bank"
+    return ConfusionCounts(name=label, matrix=matrix, labels=display)
+
+
+def _label_names(frame: pd.DataFrame) -> dict[int, str]:
+    """``{label -> label_name}`` from the frame's distinct labelled rows (empty if absent)."""
+    if not {"label", "label_name"}.issubset(frame.columns):
+        return {}
+    pairs = frame.dropna(subset=["label", "label_name"])[["label", "label_name"]].drop_duplicates()
+    return {int(row.label): str(row.label_name) for row in pairs.itertuples(index=False)}
 
 
 def _first(frame: pd.DataFrame, column: str) -> str | None:

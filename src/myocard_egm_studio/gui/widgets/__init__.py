@@ -9,18 +9,23 @@ from myocard_egm_studio.gui.widgets.bank_list import LoadedBanksList
 from myocard_egm_studio.gui.widgets.feature_grid import FeatureDistributionGrid
 from myocard_egm_studio.gui.widgets.feature_scatter import FeatureScatterView
 from myocard_egm_studio.gui.widgets.filter import FilterPanel
+from myocard_egm_studio.gui.widgets.metrics_view import MetricsView
 from myocard_egm_studio.gui.widgets.output_distribution import OutputDistributionView
 from myocard_egm_studio.gui.widgets.phase_tree import PhaseTree
 from myocard_egm_studio.gui.widgets.result_list import ResultList
+from myocard_egm_studio.gui.widgets.run_list import LoadedRunsList
 from myocard_egm_studio.gui.widgets.time_scale import TimeScaleWidget
 from myocard_egm_studio.gui.widgets.trace import TraceContainer, TraceData, TraceWidget
 from myocard_egm_studio.gui.widgets.trace_view import TraceView
+from myocard_egm_studio.gui.widgets.training_view import TrainingView
 
 __all__ = [
     "FeatureDistributionGrid",
     "FeatureScatterView",
     "FilterPanel",
     "LoadedBanksList",
+    "LoadedRunsList",
+    "MetricsView",
     "OutputDistributionView",
     "PhaseTree",
     "ResultList",
@@ -29,4 +34,5 @@ __all__ = [
     "TraceData",
     "TraceView",
     "TraceWidget",
+    "TrainingView",
 ]

@@ -21,6 +21,8 @@ _PLOT_KIND_KEY = "appearance/plot_kind"
 _PLOT_KINDS = ("kde", "histogram")
 _SCATTER_X_KEY = "signal/scatter_x"
 _SCATTER_Y_KEY = "signal/scatter_y"
+_CONFUSION_NORM_KEY = "ml/confusion_norm"
+_CONFUSION_NORMS = ("row", "col", "overall", "count")
 
 
 def _settings() -> QtCore.QSettings:
@@ -70,6 +72,17 @@ def load_plot_kind(default: str) -> str:
 def save_plot_kind(kind: str) -> None:
     """Persist the summary plot kind (KDE / histogram) to restore on next launch."""
     _settings().setValue(_PLOT_KIND_KEY, kind)
+
+
+def load_confusion_norm(default: str) -> str:
+    """Return the persisted confusion-matrix cell mode (row / col / overall / count)."""
+    raw = _settings().value(_CONFUSION_NORM_KEY, default)
+    return str(raw) if raw in _CONFUSION_NORMS else default
+
+
+def save_confusion_norm(norm: str) -> None:
+    """Persist the confusion-matrix cell mode (Flow B metrics) to restore on next launch."""
+    _settings().setValue(_CONFUSION_NORM_KEY, norm)
 
 
 def load_scatter_axes(default: tuple[str, str]) -> tuple[str, str]:

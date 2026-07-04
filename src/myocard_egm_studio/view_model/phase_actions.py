@@ -70,7 +70,7 @@ _INPUT_BANK = (_EXPLORE, _FEATURE_DIST)
 _PREDICTION_BANK = (
     _EXPLORE,
     _FEATURE_DIST,
-    ArtifactAction("view_ml_diagnostics", "View ML diagnostics", available=False, note=_B8),
+    ArtifactAction("view_ml_diagnostics", "View ML diagnostics"),  # wired in B8f (Flow B)
     ArtifactAction("compare_bank", "Compare with another bank…", available=False, note=_B8),
 )
 
@@ -84,7 +84,7 @@ _VIEWERS_BY_ROLE: dict[Role, tuple[ArtifactAction, ...]] = {
         ArtifactAction("view_curation_summary", "View curation summary", available=False, note=_B8),
     ),
     Role.training_run: (
-        ArtifactAction("view_curves", "View training curves", available=False, note=_B8),
+        ArtifactAction("view_curves", "View training curves"),  # wired in B8f (Flow B Training)
     ),
     Role.model: (
         ArtifactAction("go_to_run", "Go to training run", available=False, note=_B8),
@@ -105,7 +105,10 @@ _VIEWERS_BY_ROLE: dict[Role, tuple[ArtifactAction, ...]] = {
 #: Additive-when-loaded relabels (B7.8): once a bank is open, the viewers that
 #: *append* say "Add" instead. "explore_signal" is deliberately absent — it always
 #: replaces the loaded set, so it keeps its label.
-_ADD_LABELS: dict[str, str] = {"view_feature_distributions": "Add feature distribution"}
+_ADD_LABELS: dict[str, str] = {
+    "view_feature_distributions": "Add feature distribution",
+    "view_ml_diagnostics": "Add ML diagnostics",
+}
 
 
 def menu_label(action: ArtifactAction, *, add_mode: bool) -> str:

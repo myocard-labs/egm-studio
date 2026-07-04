@@ -20,6 +20,7 @@ from myocard_egm_contracts import role_of
 from myocard_egm_data.phases import PhaseManifest, load_phase_dir
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from myocard_egm_studio.charts.inputs import TrainingCurve
 from myocard_egm_studio.charts.palette import color_for
 from myocard_egm_studio.gui.preferences import load_theme, save_theme
 from myocard_egm_studio.gui.sources import frame_eval_mode, load_exploration
@@ -32,6 +33,7 @@ from myocard_egm_studio.gui.theme import (
 )
 from myocard_egm_studio.gui.views import MlDiagnosticsView, SignalExplorationView
 from myocard_egm_studio.gui.widgets import FilterPanel, LoadedBanksList, PhaseTree, TraceData
+from myocard_egm_studio.loaders import training_curve_from_run
 from myocard_egm_studio.view_model import (
     apply_filter,
     combine_view_models,
@@ -202,6 +204,12 @@ class CollapsibleSidebar(QtWidgets.QWidget):
         self._panel_layout.addWidget(widget, 1)
 
 
+def _run_label(path: str) -> str:
+    """A short run label from a run.json path: the run directory name, else the file stem."""
+    p = Path(path)
+    return p.parent.name if p.stem == "run" else p.stem
+
+
 class MainWindow(QtWidgets.QMainWindow):
     """Top-level shell: menu bar + header (mode switch) + collapsible column work area."""
 
@@ -214,6 +222,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._metadata_dialog: QtWidgets.QDialog | None = None
         self._loaded_banks: list[_LoadedBank] = []  # banks open in Flow A (B7.8)
         self._explore_df: pd.DataFrame | None = None  # the combined view-model table
+        self._loaded_runs: list[tuple[str, TrainingCurve]] = []  # training runs in Flow B (B8f)
         self.setWindowTitle(_WINDOW_TITLE)
         self.setMinimumSize(_MIN_WIDTH, _MIN_HEIGHT)
         self._build_menu_bar()
@@ -229,6 +238,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._open_action = file_menu.addAction("&Open bank…")
         self._open_action.setObjectName("openBank")
         self._open_action.triggered.connect(self._open_bank)
+        run_action = file_menu.addAction("Open &training run…")
+        run_action.setObjectName("openTrainingRun")
+        run_action.triggered.connect(self._open_training_run)
         open_phase_action = file_menu.addAction("Open &phase…")
         open_phase_action.setObjectName("openPhase")
         open_phase_action.triggered.connect(self._open_phase)
@@ -359,6 +371,7 @@ class MainWindow(QtWidgets.QMainWindow):
             plot_palette(self._current_theme), chart_style(self._current_theme)
         )
         self._diagnostics_view = MlDiagnosticsView(chart_style(self._current_theme))
+        self._diagnostics_view.runRemoveRequested.connect(self._remove_training_run)
         self._modes_stack = QtWidgets.QStackedWidget()
         self._modes_stack.setMinimumWidth(_MAIN_MIN_W)
         self._modes_stack.addWidget(self._explore_view)  # 0 — signal exploration
@@ -554,6 +567,53 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._explore_view.bring_scatter_to_front(bank.label)
                 return
 
+    # -- open training run (File > Open training run) --------------------------
+
+    def _open_training_run(self) -> None:
+        """File > Open training run…: load run.json record(s) into the Flow B Training tab.
+
+        Additive like Add bank — each run overlays as another coloured line. A run.json is
+        not a ClassifierBank, so runs load independently of the evaluated-bank path: this
+        feeds the diagnostics view's Training tab directly, then switches to ML-diagnostics
+        mode. A run already loaded (same label) is skipped; a read error is reported.
+        """
+        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self, "Open training run", "", "Run records (*.json);;All files (*)"
+        )
+        added = [self._load_training_run(path, _run_label(path)) for path in paths]
+        if any(added):
+            self._show_training_runs()
+
+    def _load_training_run(self, path: str, label: str) -> bool:
+        """Add one run.json to the Flow B run set; return whether it was newly added.
+
+        Skips a run already loaded under ``label`` (no double-overlay) and reports a
+        read error to the status bar. Shared by File ▸ Open training run and the phase
+        tree's View-training-curves action.
+        """
+        if any(name == label for name, _ in self._loaded_runs):
+            return False
+        try:
+            curve = training_curve_from_run(path)
+        except Exception as exc:  # a bad / unreadable run.json -> status bar, no crash
+            self.statusBar().showMessage(f"Could not open training run: {exc}")
+            return False
+        self._loaded_runs.append((label, curve))
+        return True
+
+    def _show_training_runs(self) -> None:
+        """Feed the loaded runs to Flow B's Training tab + switch to ML-diagnostics mode."""
+        self._diagnostics_view.set_runs(self._loaded_runs)
+        self._show_mode(1)  # ML-diagnostics mode; the view lands on the Training tab
+        self.statusBar().showMessage(f"Loaded {len(self._loaded_runs)} training run(s)")
+
+    def _remove_training_run(self, label: str) -> None:
+        """Drop the training run ``label`` (its Training-tab roster ✕) and re-feed the tab."""
+        self._loaded_runs = [(name, curve) for name, curve in self._loaded_runs if name != label]
+        self._diagnostics_view.set_runs(self._loaded_runs)  # empty -> back to the prompt
+        remaining = len(self._loaded_runs)
+        self.statusBar().showMessage(f"Removed run {label} — {remaining} run(s) loaded")
+
     def _refresh_loaded(
         self,
         *,
@@ -711,6 +771,21 @@ class MainWindow(QtWidgets.QMainWindow):
                 focus="summary",
                 replace=not self._loaded_banks,
             )
+        elif action_id == "view_ml_diagnostics":
+            # Load the predictions bank (additive) then land on Flow B — the single
+            # Open-bank path already populates ML diagnostics when a bank has predictions.
+            self._open_bank_explore(
+                str(self._phase_dir / entry.path),
+                focus=None,
+                replace=not self._loaded_banks,
+            )
+            self._show_mode(1)  # ML-diagnostics mode
+        elif action_id == "view_curves":
+            # Load the run.json into Flow B's Training tab (same path as File ▸ Open
+            # training run, but with the artifact resolved from the manifest).
+            self._load_training_run(str(self._phase_dir / entry.path), entry.id)
+            if any(name == entry.id for name, _ in self._loaded_runs):
+                self._show_training_runs()
 
     def _copy_to_clipboard(self, text: str) -> None:
         app = QtWidgets.QApplication.instance()
