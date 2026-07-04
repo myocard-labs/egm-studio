@@ -106,6 +106,27 @@ def test_open_bank_populates_result_list(
     assert "Loaded" in window.statusBar().currentMessage()
 
 
+def test_open_bank_lands_on_summary_with_grid(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    """File ▸ Open bank lands on the Summary tab with the distribution grid built."""
+    window = _open(qtbot, tiny_classifier_bank, tmp_path)
+    assert window._explore_view._tabs.currentIndex() == 0  # Summary landing
+    assert len(window._explore_view._feature_grid.panels) > 0
+
+
+def test_explore_focus_lands_on_explore_tab(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    """focus="explore" (the "Explore signal" action) opens straight to the list."""
+    path = tmp_path / "bank.h5"
+    write_classifier_bank(tiny_classifier_bank, path)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._open_bank_explore(str(path), focus="explore")
+    assert window._explore_view._tabs.currentIndex() == 1  # Explore tab
+
+
 def test_selecting_a_trace_shows_the_detail(
     qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
 ) -> None:

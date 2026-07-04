@@ -60,3 +60,22 @@ def test_detail_caps_at_three_traces(qtbot: QtBot, tiny_classifier_bank: Classif
     view._show_detail(list(range(len(tiny_classifier_bank.traces))))  # "select all 12"
     assert isinstance(view._waveforms.content, TraceView)  # capped to 3 internally
     assert view._detail_table.columnCount() == 1 + 3  # attribute column + 3 trace columns
+
+
+def test_summary_populates_grid_and_lands_on_summary(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank
+) -> None:
+    """set_summary fills the stats panel + the 11-panel grid and shows the Summary tab."""
+    view = _view(qtbot, tiny_classifier_bank)
+    view.set_summary(build_view_model(tiny_classifier_bank, source="Synthetic"))
+    assert len(view._feature_grid.panels) == len(FEATURE_COLUMNS)
+    assert view._tabs.currentIndex() == 0  # landed on Summary
+    assert "traces" in view._summary_panel._count.text()
+
+
+def test_tab_switch_helpers(qtbot: QtBot, tiny_classifier_bank: ClassifierBank) -> None:
+    view = _view(qtbot, tiny_classifier_bank)
+    view.show_explore()
+    assert view._tabs.currentIndex() == 1
+    view.show_summary()
+    assert view._tabs.currentIndex() == 0

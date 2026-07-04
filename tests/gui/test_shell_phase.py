@@ -106,9 +106,16 @@ def test_reveal_action_targets_the_artifact_folder(
     assert captured == [reveal_target(_FIXTURE_DIR, _BANK_PATH)]
 
 
-def test_explore_action_opens_the_bank(qtbot: QtBot, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bank_actions_open_to_the_right_tab(qtbot: QtBot, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explore signal opens to the Explore tab; View feature distributions to Summary."""
     window = _loaded_window(qtbot)
-    opened: list[str] = []
-    monkeypatch.setattr(window, "_open_bank_explore", opened.append)
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        window,
+        "_open_bank_explore",
+        lambda path, *, focus="summary": calls.append((path, focus)),
+    )
     window._on_phase_action("explore_signal", _BANK_ID)
-    assert opened == [str(_FIXTURE_DIR / _BANK_PATH)]
+    window._on_phase_action("view_feature_distributions", _BANK_ID)
+    path = str(_FIXTURE_DIR / _BANK_PATH)
+    assert calls == [(path, "explore"), (path, "summary")]

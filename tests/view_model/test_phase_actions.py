@@ -22,8 +22,7 @@ _UNIVERSAL_IDS = ("reveal_file", "copy_id")
 def test_input_bank_viewers() -> None:
     explore, feature_dist = type_actions(Role.training_bank)
     assert [explore.id, feature_dist.id] == ["explore_signal", "view_feature_distributions"]
-    assert explore.available  # Explore signal is wired (B7)
-    assert not feature_dist.available and feature_dist.note  # feature distributions still planned
+    assert explore.available and feature_dist.available  # both wired to Flow A (B7.7)
 
 
 def test_prediction_bank_adds_ml_actions() -> None:
