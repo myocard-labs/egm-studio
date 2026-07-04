@@ -58,6 +58,22 @@ def test_plot_kind_falls_back_on_unknown_value() -> None:
     assert preferences.load_plot_kind("kde") == "kde"
 
 
+def test_confusion_norm_defaults_then_roundtrips() -> None:
+    assert preferences.load_confusion_norm("row") == "row"  # unset -> default
+    preferences.save_confusion_norm("col")
+    assert preferences.load_confusion_norm("row") == "col"
+
+
+def test_confusion_norm_falls_back_on_unknown_value() -> None:
+    QtCore.QSettings(
+        QtCore.QSettings.Format.IniFormat,
+        QtCore.QSettings.Scope.UserScope,
+        preferences.ORG_NAME,
+        preferences.APP_NAME,
+    ).setValue("ml/confusion_norm", "diagonal")
+    assert preferences.load_confusion_norm("row") == "row"
+
+
 def test_scatter_axes_default_then_roundtrips() -> None:
     assert preferences.load_scatter_axes(("peak_to_peak", "sample_entropy")) == (
         "peak_to_peak",

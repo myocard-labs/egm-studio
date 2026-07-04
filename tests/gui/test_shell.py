@@ -11,11 +11,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+import numpy as np
 import pytest
 from myocard_egm_data.banks import ClassifierBank, write_classifier_bank
+from myocard_egm_data.records import TrainingRunRecord, write_training_run_record
 from PySide6 import QtGui, QtWidgets
 from pytestqt.qtbot import QtBot
 
+from myocard_egm_studio.charts.inputs import TrainingCurve
 from myocard_egm_studio.gui import shell as shell_mod
 from myocard_egm_studio.gui.shell import CollapsibleSidebar, MainWindow
 from myocard_egm_studio.gui.theme import plot_palette
@@ -216,6 +219,83 @@ def test_opening_a_raw_bank_leaves_flow_b_in_the_landing_state(
     diagnostics = window._diagnostics_view
     assert diagnostics.result_list._table.rowCount() == 0
     assert "Open a bank with model predictions" in diagnostics._header.text()
+
+
+def _training_record() -> TrainingRunRecord:
+    """A 3-epoch training run record (falling loss, rising AUROC)."""
+    return TrainingRunRecord.model_validate(
+        {
+            "schema_version": "1.1",
+            "created_utc": "2026-06-30T00:00:00Z",
+            "run": {},
+            "config": {},
+            "epochs": [
+                {
+                    "epoch": e,
+                    "lr": 0.001,
+                    "train_loss": 1.0 / e,
+                    "val_loss": 1.0 / e + 0.1,
+                    "epoch_seconds": 1.0,
+                    "val_metrics": {"auroc": 0.6 + 0.1 * e},
+                    "val_reliability": [],
+                }
+                for e in (1, 2, 3)
+            ],
+            "best": {"epoch": 3, "metric": "auroc", "value": 0.9},
+        }
+    )
+
+
+def test_open_training_run_populates_flow_b_training(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """File ▸ Open training run reads a run.json into the Flow B Training tab."""
+    run_dir = tmp_path / "v1p5_run"
+    run_dir.mkdir()
+    path = run_dir / "run.json"
+    write_training_run_record(path, _training_record())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    monkeypatch.setattr(
+        QtWidgets.QFileDialog, "getOpenFileNames", lambda *a, **k: ([str(path)], "")
+    )
+    window._open_training_run()
+    assert window._modes_stack.currentIndex() == 1  # switched to ML diagnostics
+    assert window._diagnostics_view._tabs.currentIndex() == 2  # Training tab
+    assert window._diagnostics_view._training_view.overlay is not None
+    assert [name for name, _ in window._loaded_runs] == ["v1p5_run"]  # labelled by run dir
+
+
+def _training_curve() -> TrainingCurve:
+    epochs = np.arange(1, 4)
+    return TrainingCurve(
+        epochs=epochs,
+        loss={"val": np.asarray(1.0 / epochs, dtype=np.float64)},
+        metric={"val": np.asarray(0.6 + 0.1 * epochs, dtype=np.float64)},
+        metric_name="AUROC",
+    )
+
+
+def test_remove_training_run_drops_it_and_refeeds(qtbot: QtBot) -> None:
+    """The Training-tab remove ✕ (via runRemoveRequested) drops the run + re-feeds the tab."""
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._loaded_runs = [("v1", _training_curve()), ("v1.5", _training_curve())]
+    window._show_training_runs()
+    window._diagnostics_view.runRemoveRequested.emit("v1")  # exercises the shell connection
+    assert [name for name, _ in window._loaded_runs] == ["v1.5"]
+    assert "Removed run v1" in window.statusBar().currentMessage()
+    assert window._diagnostics_view._training_view.overlay is not None  # still one run
+
+
+def test_remove_last_training_run_returns_to_prompt(qtbot: QtBot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._loaded_runs = [("v1", _training_curve())]
+    window._show_training_runs()
+    window._remove_training_run("v1")
+    assert window._loaded_runs == []
+    assert window._diagnostics_view._training_view._stack.currentIndex() == 0  # landing prompt
 
 
 def test_open_bank_cancel_aborts_the_load(

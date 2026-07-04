@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
+from myocard_egm_contracts import Role, role_of
 from myocard_egm_data.phases import load_phase_dir
 from PySide6 import QtGui, QtWidgets
 from pytestqt.qtbot import QtBot
 
+from myocard_egm_studio.charts.inputs import TrainingCurve
+from myocard_egm_studio.gui import shell as shell_mod
 from myocard_egm_studio.gui.shell import MainWindow, _LoadedBank
 from myocard_egm_studio.view_model import entries_by_id
 from myocard_egm_studio.view_model.phase_actions import reveal_target
@@ -130,3 +134,51 @@ def test_bank_actions_dispatch_focus_and_replace(
         ("explore", True),  # explore signal replaces even with a bank loaded
         ("summary", False),  # view feature distributions, a bank loaded -> append
     ]
+
+
+def test_view_curves_action_loads_run_into_flow_b(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The training-run 'View training curves' action resolves the run.json and feeds
+    it to Flow B's Training tab (the read is stubbed — the fixture files are absent)."""
+    window = _loaded_window(qtbot)
+    run_id = next(aid for aid in _ENTRIES if role_of(aid) == Role.training_run)
+    seen: list[str] = []
+
+    def fake_loader(path: str, *, metric_key: str = "auroc") -> TrainingCurve:
+        seen.append(path)
+        epochs = np.arange(1, 4)
+        return TrainingCurve(
+            epochs=epochs,
+            loss={"val": np.asarray(1.0 / epochs, dtype=np.float64)},
+            metric={"val": np.asarray(0.6 + 0.1 * epochs, dtype=np.float64)},
+            metric_name="AUROC",
+        )
+
+    monkeypatch.setattr(shell_mod, "training_curve_from_run", fake_loader)
+    window._on_phase_action("view_curves", run_id)
+    assert seen == [str(_FIXTURE_DIR / _ENTRIES[run_id].path)]  # resolved from the manifest
+    assert [name for name, _ in window._loaded_runs] == [run_id]
+    assert window._modes_stack.currentIndex() == 1  # switched to ML diagnostics
+    assert window._diagnostics_view._tabs.currentIndex() == 2  # Training tab
+
+
+def test_view_ml_diagnostics_loads_bank_then_lands_on_flow_b(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A prediction bank's 'View ML diagnostics' loads it (additive-aware) + shows Flow B."""
+    window = _loaded_window(qtbot)
+    pred_id = next(
+        aid
+        for aid in _ENTRIES
+        if role_of(aid) in (Role.labeled_prediction_bank, Role.unlabeled_prediction_bank)
+    )
+    calls: list[tuple[str | None, bool]] = []
+    monkeypatch.setattr(
+        window,
+        "_open_bank_explore",
+        lambda _path, *, focus="summary", replace=True: calls.append((focus, replace)),
+    )
+    window._on_phase_action("view_ml_diagnostics", pred_id)
+    assert calls == [(None, True)]  # no Flow A tab focus; replace (nothing loaded yet)
+    assert window._modes_stack.currentIndex() == 1  # landed on ML diagnostics

@@ -35,20 +35,28 @@ def test_menu_label_relabels_only_the_additive_viewer() -> None:
 
 
 def test_prediction_bank_adds_ml_actions() -> None:
-    ids = [a.id for a in type_actions(Role.labeled_prediction_bank)]
-    assert ids == [
+    actions = type_actions(Role.labeled_prediction_bank)
+    assert [a.id for a in actions] == [
         "explore_signal",
         "view_feature_distributions",
         "view_ml_diagnostics",
         "compare_bank",
     ]
+    by_id = {a.id: a for a in actions}
+    assert by_id["view_ml_diagnostics"].available is True  # B8f — feeds Flow B
+    assert by_id["compare_bank"].available is False  # pair-compare lands in B8g
+    # additive-aware: with a bank loaded, the ML-diagnostics viewer relabels to Add …
+    assert (
+        phase_actions.menu_label(by_id["view_ml_diagnostics"], add_mode=True)
+        == "Add ML diagnostics"
+    )
 
 
-def test_training_run_view_is_planned_not_wired() -> None:
+def test_training_run_view_curves_is_wired() -> None:
     (action,) = type_actions(Role.training_run)
     assert action.id == "view_curves"
-    assert action.available is False
-    assert action.note  # explains where it lands
+    assert action.available is True  # B8f — feeds the Flow B Training tab
+    assert not action.note
 
 
 def test_model_has_viewers_but_no_metadata() -> None:

@@ -6,6 +6,7 @@ import numpy as np
 from myocard_egm_data.banks import ClassifierBank
 
 from myocard_egm_studio.loaders import (
+    confusion_by_source,
     feature_group_from_frame,
     feature_groups_by_source,
     prediction_group_from_frame,
@@ -90,12 +91,11 @@ def test_scatter_series_units_and_empty(tiny_classifier_bank: ClassifierBank) ->
 
 
 def test_prediction_group_carries_probs(tiny_predictions_bank: ClassifierBank) -> None:
-    """The group pulls predicted_prob as one [0, 1] (N,) array; labels stay unset (B8e)."""
+    """The group pulls predicted_prob as one [0, 1] (N,) array (labels covered below)."""
     frame = build_view_model(tiny_predictions_bank, source="v1")
     group = prediction_group_from_frame(frame)
     assert group.name == "v1"
     assert group.probs.shape == (tiny_predictions_bank.n_traces,)
-    assert group.labels is None  # the Output overlay compares sources, not classes
     assert np.all((group.probs >= 0.0) & (group.probs <= 1.0))
 
 
@@ -112,3 +112,41 @@ def test_prediction_groups_by_source_splits_and_empty(
     groups = prediction_groups_by_source(combined)
     assert [g.name for g in groups] == ["v1", "v1.5"]
     assert prediction_groups_by_source(combined.iloc[0:0]) == []
+
+
+def test_prediction_group_fills_labels_for_a_labelled_bank(
+    tiny_predictions_bank: ClassifierBank,
+) -> None:
+    """A labelled predictions bank -> labels + label_names (the ROC / calibration input)."""
+    group = prediction_group_from_frame(build_view_model(tiny_predictions_bank, source="v1"))
+    assert group.labels is not None
+    assert group.labels.shape == (tiny_predictions_bank.n_traces,)
+    assert group.label_names == {0: "healthy", 1: "fibrotic"}
+
+
+def test_prediction_group_labels_none_for_an_unlabelled_bank(
+    tiny_unlabeled_predictions_bank: ClassifierBank,
+) -> None:
+    group = prediction_group_from_frame(
+        build_view_model(tiny_unlabeled_predictions_bank, source="iafdb")
+    )
+    assert group.labels is None
+    assert group.label_names is None
+
+
+def test_confusion_by_source_skips_unlabelled_and_counts_all_traces(
+    tiny_predictions_bank: ClassifierBank, tiny_unlabeled_predictions_bank: ClassifierBank
+) -> None:
+    """One confusion per labelled source (the unlabelled IAFDB source is skipped)."""
+    combined = combine_view_models(
+        [
+            build_view_model(tiny_predictions_bank, source="v1"),
+            build_view_model(tiny_unlabeled_predictions_bank, source="iafdb"),
+        ]
+    )
+    confusions = confusion_by_source(combined)
+    assert [c.name for c in confusions] == ["v1"]  # iafdb has no truth
+    counts = confusions[0]
+    assert counts.matrix.shape == (2, 2)
+    assert int(counts.matrix.sum()) == tiny_predictions_bank.n_traces
+    assert counts.labels == ["healthy", "fibrotic"]

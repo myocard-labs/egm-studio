@@ -130,11 +130,17 @@ def test_add_mode_relabels_feature_distributions(qtbot: QtBot) -> None:
     assert "Explore signal" in labels
 
 
-def test_run_menu_disables_planned_action(qtbot: QtBot) -> None:
+def test_run_menu_enables_view_curves(qtbot: QtBot) -> None:
     tree = _populated(qtbot)
     menu = tree._artifact_menu(_child(_top(tree, 5), 0).text(0))  # a training run
-    assert _menu_action(menu, "View training curves").isEnabled() is False
+    assert _menu_action(menu, "View training curves").isEnabled() is True  # wired in B8f
     assert _menu_action(menu, "Show metadata").isEnabled() is True
+
+
+def test_model_menu_disables_planned_action(qtbot: QtBot) -> None:
+    tree = _populated(qtbot)
+    menu = tree._artifact_menu(_child(_top(tree, 6), 0).text(0))  # a model
+    assert _menu_action(menu, "Go to training run").isEnabled() is False  # not wired yet
 
 
 def test_model_menu_has_no_show_metadata(qtbot: QtBot) -> None:
