@@ -21,6 +21,7 @@ from PySide6 import QtCore, QtWidgets
 from myocard_egm_studio.charts.inputs import FeatureGroup
 from myocard_egm_studio.charts.palette import color_for
 from myocard_egm_studio.charts.pyqtgraph import DEFAULT_STYLE, PgChartStyle, draw_feature_panel
+from myocard_egm_studio.gui.widgets.legend import SourceLegend
 
 _PANEL_BASE = (300, 220)  # panel (w, h) in px at scale 1.0
 _PANEL_MIN = (200, 150)  # smallest readable panel — below this the grid wraps/scrolls
@@ -102,46 +103,6 @@ class _FlowLayout(QtWidgets.QLayout):
         return y + line_height + margins.bottom() - rect.y()
 
 
-class _Legend(QtWidgets.QWidget):
-    """A horizontal source legend: a colour swatch + name per overlaid group."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.setObjectName("gridLegend")
-        self._layout = QtWidgets.QHBoxLayout(self)
-        self._layout.setContentsMargins(8, 0, 8, 2)
-        self._layout.setSpacing(14)
-        self.set_entries([])
-
-    def set_entries(self, entries: Sequence[tuple[str, str]]) -> None:
-        """Show ``(name, colour hex)`` per group; hidden unless there are 2+."""
-        while self._layout.count():
-            item = self._layout.takeAt(0)
-            widget = item.widget() if item is not None else None
-            if widget is not None:
-                widget.setParent(None)
-                widget.deleteLater()
-        for name, color in entries:
-            self._layout.addWidget(_legend_entry(name, color))
-        self._layout.addStretch(1)
-        self.setVisible(len(entries) > 1)
-
-
-def _legend_entry(name: str, color: str) -> QtWidgets.QWidget:
-    row = QtWidgets.QWidget()
-    layout = QtWidgets.QHBoxLayout(row)
-    layout.setContentsMargins(0, 0, 0, 0)
-    layout.setSpacing(5)
-    swatch = QtWidgets.QLabel()
-    swatch.setFixedSize(11, 11)
-    swatch.setStyleSheet(f"background-color: {color}; border-radius: 2px;")
-    label = QtWidgets.QLabel(name)
-    label.setObjectName("legendName")
-    layout.addWidget(swatch)
-    layout.addWidget(label)
-    return row
-
-
 class FeatureDistributionGrid(QtWidgets.QWidget):
     """A wrap + scroll grid of per-feature distribution panels (ADR-018).
 
@@ -186,7 +147,7 @@ class FeatureDistributionGrid(QtWidgets.QWidget):
         header.addWidget(QtWidgets.QLabel("Panel size"))
         header.addWidget(self._scale_slider)
 
-        self._legend = _Legend()
+        self._legend = SourceLegend()
 
         self._flow_host = QtWidgets.QWidget()
         self._flow = _FlowLayout(self._flow_host)

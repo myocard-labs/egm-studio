@@ -19,6 +19,8 @@ _THEME_KEY = "appearance/theme"
 _UI_SCALE_KEY = "appearance/ui_scale"
 _PLOT_KIND_KEY = "appearance/plot_kind"
 _PLOT_KINDS = ("kde", "histogram")
+_SCATTER_X_KEY = "signal/scatter_x"
+_SCATTER_Y_KEY = "signal/scatter_y"
 
 
 def _settings() -> QtCore.QSettings:
@@ -68,3 +70,23 @@ def load_plot_kind(default: str) -> str:
 def save_plot_kind(kind: str) -> None:
     """Persist the summary plot kind (KDE / histogram) to restore on next launch."""
     _settings().setValue(_PLOT_KIND_KEY, kind)
+
+
+def load_scatter_axes(default: tuple[str, str]) -> tuple[str, str]:
+    """Return the persisted ``(x, y)`` scatter feature axes, or ``default`` if unset.
+
+    The stored names are validated against the live feature set by the scatter
+    widget (an unknown name falls back to a column), so this just restores the pair.
+    """
+    settings = _settings()
+    default_x, default_y = default
+    return str(settings.value(_SCATTER_X_KEY, default_x)), str(
+        settings.value(_SCATTER_Y_KEY, default_y)
+    )
+
+
+def save_scatter_axes(x: str, y: str) -> None:
+    """Persist the scatter feature axes (x, y) to restore on next launch."""
+    settings = _settings()
+    settings.setValue(_SCATTER_X_KEY, x)
+    settings.setValue(_SCATTER_Y_KEY, y)
