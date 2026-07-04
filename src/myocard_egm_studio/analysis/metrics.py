@@ -24,7 +24,33 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy import stats
 
-__all__ = ["auroc", "expected_calibration_error", "reliability_curve", "roc_curve"]
+__all__ = [
+    "auroc",
+    "expected_calibration_error",
+    "positive_prob",
+    "reliability_curve",
+    "roc_curve",
+]
+
+
+def positive_prob(logits: dict[int, float], positive_label: int = 1) -> float:
+    """Softmax over a trace's per-class ``logits``; return P(``positive_label``).
+
+    Uses the logits (not a stored top-class probability) so P of an arbitrary target
+    class is well-defined and the path generalizes beyond binary. Shared by the figure
+    loader (``PredictionGroup``) and the view-model ML join (Block 8); raises when the
+    target class isn't among the logit classes.
+    """
+    if positive_label not in logits:
+        raise ValueError(
+            f"positive_label {positive_label} is not among the pred_logits classes "
+            f"{sorted(logits)}."
+        )
+    keys = sorted(logits)
+    z = np.array([logits[k] for k in keys], dtype=np.float64)
+    z -= z.max()  # shift for numerical stability; softmax is shift-invariant
+    e = np.exp(z)
+    return float(e[keys.index(positive_label)] / e.sum())
 
 
 def _binary_truth_and_prob(

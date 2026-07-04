@@ -14,7 +14,9 @@ trace — joining:
 
 Per ADR-001, this consumes an already-loaded typed ``ClassifierBank`` (the
 GUI's ``loaders/`` layer, Block 7, does the file I/O) and returns a frame; it
-does no I/O itself. ML-outcome and similarity columns join in later blocks.
+does no I/O itself. For an *evaluated* bank (traces carry a ``prediction``) the
+ML-outcome columns join here too (:mod:`.ml_outcomes`, Block 8); similarity
+columns are computed on demand.
 
 Unlabeled traces (the IAFDB shape) carry ``label = None`` / ``label_name =
 None`` rather than raising — the view-model supports both scored and
@@ -29,6 +31,8 @@ import numpy as np
 import pandas as pd
 from myocard_egm_data.banks import ClassifierBank
 from myocard_egm_features.bundle import extract_all
+
+from myocard_egm_studio.view_model.ml_outcomes import ml_outcome_frame
 
 #: A progress callback ``(traces_done, traces_total)``, called during feature
 #: extraction. It may raise to abort the build — the GUI's Cancel path.
@@ -122,6 +126,7 @@ def build_view_model(
     *,
     source: str | None = None,
     with_features: bool = True,
+    positive_label: int = 1,
     progress: ProgressFn | None = None,
 ) -> pd.DataFrame:
     """Build the per-trace view-model DataFrame for ``bank``.
@@ -173,13 +178,19 @@ def build_view_model(
     if source is not None:
         meta_df.insert(0, "source", source)
 
-    if not with_features:
-        return meta_df
+    if with_features:
+        signals = bank.signal_array()
+        feature_df = _extract_features(signals, bank.uniform_fs_hz(), progress)
+        feature_df.index = meta_df.index
+        result = pd.concat([meta_df, feature_df], axis=1)
+    else:
+        result = meta_df
 
-    signals = bank.signal_array()
-    feature_df = _extract_features(signals, bank.uniform_fs_hz(), progress)
-    feature_df.index = meta_df.index
-    return pd.concat([meta_df, feature_df], axis=1)
+    ml_df = ml_outcome_frame(bank, positive_label=positive_label)
+    if ml_df is not None:  # an evaluated bank -> append the ML-outcome columns (Block 8)
+        ml_df.index = result.index
+        result = pd.concat([result, ml_df], axis=1)
+    return result
 
 
 def _extract_features(

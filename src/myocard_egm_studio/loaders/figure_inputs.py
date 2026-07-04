@@ -37,6 +37,7 @@ from myocard_egm_data.records import (
 from numpy.typing import NDArray
 
 from myocard_egm_studio.analysis.aggregation import aggregate_distance, feature_distances
+from myocard_egm_studio.analysis.metrics import positive_prob
 from myocard_egm_studio.analysis.similarity import nearest_along_feature
 from myocard_egm_studio.charts.inputs import (
     BarChartData,
@@ -169,21 +170,11 @@ def load_group_banks(spec: FigureSpec, bank_paths: BankPaths) -> list[tuple[str,
 
 
 def _positive_prob(logits: dict[int, float], positive_label: int, *, bank_id: str | None) -> float:
-    """Softmax over a trace's per-class logits; return P(``positive_label``).
-
-    Softmax (not the stored ``label_prob``) so the probability of an arbitrary
-    target class is well-defined, and so the same path generalizes beyond binary.
-    """
-    if positive_label not in logits:
-        raise ValueError(
-            f"positive_label {positive_label} is not among the pred_logits classes "
-            f"{sorted(logits)} (bank {bank_id!r})."
-        )
-    keys = sorted(logits)
-    z = np.array([logits[k] for k in keys], dtype=np.float64)
-    z -= z.max()  # shift for numerical stability; softmax is shift-invariant
-    e = np.exp(z)
-    return float(e[keys.index(positive_label)] / e.sum())
+    """P(``positive_label``) via :func:`analysis.metrics.positive_prob`, naming the bank on error."""
+    try:
+        return positive_prob(logits, positive_label)
+    except ValueError as exc:
+        raise ValueError(f"{exc} (bank {bank_id!r})") from exc
 
 
 def prediction_group_from_bank(

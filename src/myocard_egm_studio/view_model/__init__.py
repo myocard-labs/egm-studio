@@ -30,6 +30,7 @@ from myocard_egm_studio.view_model.filtering import (
     apply_filter,
     filter_columns,
 )
+from myocard_egm_studio.view_model.ml_outcomes import ML_COLUMNS, ml_outcome_frame
 from myocard_egm_studio.view_model.phase_groups import (
     ArtifactGroup,
     ArtifactRow,
@@ -43,6 +44,7 @@ from myocard_egm_studio.view_model.trace_detail import DetailRow, TraceDetail, t
 __all__ = [
     "FEATURE_COLUMNS",
     "IDENTITY_COLUMNS",
+    "ML_COLUMNS",
     "ROW_ID",
     "ArtifactGroup",
     "ArtifactRow",
@@ -60,6 +62,7 @@ __all__ = [
     "entries_by_id",
     "feature_units",
     "filter_columns",
+    "ml_outcome_frame",
     "phase_artifact_groups",
     "similar_in_other_sources",
     "trace_detail",
