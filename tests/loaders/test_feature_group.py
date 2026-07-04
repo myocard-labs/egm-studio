@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import numpy as np
 from myocard_egm_data.banks import ClassifierBank
 
 from myocard_egm_studio.loaders import (
     feature_group_from_frame,
     feature_groups_by_source,
+    prediction_group_from_frame,
+    prediction_groups_by_source,
     scatter_series_by_source,
 )
 from myocard_egm_studio.view_model import FEATURE_COLUMNS, build_view_model, combine_view_models
@@ -84,3 +87,28 @@ def test_scatter_series_units_and_empty(tiny_classifier_bank: ClassifierBank) ->
     assert only.ids.tolist() == list(range(tiny_classifier_bank.n_traces))
     assert only.units is not None and only.units["peak_to_peak"] == "mV"
     assert scatter_series_by_source(frame.iloc[0:0]) == []
+
+
+def test_prediction_group_carries_probs(tiny_predictions_bank: ClassifierBank) -> None:
+    """The group pulls predicted_prob as one [0, 1] (N,) array; labels stay unset (B8e)."""
+    frame = build_view_model(tiny_predictions_bank, source="v1")
+    group = prediction_group_from_frame(frame)
+    assert group.name == "v1"
+    assert group.probs.shape == (tiny_predictions_bank.n_traces,)
+    assert group.labels is None  # the Output overlay compares sources, not classes
+    assert np.all((group.probs >= 0.0) & (group.probs <= 1.0))
+
+
+def test_prediction_groups_by_source_splits_and_empty(
+    tiny_predictions_bank: ClassifierBank, tiny_unlabeled_predictions_bank: ClassifierBank
+) -> None:
+    """One PredictionGroup per source, in load order; an empty frame yields none."""
+    combined = combine_view_models(
+        [
+            build_view_model(tiny_predictions_bank, source="v1"),
+            build_view_model(tiny_unlabeled_predictions_bank, source="v1.5"),
+        ]
+    )
+    groups = prediction_groups_by_source(combined)
+    assert [g.name for g in groups] == ["v1", "v1.5"]
+    assert prediction_groups_by_source(combined.iloc[0:0]) == []

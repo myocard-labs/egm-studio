@@ -6,7 +6,7 @@ from myocard_egm_data.banks import ClassifierBank
 from pytestqt.qtbot import QtBot
 
 from myocard_egm_studio.gui.views import MlDiagnosticsView
-from myocard_egm_studio.view_model import build_view_model
+from myocard_egm_studio.view_model import build_view_model, combine_view_models
 
 
 def test_has_the_flow_b_subtabs(qtbot: QtBot) -> None:
@@ -36,7 +36,36 @@ def test_set_evaluated_populates_the_list_and_header(
     assert view.result_list._table.rowCount() == tiny_predictions_bank.n_traces
     assert "v1.5" in view._header.text()
     assert "full diagnostics" in view._header.text()
-    assert view._tabs.currentIndex() == view._TAB_EXPLORE  # lands on the populated tab
+    assert view._tabs.currentIndex() == 0  # lands on the Output overlay (the headline)
+
+
+def test_set_evaluated_populates_the_output_overlay(
+    qtbot: QtBot, tiny_predictions_bank: ClassifierBank
+) -> None:
+    """A single evaluated bank draws one output-distribution curve for its source."""
+    view = MlDiagnosticsView()
+    qtbot.addWidget(view)
+    view.set_evaluated(build_view_model(tiny_predictions_bank, source="v1.5"), "full")
+    assert len(view._output_view.plot.getPlotItem().listDataItems()) == 1
+
+
+def test_multi_source_overlay_and_header(
+    qtbot: QtBot,
+    tiny_predictions_bank: ClassifierBank,
+    tiny_unlabeled_predictions_bank: ClassifierBank,
+) -> None:
+    """Two evaluated banks overlay two curves; the header reports the source count."""
+    view = MlDiagnosticsView()
+    qtbot.addWidget(view)
+    frame = combine_view_models(
+        [
+            build_view_model(tiny_predictions_bank, source="v1"),
+            build_view_model(tiny_unlabeled_predictions_bank, source="v1.5"),
+        ]
+    )
+    view.set_evaluated(frame, "qualitative")
+    assert "2 sources" in view._header.text()
+    assert len(view._output_view.plot.getPlotItem().listDataItems()) == 2
 
 
 def test_clear_returns_to_the_landing_state(
