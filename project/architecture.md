@@ -142,6 +142,9 @@ myocard_egm_studio/
 ├── save/                 # Observation + manifest writers   [ADR-017, ADR-021]
 └── view_model/           # Prepared, Qt-free view data       [ADR-002]
     ├── builder.py        #   unified per-trace table (features + metadata)
+    ├── combine.py        #   pool N banks into one frame (global row_id)  [B7.8]
+    ├── summary.py        #   bank stats for the Flow A summary landing    [B7.7]
+    ├── trace_detail.py   #   per-trace feature + metadata detail          [B7.6]
     ├── phase_groups.py   #   manifest -> the ten role-based groups       [B6]
     ├── phase_status.py   #   per-artifact existence + schema validation  [B6]
     ├── phase_actions.py  #   right-click action policy per role          [B6]

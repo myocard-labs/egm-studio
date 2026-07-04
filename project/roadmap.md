@@ -422,7 +422,17 @@ Sub-blocks:
   Explore tab, View feature distributions → the Summary tab.
 - **B7.8 — multi-bank loading.** Load N banks at once; side-by-side / overlaid
   summaries; `data_source` becomes a real filter dimension (`data_source ==
-  synthetic`).
+  synthetic`). **✓ Shipped 2026-07-04** — `view_model/combine_view_models` pools the
+  banks into one frame under a unique global `row_id` (the GUI's result-list + detail
+  key, since per-bank `trace_idx` collides); a left-sidebar loaded-banks roster
+  (`gui/widgets/bank_list.py`) with per-bank colour + remove; File ▸ Open bank is
+  additive-when-loaded (relabels "Open bank…" ↔ "Add bank…", and the phase-tree
+  "View feature distributions" ↔ "Add feature distribution"; "Explore signal" always
+  replaces); the summary grid overlays one **KDE** curve per source (KDE / histogram
+  toggle, persisted; `loaders/feature_groups_by_source`) with a legend + per-bank
+  stats + KS annotations; the load progress dialog now spans extraction **and** the
+  view build ("Building views…", chunked table build). `source` is the filter
+  dimension. Side-by-side grids were considered but overlaid KDE won for comparison.
 - **B7.9 — feature scatter.** A 2-D `(feat_x, feat_y)` scatter over the current
   filter result — pan / zoom, per-point colour by `data_source`.
 - **B7.10 — per-feature similarity + 3-pane compare.** "Find similar in other
