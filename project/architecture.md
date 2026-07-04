@@ -145,7 +145,8 @@ myocard_egm_studio/
     ├── builder.py        #   unified per-trace table (features + metadata)
     ├── combine.py        #   pool N banks into one frame (global row_id)  [B7.8]
     ├── summary.py        #   bank stats for the Flow A summary landing    [B7.7]
-    ├── trace_detail.py   #   per-trace feature + metadata detail          [B7.6]
+    ├── trace_detail.py   #   per-trace feature + metadata detail + deltas [B7.6]
+    ├── similar.py        #   nearest trace in each other bank per feature [B7.10]
     ├── phase_groups.py   #   manifest -> the ten role-based groups       [B6]
     ├── phase_status.py   #   per-artifact existence + schema validation  [B6]
     ├── phase_actions.py  #   right-click action policy per role          [B6]

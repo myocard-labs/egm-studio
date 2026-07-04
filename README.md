@@ -125,12 +125,12 @@ ks = distributions.ks_distance(synthetic_feature_values, iafdb_feature_values)
 | Module | What's in it |
 |---|---|
 | `myocard_egm_studio.analysis` | Pure data computation (no rendering, no Qt): `distributions` (CDF / KS / Wasserstein / histogram / KDE), `aggregation` (between-group feature distance), `similarity` (per-feature nearest). |
-| `myocard_egm_studio.view_model` | Prepared, Qt-free view data. `build_view_model` — the unified per-trace table joining identity + bank metadata + egm-features columns — `combine` (`combine_view_models` — pool loaded banks into one frame under a unique global `row_id`, the multi-bank result-list + detail key), `summary` (`bank_summary` — the Flow A landing's count / class balance / provenance), plus the Phase-tree view models: `phase_groups` (manifest → the ten role groups), `phase_status` (per-artifact existence + validation), `phase_actions` (right-click policy), `artifact_metadata` (file-level metadata). |
+| `myocard_egm_studio.view_model` | Prepared, Qt-free view data. `build_view_model` — the unified per-trace table joining identity + bank metadata + egm-features columns — `combine` (`combine_view_models` — pool loaded banks into one frame under a unique global `row_id`, the multi-bank result-list + detail key), `summary` (`bank_summary` — the Flow A landing's count / class balance / provenance), `trace_detail` (the per-trace compare table, with per-feature deltas vs the source column), `similar` (`similar_in_other_sources` — the nearest trace in each other bank along a feature, over `analysis.similarity`), plus the Phase-tree view models: `phase_groups` (manifest → the ten role groups), `phase_status` (per-artifact existence + validation), `phase_actions` (right-click policy), `artifact_metadata` (file-level metadata). |
 | `myocard_egm_studio.charts.matplotlib` | The publication (static) rendering backend + the recipe registry the dispatch fills. |
 | `myocard_egm_studio.charts.pyqtgraph` | The interactive (GUI-embedded) rendering backend — pyqtgraph chart widgets that reuse `analysis/` and the shared `charts.inputs` / `charts.palette`, so a chart matches its matplotlib twin — plus a GUI-only `draw_feature_scatter` (a live `(feat_x, feat_y)` scatter coloured by source, no matplotlib twin). |
 | `myocard_egm_studio.figures` | `render(spec, *, data) -> Path` — the thin headless dispatch over `charts/matplotlib`. Pure rendering; the data-loading step lives in `loaders/`. |
 | `myocard_egm_studio.loaders` | Data-loading (ids/paths → in-memory inputs): `figure_inputs` (spec + `{id: path}` → recipe inputs + the permanent bank → recipe-input adapters), `feature_group` (`feature_group_from_frame` + `feature_groups_by_source` — view-model-frame → charts `FeatureGroup`(s), shared by the figure loader + the GUI summary grid; the by-source split feeds the multi-bank overlay — plus `scatter_series_by_source`, the same split into id-carrying `ScatterSeries` for the scatter view), and `manifest` (`bank_paths_from_phase` — a phase's `manifest.json` → `{artifact_id: path}`). |
-| `myocard_egm_studio.gui` | The PySide6 desktop shell (Block 4): `app` (the `egm-studio` entry), `shell` (ADR-025 layout — collapsible sidebars + 3-mode switch), `theme` (dark / light / vibrant QSS), `preferences` (persisted theme via QSettings). `widgets/` holds the Block 5 trace-display primitive, the Block 6 right-rail Phase artifact tree, and the Block 7 composable filter / result list / `feature_grid` (the ADR-018 responsive distribution grid, which overlays one KDE / histogram curve per source with a legend + toggle) / `feature_scatter` (the interactive `(feat_x, feat_y)` scatter with axis pickers) / `bank_list` (the loaded-banks roster) / a shared `SourceLegend`; `views/signal_exploration` assembles the Signal-exploration mode as Summary (per-bank stats + the overlaid grid), Explore (filter → list → detail) and Scatter (click a point → the Explore detail) sub-tabs. Loading many banks pools them under one `row_id`, with a progress dialog spanning extraction + the view build. |
+| `myocard_egm_studio.gui` | The PySide6 desktop shell (Block 4): `app` (the `egm-studio` entry), `shell` (ADR-025 layout — collapsible sidebars + 3-mode switch), `theme` (dark / light / vibrant QSS), `preferences` (persisted theme via QSettings). `widgets/` holds the Block 5 trace-display primitive, the Block 6 right-rail Phase artifact tree, and the Block 7 composable filter / result list / `feature_grid` (the ADR-018 responsive distribution grid, which overlays one KDE / histogram curve per source with a legend + toggle) / `feature_scatter` (the interactive `(feat_x, feat_y)` scatter with axis pickers) / `bank_list` (the loaded-banks roster) / a shared `SourceLegend`; `views/signal_exploration` assembles the Signal-exploration mode as Summary (per-bank stats + the overlaid grid), Explore (filter → list → detail, with a "find similar in other bank" per-feature compare — via the detail control or a result-list right-click) and Scatter (click a point → the Explore detail) sub-tabs. Loading many banks pools them under one `row_id`, with a progress dialog spanning extraction + the view build. |
 | `myocard_egm_studio.cli` | Console-script entry points: `render` (`egm-studio-render`). |
 
 The Qt shell (`gui/`) landed in Block 4 (layout + theming); Block 5 added the
@@ -166,7 +166,7 @@ machine with no display.
 ## Project status
 
 Pre-v0.1.0; built across 14 blocks (see
-[`project/roadmap.md`](project/roadmap.md)). **Blocks 2–6 have shipped.** The
+[`project/roadmap.md`](project/roadmap.md)). **Blocks 2–7 have shipped.** The
 headless figure pipeline (Blocks 2–3): the `charts/matplotlib/` foundation, the
 `render(spec, *, data)` contract, the figure-data loaders (`egm-studio-render
 --bank/--banks`), and all eight Phase-1.5 P0 recipes — `prediction-histogram`,
@@ -184,8 +184,14 @@ integration: a read-only right-rail Phase tree that loads a phase's
 `manifest.json` (through egm-data) into the ten role-based artifact groups, marks
 each artifact with an existence / validation status dot, and offers role-aware
 right-click actions — Explore signal plus a Show-metadata view that reads the
-artifact's own file. The mode views that assemble these into end-user tools begin
-in Block 7, so the shell opens but isn't yet a complete analysis tool. Pins
+artifact's own file. **Block 7** completes the Flow A signal-exploration mode:
+multi-bank load → a composable filter (numeric + categorical, applied on an explicit
+Recalculate, with a "match all that exist" mode for cross-bank fields) → a sortable
+result list → per-trace detail, across a **Summary** tab (the ADR-018 distribution
+grid + per-bank stats, both filter-responsive), a **Scatter** tab (2-D feature
+scatter, click a point → the detail, per-bank bring-to-front), and an **Explore** tab
+whose detail offers "find similar in other bank" — the nearest trace in each other
+bank along a chosen feature, shown as a compare-with-feature-deltas. Pins
 `myocard-egm-contracts v0.5.2`, `myocard-egm-data v0.4.2`, `myocard-egm-features
 v0.1.1`.
 

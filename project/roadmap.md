@@ -469,7 +469,14 @@ Sub-blocks:
 - **B7.10 — per-feature similarity + 3-pane compare.** "Find similar in other
   bank" via `analysis.similarity.nearest_along_feature` + a feature-axis dropdown
   → 3-pane compare-with-feature-deltas (shares the pair-comparison machinery with
-  Block 8; ADR-020 per-feature only).
+  Block 8; ADR-020 per-feature only). **✓ Shipped 2026-07-04** —
+  `view_model.similar_in_other_sources` wraps the primitive with a per-other-source
+  `candidate_mask` (nearest in *each* other bank, over the current result frame so
+  filters are respected); `trace_detail` gained per-feature deltas vs the source
+  column. Triggered two ways: a "Find similar in other bank along [feature]" control
+  in the detail pane (enabled on a single selection + ≥2 banks) and a result-list
+  right-click (`findSimilarRequested`); both fill the compare panes source-first.
+  **This closes Block 7 — the Flow A signal-exploration MVP is complete.**
 
 ADR formalized here: **ADR-018** (responsive thumbnail-grid sizing, B7.7) —
 **accepted + implemented 2026-07-03**.
