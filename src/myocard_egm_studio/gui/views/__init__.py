@@ -5,6 +5,7 @@ Each view assembles the reusable widgets (``gui/widgets``) into one flow. Flow A
 figures) land in Blocks 8-9.
 """
 
+from myocard_egm_studio.gui.views.ml_diagnostics import MlDiagnosticsView
 from myocard_egm_studio.gui.views.signal_exploration import SignalExplorationView
 
-__all__ = ["SignalExplorationView"]
+__all__ = ["MlDiagnosticsView", "SignalExplorationView"]
