@@ -4,11 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from myocard_egm_data.banks import ClassifierBank, write_classifier_bank
 
-from myocard_egm_studio.gui.sources import load_traces, load_view_model, traces_from_bank
+from myocard_egm_studio.gui.sources import (
+    BankNotEvaluatedError,
+    evaluated_mode,
+    load_evaluated,
+    load_traces,
+    load_view_model,
+    traces_from_bank,
+)
 from myocard_egm_studio.gui.widgets import TraceData
-from myocard_egm_studio.view_model import FEATURE_COLUMNS, IDENTITY_COLUMNS
+from myocard_egm_studio.view_model import FEATURE_COLUMNS, IDENTITY_COLUMNS, ML_COLUMNS
 
 
 def test_traces_from_bank_adapts(tiny_classifier_bank: ClassifierBank) -> None:
@@ -63,3 +71,31 @@ def test_load_view_model_source_falls_back_to_file_stem(
     write_classifier_bank(tiny_classifier_bank, path)
     df = load_view_model(path)
     assert list(df["source"].unique()) == ["synth_bank"]
+
+
+def test_evaluated_mode_full_for_a_labelled_eval_bank(
+    tiny_predictions_bank: ClassifierBank,
+) -> None:
+    assert evaluated_mode(tiny_predictions_bank) == "full"
+
+
+def test_evaluated_mode_qualitative_for_an_unlabelled_eval_bank(
+    tiny_unlabeled_predictions_bank: ClassifierBank,
+) -> None:
+    assert evaluated_mode(tiny_unlabeled_predictions_bank) == "qualitative"
+
+
+def test_evaluated_mode_refuses_a_raw_bank(tiny_classifier_bank: ClassifierBank) -> None:
+    with pytest.raises(BankNotEvaluatedError, match="no predictions"):
+        evaluated_mode(tiny_classifier_bank)  # a bank with no predictions
+
+
+def test_load_evaluated_round_trips_with_ml_columns(
+    tiny_predictions_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    path = tmp_path / "eval.h5"
+    write_classifier_bank(tiny_predictions_bank, path)
+    frame, traces, mode = load_evaluated(path)
+    assert mode == "full"
+    assert set(ML_COLUMNS).issubset(frame.columns)  # ML-outcome columns joined (B8a)
+    assert len(traces) == tiny_predictions_bank.n_traces

@@ -37,6 +37,7 @@ from myocard_egm_studio.loaders import (
     load_prediction_groups,
     prediction_group_from_bank,
     resolve_recipe_data,
+    training_curve_from_run,
 )
 
 _FIXTURE_PRED_ID = "lpred_studio_fixture_2026-06-28"
@@ -608,6 +609,17 @@ def test_load_training_curve(tmp_path: Path) -> None:
     assert data.metric["val"].tolist() == [0.70, 0.90, 0.95]
     assert data.metric_name == "AUROC"
     assert data.best_epoch == 3
+
+
+def test_training_curve_from_run_direct_adapter(tmp_path: Path) -> None:
+    """The GUI's direct run.json -> TrainingCurve path (no FigureSpec), like the bank adapter."""
+    path = tmp_path / "run.json"
+    write_training_run_record(path, _training_record())
+    curve = training_curve_from_run(path)
+    assert curve.epochs.tolist() == [1, 2, 3]
+    assert curve.loss["train"].tolist() == [0.5, 0.3, 0.2]
+    assert curve.metric_name == "AUROC"
+    assert curve.best_epoch == 3
 
 
 def test_training_curve_metric_absent_raises(tmp_path: Path) -> None:
