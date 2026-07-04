@@ -56,3 +56,12 @@ def test_plot_kind_falls_back_on_unknown_value() -> None:
         preferences.APP_NAME,
     ).setValue("appearance/plot_kind", "violin")
     assert preferences.load_plot_kind("kde") == "kde"
+
+
+def test_scatter_axes_default_then_roundtrips() -> None:
+    assert preferences.load_scatter_axes(("peak_to_peak", "sample_entropy")) == (
+        "peak_to_peak",
+        "sample_entropy",
+    )  # unset -> default pair
+    preferences.save_scatter_axes("dominant_frequency", "fractal_dimension")
+    assert preferences.load_scatter_axes(("a", "b")) == ("dominant_frequency", "fractal_dimension")
