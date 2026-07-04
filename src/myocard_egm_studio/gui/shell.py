@@ -482,7 +482,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_metadata(entry.id, text)
         elif action_id == "reveal_file":
             self._reveal(reveal_target(self._phase_dir, entry.path))
-        elif action_id in ("view_traces", "explore_signal"):
+        elif action_id == "explore_signal":
             self._open_bank_explore(str(self._phase_dir / entry.path))
 
     def _copy_to_clipboard(self, text: str) -> None:

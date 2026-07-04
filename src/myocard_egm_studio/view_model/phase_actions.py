@@ -60,17 +60,15 @@ _METADATA_ROLES: frozenset[Role] = frozenset(
     }
 )
 
-# "View traces" + "Explore in Signal exploration" are wired now (the egm-bank roles
-# are ClassifierBanks the Flow A view opens). Every other viewer is a placeholder.
-_VIEW_TRACES = ArtifactAction("view_traces", "View traces")
-_EXPLORE = ArtifactAction("explore_signal", "Explore in Signal exploration")
+# "Explore signal" is wired now — the egm-bank roles are ClassifierBanks the Flow A
+# view opens. Every other viewer is a placeholder.
+_EXPLORE = ArtifactAction("explore_signal", "Explore signal")
 _FEATURE_DIST = ArtifactAction(
     "view_feature_distributions", "View feature distributions", available=False, note=_B7
 )
 
-_INPUT_BANK = (_VIEW_TRACES, _EXPLORE, _FEATURE_DIST)
+_INPUT_BANK = (_EXPLORE, _FEATURE_DIST)
 _PREDICTION_BANK = (
-    _VIEW_TRACES,
     _EXPLORE,
     _FEATURE_DIST,
     ArtifactAction("view_ml_diagnostics", "View ML diagnostics", available=False, note=_B8),

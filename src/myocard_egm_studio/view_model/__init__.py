@@ -34,6 +34,7 @@ from myocard_egm_studio.view_model.phase_groups import (
     entries_by_id,
     phase_artifact_groups,
 )
+from myocard_egm_studio.view_model.trace_detail import DetailRow, TraceDetail, trace_detail
 
 __all__ = [
     "FEATURE_COLUMNS",
@@ -41,12 +42,15 @@ __all__ = [
     "ArtifactGroup",
     "ArtifactRow",
     "Condition",
+    "DetailRow",
     "FilterColumn",
     "FilterSpec",
+    "TraceDetail",
     "apply_filter",
     "build_view_model",
     "entries_by_id",
     "feature_units",
     "filter_columns",
     "phase_artifact_groups",
+    "trace_detail",
 ]

@@ -327,7 +327,7 @@ write logic lands in Block 10.
   (missing) — set on load (existence only) and refined by **File ▸ Validate
   phase** (full schema validation).
 - **Right-click actions, not just inline expansion.** Every artifact has a
-  role-aware menu — View traces (wired for the egm-bank roles), Show metadata
+  role-aware menu — Explore signal (wired for the egm-bank roles), Show metadata
   (reads the file: a ClassifierBank summary, a noise-bank header, or pretty
   JSON), Reveal file, Copy id — with not-yet-built viewers greyed and tagged to
   the block that delivers them. The inline manifest-pointer rows remain.

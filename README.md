@@ -183,7 +183,7 @@ over the same `analysis/` output). **Block 6** front-loads the meta-repo
 integration: a read-only right-rail Phase tree that loads a phase's
 `manifest.json` (through egm-data) into the ten role-based artifact groups, marks
 each artifact with an existence / validation status dot, and offers role-aware
-right-click actions — View traces plus a Show-metadata view that reads the
+right-click actions — Explore signal plus a Show-metadata view that reads the
 artifact's own file. The mode views that assemble these into end-user tools begin
 in Block 7, so the shell opens but isn't yet a complete analysis tool. Pins
 `myocard-egm-contracts v0.5.2`, `myocard-egm-data v0.4.2`, `myocard-egm-features
