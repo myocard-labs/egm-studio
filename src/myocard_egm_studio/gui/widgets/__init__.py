@@ -9,6 +9,7 @@ from myocard_egm_studio.gui.widgets.bank_list import LoadedBanksList
 from myocard_egm_studio.gui.widgets.explore_detail import ExploreDetail, Finder
 from myocard_egm_studio.gui.widgets.feature_grid import FeatureDistributionGrid
 from myocard_egm_studio.gui.widgets.feature_scatter import FeatureScatterView
+from myocard_egm_studio.gui.widgets.figure_form import FigureForm
 from myocard_egm_studio.gui.widgets.figure_preview import FigurePreview
 from myocard_egm_studio.gui.widgets.filter import FilterPanel
 from myocard_egm_studio.gui.widgets.metrics_view import MetricsView
@@ -25,6 +26,7 @@ __all__ = [
     "ExploreDetail",
     "FeatureDistributionGrid",
     "FeatureScatterView",
+    "FigureForm",
     "FigurePreview",
     "FilterPanel",
     "Finder",
