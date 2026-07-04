@@ -35,6 +35,19 @@ def test_remove_button_emits_the_bank_path(qtbot: QtBot) -> None:
     assert blocker.args == ["/a.h5"]
 
 
+def test_front_button_emits_the_bank_path(qtbot: QtBot) -> None:
+    widget = LoadedBanksList()
+    qtbot.addWidget(widget)
+    widget.set_banks([("Synthetic", "/a.h5", "#0072B2"), ("IAFDB", "/b.h5", "#D55E00")])
+    buttons = [
+        b for b in widget.findChildren(QtWidgets.QToolButton) if b.objectName() == "bankRowFront"
+    ]
+    assert len(buttons) == 2  # one per bank
+    with qtbot.waitSignal(widget.bringToFrontRequested) as blocker:
+        buttons[1].click()  # IAFDB
+    assert blocker.args == ["/b.h5"]
+
+
 def test_empty_roster_shows_placeholder(qtbot: QtBot) -> None:
     widget = LoadedBanksList()
     qtbot.addWidget(widget)

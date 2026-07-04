@@ -188,6 +188,16 @@ def test_recalculate_narrows_the_result_list(
     assert f"{kept:,} traces" in window._explore_view._summary_panel._count.text()
 
 
+def test_bring_to_front_raises_the_scatter_source(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    """The roster bring-to-front button maps the bank path to its scatter source."""
+    window = _open(qtbot, tiny_classifier_bank, tmp_path)
+    bank = window._loaded_banks[0]
+    window._on_bring_to_front(bank.path)
+    assert window._explore_view._scatter._front_source == bank.label
+
+
 def test_open_bank_cancel_aborts_the_load(
     qtbot: QtBot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

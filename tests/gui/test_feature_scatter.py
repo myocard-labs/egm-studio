@@ -109,3 +109,16 @@ def test_recenter_button_refits_the_view(
     vb.setRange(xRange=(1000, 2000), padding=0)
     view._recenter_button.click()
     assert vb.viewRange()[0][1] < 1000  # the button re-fits to the points
+
+
+def test_bring_to_front_raises_z_and_persists_across_redraw(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tiny_unlabeled_bank: ClassifierBank
+) -> None:
+    """Raising a source stacks it above the others by z-value, kept through a redraw."""
+    view = _view(qtbot, (tiny_classifier_bank, "A"), (tiny_unlabeled_bank, "B"))
+    view.bring_to_front("A")  # A loads first (drawn under B by default) -> raise it
+    z = {s.name: item.zValue() for s, item in zip(view._series, view.items, strict=True)}
+    assert z["A"] > z["B"]
+    view.set_series(_series((tiny_classifier_bank, "A"), (tiny_unlabeled_bank, "B")))  # redraw
+    z2 = {s.name: item.zValue() for s, item in zip(view._series, view.items, strict=True)}
+    assert z2["A"] > z2["B"]  # still in front after the rebuild
