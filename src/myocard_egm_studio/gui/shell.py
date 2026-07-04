@@ -20,7 +20,13 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from myocard_egm_studio.gui.preferences import load_theme, save_theme
 from myocard_egm_studio.gui.sources import load_exploration
-from myocard_egm_studio.gui.theme import DEFAULT_THEME, THEME_NAMES, apply_theme, plot_palette
+from myocard_egm_studio.gui.theme import (
+    DEFAULT_THEME,
+    THEME_NAMES,
+    apply_theme,
+    chart_style,
+    plot_palette,
+)
 from myocard_egm_studio.gui.views import SignalExplorationView
 from myocard_egm_studio.gui.widgets import FilterPanel, PhaseTree, TraceData
 from myocard_egm_studio.view_model import (
@@ -260,7 +266,7 @@ class MainWindow(QtWidgets.QMainWindow):
             apply_theme(app, name)
         save_theme(name)
         self._current_theme = name
-        self._explore_view.restyle(plot_palette(name))
+        self._explore_view.restyle(plot_palette(name), chart_style(name))
 
     # -- body -----------------------------------------------------------------
 
@@ -318,7 +324,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._filter_panel.filterChanged.connect(self._on_filter_changed)
         self._left_sidebar.set_body(self._filter_panel)
 
-        self._explore_view = SignalExplorationView(plot_palette(self._current_theme))
+        self._explore_view = SignalExplorationView(
+            plot_palette(self._current_theme), chart_style(self._current_theme)
+        )
         self._modes_stack = QtWidgets.QStackedWidget()
         self._modes_stack.setMinimumWidth(_MAIN_MIN_W)
         self._modes_stack.addWidget(self._explore_view)  # 0 — signal exploration
@@ -382,8 +390,14 @@ class MainWindow(QtWidgets.QMainWindow):
         if path:
             self._open_bank_explore(path)
 
-    def _open_bank_explore(self, path: str) -> None:
+    def _open_bank_explore(
+        self, path: str, *, focus: Literal["summary", "explore"] = "summary"
+    ) -> None:
         """Load a bank as the view-model table + traces; feed the filter + Flow A view.
+
+        ``focus`` picks the sub-tab to land on: the Summary landing by default
+        (File ▸ Open bank, "View feature distributions"), or "explore" straight to
+        the result list ("Explore signal").
 
         Feature extraction (O(T^2) sample entropy) is the slow step and runs on the
         GUI thread, so a large bank would freeze the window. A modal QProgressDialog
@@ -420,9 +434,16 @@ class MainWindow(QtWidgets.QMainWindow):
         finally:
             dialog.close()
 
-        self._on_bank_loaded(path, frame, traces)
+        self._on_bank_loaded(path, frame, traces, focus=focus)
 
-    def _on_bank_loaded(self, path: str, frame: pd.DataFrame, traces: list[TraceData]) -> None:
+    def _on_bank_loaded(
+        self,
+        path: str,
+        frame: pd.DataFrame,
+        traces: list[TraceData],
+        *,
+        focus: Literal["summary", "explore"] = "summary",
+    ) -> None:
         """Populate the filter + Flow A view from a freshly loaded bank."""
         if frame.empty:
             self.statusBar().showMessage("That bank has no traces to display.")
@@ -430,9 +451,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._bank_name = Path(path).name
         self._explore_df = frame
         self._explore_view.set_traces(traces)
+        self._explore_view.set_summary(frame)  # full-bank stats + grid; lands on Summary
         # set_columns emits filterChanged -> _on_filter_changed, which populates the list.
         self._filter_panel.set_columns(filter_columns(frame))
         self._show_mode(0)
+        if focus == "explore":
+            self._explore_view.show_explore()
         self.statusBar().showMessage(
             f"Loaded {self._bank_name} — {len(frame.index)} trace(s); filter or sort, then select"
         )
@@ -521,8 +545,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_metadata(entry.id, text)
         elif action_id == "reveal_file":
             self._reveal(reveal_target(self._phase_dir, entry.path))
-        elif action_id == "explore_signal":
-            self._open_bank_explore(str(self._phase_dir / entry.path))
+        elif action_id in ("explore_signal", "view_feature_distributions"):
+            focus: Literal["summary", "explore"] = (
+                "explore" if action_id == "explore_signal" else "summary"
+            )
+            self._open_bank_explore(str(self._phase_dir / entry.path), focus=focus)
 
     def _copy_to_clipboard(self, text: str) -> None:
         app = QtWidgets.QApplication.instance()

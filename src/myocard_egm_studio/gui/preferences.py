@@ -16,6 +16,7 @@ from myocard_egm_studio.gui.theme import THEME_NAMES, ThemeName
 ORG_NAME = "myocard-labs"
 APP_NAME = "egm-studio"
 _THEME_KEY = "appearance/theme"
+_UI_SCALE_KEY = "appearance/ui_scale"
 
 
 def _settings() -> QtCore.QSettings:
@@ -40,3 +41,17 @@ def load_theme(default: ThemeName) -> ThemeName:
 def save_theme(name: ThemeName) -> None:
     """Persist ``name`` as the theme to restore on next launch."""
     _settings().setValue(_THEME_KEY, name)
+
+
+def load_ui_scale(default: float) -> float:
+    """Return the persisted ADR-018 panel scale factor, or ``default`` if unset."""
+    raw = _settings().value(_UI_SCALE_KEY, default)
+    try:
+        return float(str(raw))  # QSettings.value returns object; IniFormat stores as str
+    except (TypeError, ValueError):
+        return default
+
+
+def save_ui_scale(value: float) -> None:
+    """Persist the panel scale factor (ADR-018) to restore on next launch."""
+    _settings().setValue(_UI_SCALE_KEY, float(value))
