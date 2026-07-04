@@ -23,13 +23,25 @@ label-free banks.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
+import numpy as np
 import pandas as pd
 from myocard_egm_data.banks import ClassifierBank
 from myocard_egm_features.bundle import extract_all
 
+#: A progress callback ``(traces_done, traces_total)``, called during feature
+#: extraction. It may raise to abort the build — the GUI's Cancel path.
+ProgressFn = Callable[[int, int], None]
+
+#: Feature extraction runs in trace chunks so the caller can report progress and
+#: cancel between them (the O(T^2) sample-entropy pass makes big banks slow).
+_FEATURE_CHUNK = 8
+
 __all__ = [
     "FEATURE_COLUMNS",
     "IDENTITY_COLUMNS",
+    "ProgressFn",
     "build_view_model",
     "feature_units",
 ]
@@ -110,6 +122,7 @@ def build_view_model(
     *,
     source: str | None = None,
     with_features: bool = True,
+    progress: ProgressFn | None = None,
 ) -> pd.DataFrame:
     """Build the per-trace view-model DataFrame for ``bank``.
 
@@ -164,6 +177,35 @@ def build_view_model(
         return meta_df
 
     signals = bank.signal_array()
-    feature_df = extract_all(signals, fs_hz=bank.uniform_fs_hz())
+    feature_df = _extract_features(signals, bank.uniform_fs_hz(), progress)
     feature_df.index = meta_df.index
     return pd.concat([meta_df, feature_df], axis=1)
+
+
+def _extract_features(
+    signals: np.ndarray,
+    fs_hz: float,
+    progress: ProgressFn | None,
+    *,
+    chunk: int = _FEATURE_CHUNK,
+) -> pd.DataFrame:
+    """Run ``extract_all`` in trace chunks, reporting progress between them.
+
+    Chunking lets the caller show a progress bar and cancel a long extraction — a
+    ``progress`` callback that raises aborts the build. The per-trace features are
+    independent, so the chunked result equals one ``extract_all`` over all traces.
+    """
+    total = len(signals)
+    if progress is not None:
+        progress(0, total)
+    if total <= chunk:
+        frame = extract_all(signals, fs_hz=fs_hz)
+        if progress is not None:
+            progress(total, total)
+        return frame
+    frames: list[pd.DataFrame] = []
+    for start in range(0, total, chunk):
+        frames.append(extract_all(signals[start : start + chunk], fs_hz=fs_hz))
+        if progress is not None:
+            progress(min(start + chunk, total), total)
+    return pd.concat(frames, ignore_index=True)

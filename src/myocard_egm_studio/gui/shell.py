@@ -22,7 +22,7 @@ from myocard_egm_studio.gui.preferences import load_theme, save_theme
 from myocard_egm_studio.gui.sources import load_exploration
 from myocard_egm_studio.gui.theme import DEFAULT_THEME, THEME_NAMES, apply_theme, plot_palette
 from myocard_egm_studio.gui.views import SignalExplorationView
-from myocard_egm_studio.gui.widgets import FilterPanel, PhaseTree
+from myocard_egm_studio.gui.widgets import FilterPanel, PhaseTree, TraceData
 from myocard_egm_studio.view_model import (
     apply_filter,
     entries_by_id,
@@ -53,6 +53,10 @@ _Side = Literal["left", "right"]
 # strip's expand button points back toward the centre.
 _COLLAPSE_GLYPH: dict[_Side, str] = {"left": "◂", "right": "▸"}
 _EXPAND_GLYPH: dict[_Side, str] = {"left": "▸", "right": "◂"}
+
+
+class _LoadCancelled(Exception):
+    """Raised by the load progress callback when the user hits Cancel mid-load."""
 
 
 class _Placeholder(QtWidgets.QFrame):
@@ -379,12 +383,47 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_bank_explore(path)
 
     def _open_bank_explore(self, path: str) -> None:
-        """Load a bank as the view-model table + traces; feed the filter + Flow A view."""
+        """Load a bank as the view-model table + traces; feed the filter + Flow A view.
+
+        Feature extraction (O(T^2) sample entropy) is the slow step and runs on the
+        GUI thread, so a large bank would freeze the window. A modal QProgressDialog
+        keeps it responsive: it reports extraction progress and its Cancel button
+        aborts the load — the ``progress`` callback raises :class:`_LoadCancelled`,
+        which unwinds the in-flight :func:`load_exploration`.
+        """
+        dialog = QtWidgets.QProgressDialog("Loading bank…", "Cancel", 0, 0, self)
+        dialog.setWindowTitle("Open bank")
+        dialog.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+        dialog.setMinimumDuration(0)  # show at once — the read can stall before progress
+        dialog.setAutoClose(False)  # we close it in the finally, once, deterministically
+        dialog.setAutoReset(False)
+        dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)  # no per-open leak
+        dialog.setValue(0)  # forces the (min-duration 0) dialog to paint immediately
+        QtWidgets.QApplication.processEvents()
+
+        def on_progress(done: int, total: int) -> None:
+            if dialog.maximum() != total:
+                dialog.setMaximum(total)  # 0 -> total: busy spinner becomes a real bar
+            dialog.setValue(done)
+            QtWidgets.QApplication.processEvents()  # paint + deliver the Cancel click
+            if dialog.wasCanceled():
+                raise _LoadCancelled
+
         try:
-            frame, traces = load_exploration(path)
+            frame, traces = load_exploration(path, progress=on_progress)
+        except _LoadCancelled:
+            self.statusBar().showMessage("Bank load canceled.")
+            return
         except Exception as exc:  # surface any read / validation error to the status bar
             self.statusBar().showMessage(f"Could not open bank: {exc}")
             return
+        finally:
+            dialog.close()
+
+        self._on_bank_loaded(path, frame, traces)
+
+    def _on_bank_loaded(self, path: str, frame: pd.DataFrame, traces: list[TraceData]) -> None:
+        """Populate the filter + Flow A view from a freshly loaded bank."""
         if frame.empty:
             self.statusBar().showMessage("That bank has no traces to display.")
             return

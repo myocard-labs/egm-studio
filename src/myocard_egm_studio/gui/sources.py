@@ -16,7 +16,7 @@ import pandas as pd
 from myocard_egm_data.banks import ClassifierBank, load_classifier_bank
 
 from myocard_egm_studio.gui.widgets import TraceData
-from myocard_egm_studio.view_model import build_view_model
+from myocard_egm_studio.view_model import ProgressFn, build_view_model
 
 # Electrode-ish metadata keys (preference order) + how they read in a plot title.
 _ELECTRODE_PREFIX = {"source_channel": "ch", "pair_index": "pair", "electrode_pair_id": "pair"}
@@ -38,7 +38,7 @@ def load_view_model(path: str | Path, *, source: str | None = None) -> pd.DataFr
 
 
 def load_exploration(
-    path: str | Path, *, source: str | None = None
+    path: str | Path, *, source: str | None = None, progress: ProgressFn | None = None
 ) -> tuple[pd.DataFrame, list[TraceData]]:
     """Load a bank once as both the view-model table and its display traces.
 
@@ -47,10 +47,14 @@ def load_exploration(
     per-trace display data indexed by ``trace_idx`` (the detail view resolves a
     selected row's ``trace_idx`` into its waveform). ``source`` defaults as in
     :func:`load_view_model`.
+
+    ``progress`` is forwarded to the feature-extraction pass (the slow step); the
+    GUI passes a callback that drives a progress dialog and raises on Cancel.
     """
     bank = load_classifier_bank(path)
     label = source or bank.id or Path(path).stem
-    return build_view_model(bank, source=label), traces_from_bank(bank)
+    frame = build_view_model(bank, source=label, progress=progress)
+    return frame, traces_from_bank(bank)
 
 
 def traces_from_bank(bank: ClassifierBank, *, limit: int | None = None) -> list[TraceData]:

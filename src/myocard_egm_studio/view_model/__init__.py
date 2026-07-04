@@ -18,6 +18,7 @@ from __future__ import annotations
 from myocard_egm_studio.view_model.builder import (
     FEATURE_COLUMNS,
     IDENTITY_COLUMNS,
+    ProgressFn,
     build_view_model,
     feature_units,
 )
@@ -45,6 +46,7 @@ __all__ = [
     "DetailRow",
     "FilterColumn",
     "FilterSpec",
+    "ProgressFn",
     "TraceDetail",
     "apply_filter",
     "build_view_model",
