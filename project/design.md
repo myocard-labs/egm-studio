@@ -1223,8 +1223,8 @@ persistence and is load-bearing for the diagnostic workflows.
 
 ## ADR-018: Responsive UI sizing strategy
 
-**Date:** 2026-06-25
-**Status:** Tentative
+**Date:** 2026-06-25 (**Accepted** + implemented 2026-07-03, B7.7b/c)
+**Status:** Accepted
 
 ### Context
 
@@ -1243,8 +1243,11 @@ wide for max size, panels stay at max with extra whitespace. Global
 scale factor lives in user preferences and persists across
 sessions.
 
-Tentative — try this for v0.1; revisit if the wrap behavior feels
-weird on real devices.
+Realized in `gui/widgets/feature_grid.py` (B7.7b): a wrapping flow
+layout + scroll area of per-feature pyqtgraph panels, each fixed to
+`clamp(base * scale, min, max)`, with the scale factor on a slider
+and persisted as the `appearance/ui_scale` preference. Revisit if
+the wrap behavior feels weird on real devices.
 
 ### Consequences
 

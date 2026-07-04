@@ -416,7 +416,10 @@ Sub-blocks:
   balance, provenance + the 11-panel egm-features histogram grid, with **ADR-018
   responsive sizing** (per-panel min/max clamps + a preferences-persisted global
   scale factor + grid-wrap). Wires the phase-tree **view_feature_distributions**
-  action.
+  action. **✓ Shipped 2026-07-03** — `view_model/summary.py` + `loaders/feature_group.py`
+  (a, pure) + `gui/widgets/feature_grid.py` (b, the ADR-018 grid) + Summary/Explore
+  sub-tabs in the Flow A view + the `ui_scale` preference (c). Explore signal → the
+  Explore tab, View feature distributions → the Summary tab.
 - **B7.8 — multi-bank loading.** Load N banks at once; side-by-side / overlaid
   summaries; `data_source` becomes a real filter dimension (`data_source ==
   synthetic`).
@@ -427,7 +430,8 @@ Sub-blocks:
   → 3-pane compare-with-feature-deltas (shares the pair-comparison machinery with
   Block 8; ADR-020 per-feature only).
 
-New ADR to formalize here: **ADR-018** (responsive thumbnail-grid sizing, B7.7).
+ADR formalized here: **ADR-018** (responsive thumbnail-grid sizing, B7.7) —
+**accepted + implemented 2026-07-03**.
 **Revised estimate:** ~3-4 days for the full walkthrough (was ~1-1.5 for the
 MVP-only exit).
 
