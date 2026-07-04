@@ -298,7 +298,7 @@ class MainWindow(QtWidgets.QMainWindow):
         save_theme(name)
         self._current_theme = name
         self._explore_view.restyle(plot_palette(name), chart_style(name))
-        self._diagnostics_view.restyle(chart_style(name))
+        self._diagnostics_view.restyle(plot_palette(name), chart_style(name))
 
     # -- body -----------------------------------------------------------------
 
@@ -370,7 +370,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._explore_view = SignalExplorationView(
             plot_palette(self._current_theme), chart_style(self._current_theme)
         )
-        self._diagnostics_view = MlDiagnosticsView(chart_style(self._current_theme))
+        self._diagnostics_view = MlDiagnosticsView(
+            plot_palette(self._current_theme), chart_style(self._current_theme)
+        )
         self._diagnostics_view.runRemoveRequested.connect(self._remove_training_run)
         self._modes_stack = QtWidgets.QStackedWidget()
         self._modes_stack.setMinimumWidth(_MAIN_MIN_W)
@@ -650,7 +652,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # (build_view_model joined the ML columns); otherwise the diagnostics view resets.
         mode = frame_eval_mode(combined)
         if mode is not None:
-            self._diagnostics_view.set_evaluated(combined, mode)
+            self._diagnostics_view.set_evaluated(combined, mode, traces=traces)
         else:
             self._diagnostics_view.clear()
         self._show_mode(0)
@@ -668,12 +670,13 @@ class MainWindow(QtWidgets.QMainWindow):
         return f"Loaded {banks} — {len(combined.index)} trace(s); filter or sort, then select"
 
     def _on_recalculate(self, spec: FilterSpec) -> None:
-        """Apply the filter to the loaded frame + rebuild the result views (with progress).
+        """Apply the shared Banks-&-filter spec to the loaded frame; rebuild both flows' lists.
 
-        Fired by the FilterPanel's Recalculate button (not live), so several conditions
-        apply in one pass. The rebuild (result table + scatter) can be slow on a big
-        bank, so it runs under a progress dialog like the initial load rather than
-        freezing the window.
+        Fired by the one FilterPanel's Recalculate button (not live), so several conditions
+        apply in one pass. It drives Signal exploration (list + scatter + grid) and — when
+        the loaded set is evaluated — the ML-diagnostics Explore list (the metric tabs keep
+        the full set). The rebuild can be slow on a big bank, so it runs under a progress
+        dialog like the initial load rather than freezing the window.
         """
         if self._explore_df is None:
             return
@@ -681,6 +684,8 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = self._recalc_dialog()
         try:
             self._explore_view.set_results(filtered, progress=self._pump(dialog))
+            if frame_eval_mode(self._explore_df) is not None:  # Flow B is populated
+                self._diagnostics_view.set_explore_results(filtered, spec)
         finally:
             dialog.close()
         total, kept = len(self._explore_df.index), len(filtered.index)

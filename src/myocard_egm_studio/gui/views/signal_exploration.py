@@ -2,11 +2,12 @@
 
 The main-area content for Signal-exploration mode, split into two sub-tabs (B7.7):
 a **Summary** landing (bank stats + the ADR-018 responsive feature-distribution
-grid) and an **Explore** tab (a sortable ``ResultList`` over a per-trace detail
-pane). The shell owns the bank + the sidebar ``FilterPanel``; it feeds the summary
-the full frame and the list the filtered frame. Selecting rows pairs their
-waveforms (up to the 3-pane cap) with a feature + metadata table of the selected
-trace(s) — the seed of the B7.10 compare view.
+grid) and an **Explore** tab (a sortable ``ResultList`` over the shared per-trace
+:class:`~gui.widgets.explore_detail.ExploreDetail`). The shell owns the bank + the
+sidebar ``FilterPanel``; it feeds the summary the full frame and the list the filtered
+frame. Selecting rows pairs their waveforms (up to the 3-pane cap) with a feature +
+metadata table; the detail's one "find" strategy is the nearest trace in each other
+bank (B7.10), the same shared pane Flow B reuses with ML-outcome finders (B8g).
 """
 
 from __future__ import annotations
@@ -27,45 +28,30 @@ from myocard_egm_studio.gui.preferences import (
     save_ui_scale,
 )
 from myocard_egm_studio.gui.widgets import (
+    ExploreDetail,
     FeatureDistributionGrid,
     FeatureScatterView,
+    Finder,
     ResultList,
     TraceData,
-    TraceView,
 )
 from myocard_egm_studio.loaders import feature_groups_by_source, scatter_series_by_source
 from myocard_egm_studio.view_model import (
     FEATURE_COLUMNS,
     BankSummary,
-    DetailRow,
-    TraceDetail,
     bank_summary,
     similar_in_other_sources,
-    trace_detail,
 )
 
-_DETAIL_CAP = 3  # traces shown side-by-side in the detail (the 3-pane comparison cap)
-_SELECT_PROMPT = "Select trace(s) in the list to view"
 _TAB_SUMMARY, _TAB_EXPLORE, _TAB_SCATTER = 0, 1, 2  # sub-tab order; Summary is the landing
 _DEFAULT_AXES = (FEATURE_COLUMNS[0], FEATURE_COLUMNS[1])  # scatter's first-load (x, y)
 
-
-def _placeholder(text: str) -> QtWidgets.QLabel:
-    label = QtWidgets.QLabel(text)
-    label.setObjectName("placeholderSubtitle")
-    label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-    label.setWordWrap(True)
-    return label
-
-
-def _cells_with_deltas(row: DetailRow) -> list[str]:
-    """Per-trace value cells; feature rows append each column's delta vs the source (B7.10)."""
-    if not row.deltas:
-        return list(row.values)
-    return [
-        f"{value}  ({delta})" if delta else value
-        for value, delta in zip(row.values, row.deltas, strict=True)
-    ]
+#: Flow A's one find strategy: the nearest trace in each *other* bank (needs 2+ sources).
+_OTHER_BANK_FINDER = Finder(
+    label="Find similar in other bank",
+    find=similar_in_other_sources,
+    can_run=lambda frame, _row_id: "source" in frame.columns and frame["source"].nunique() > 1,
+)
 
 
 def _provenance_text(summary: BankSummary) -> str:
@@ -143,59 +129,8 @@ class _SummaryPanel(QtWidgets.QFrame):
             self._banks.addWidget(line)
 
 
-class _WaveformHost(QtWidgets.QWidget):
-    """Left detail pane: swaps in a TraceView of the selected traces' waveforms."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._layout = QtWidgets.QVBoxLayout(self)
-        self._layout.setContentsMargins(0, 0, 0, 0)
-        self._content: QtWidgets.QWidget = _placeholder(_SELECT_PROMPT)
-        self._layout.addWidget(self._content)
-
-    def show_widget(self, widget: QtWidgets.QWidget) -> None:
-        self._layout.removeWidget(self._content)
-        self._content.deleteLater()
-        self._content = widget
-        self._layout.addWidget(widget)
-
-    @property
-    def content(self) -> QtWidgets.QWidget:
-        return self._content
-
-
-class _TraceDetailTable(QtWidgets.QTreeWidget):
-    """Right detail pane: the selected trace(s)' Features + Metadata values."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.setObjectName("traceDetailTable")
-        self.setColumnCount(1)
-        self.setMinimumWidth(280)  # keep value columns visible beside the wider waveform pane
-
-    def set_detail(self, detail: TraceDetail) -> None:
-        self.clear()
-        self.setColumnCount(1 + len(detail.headers))
-        self.setHeaderLabels(["Attribute", *detail.headers])
-        self._add_section("Features", detail)
-        self._add_section("Metadata", detail)
-        self.expandAll()
-        for column in range(self.columnCount()):
-            self.resizeColumnToContents(column)
-        # cap the attribute column so the per-trace value columns stay visible
-        self.setColumnWidth(0, min(self.columnWidth(0), 190))
-
-    def _add_section(self, title: str, detail: TraceDetail) -> None:
-        rows = detail.features if title == "Features" else detail.metadata
-        section = QtWidgets.QTreeWidgetItem([title])
-        self.addTopLevelItem(section)
-        for row in rows:
-            label = f"{row.label} ({row.unit})" if row.unit else row.label
-            section.addChild(QtWidgets.QTreeWidgetItem([label, *_cells_with_deltas(row)]))
-
-
 class SignalExplorationView(QtWidgets.QWidget):
-    """Summary landing + a sortable result list over a per-trace detail (Flow A)."""
+    """Summary landing + a sortable result list over the shared per-trace detail (Flow A)."""
 
     def __init__(
         self,
@@ -208,7 +143,6 @@ class SignalExplorationView(QtWidgets.QWidget):
         self._palette = palette
         self._traces: list[TraceData] = []
         self._frame = pd.DataFrame()
-        self._source_row_id: int | None = None  # the single selected trace, for Find similar
 
         self._tabs = QtWidgets.QTabWidget()
         self._tabs.setObjectName("flowATabs")
@@ -236,33 +170,17 @@ class SignalExplorationView(QtWidgets.QWidget):
         return page
 
     def _build_explore_page(self) -> QtWidgets.QWidget:
-        """The Explore tab: the sortable result list over the per-trace detail."""
+        """The Explore tab: the sortable result list over the shared per-trace detail."""
         self._result_list = ResultList()
-        self._result_list.selectionChanged.connect(self._on_selection)
-        self._result_list.findSimilarRequested.connect(self._find_similar)  # right-click action
-
-        self._waveforms = _WaveformHost()
-        self._detail_table = _TraceDetailTable()
-        detail = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
-        detail.addWidget(self._waveforms)
-        detail.addWidget(self._detail_table)
-        detail.setStretchFactor(0, 3)
-        detail.setStretchFactor(1, 2)
-
-        detail_page = QtWidgets.QWidget()
-        detail_layout = QtWidgets.QVBoxLayout(detail_page)
-        detail_layout.setContentsMargins(0, 0, 0, 0)
-        detail_layout.addLayout(self._build_find_control())
-        detail_layout.addWidget(detail, 1)
-
-        self._detail_stack = QtWidgets.QStackedWidget()
-        self._detail_stack.addWidget(_placeholder(_SELECT_PROMPT))  # page 0 — nothing selected
-        self._detail_stack.addWidget(detail_page)  # page 1 — Find similar + waveforms + values
-
+        self._detail = ExploreDetail(self._palette, [_OTHER_BANK_FINDER])
+        self._result_list.selectionChanged.connect(self._detail.on_selection)
+        self._result_list.findSimilarRequested.connect(
+            lambda row_id: self._detail.run_finder(0, row_id)  # right-click -> the finder
+        )
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         splitter.setObjectName("exploreSplitter")
         splitter.addWidget(self._result_list)
-        splitter.addWidget(self._detail_stack)
+        splitter.addWidget(self._detail)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
 
@@ -271,23 +189,6 @@ class SignalExplorationView(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(splitter)
         return page
-
-    def _build_find_control(self) -> QtWidgets.QHBoxLayout:
-        """The 'Find similar in other bank along [feature]' row above the detail (B7.10)."""
-        self._feature_combo = QtWidgets.QComboBox()
-        self._feature_combo.setObjectName("similarFeature")
-        self._feature_combo.addItems(FEATURE_COLUMNS)
-        self._find_button = QtWidgets.QPushButton("Find similar")
-        self._find_button.setObjectName("findSimilar")
-        self._find_button.setToolTip("Show the nearest trace in each other bank along this feature")
-        self._find_button.clicked.connect(self._on_find_similar_clicked)
-        row = QtWidgets.QHBoxLayout()
-        row.setContentsMargins(8, 4, 8, 0)
-        row.addWidget(QtWidgets.QLabel("Find similar in other bank along"))
-        row.addWidget(self._feature_combo)
-        row.addWidget(self._find_button)
-        row.addStretch(1)
-        return row
 
     def _build_scatter_page(self, chart_style: PgChartStyle) -> QtWidgets.QWidget:
         """The Scatter tab: a 2-D feature scatter of the filtered result (click -> detail)."""
@@ -304,7 +205,7 @@ class SignalExplorationView(QtWidgets.QWidget):
     def set_traces(self, traces: Sequence[TraceData]) -> None:
         """Set the display traces of a newly opened bank (indexed by ``trace_idx``)."""
         self._traces = list(traces)
-        self._detail_stack.setCurrentIndex(0)
+        self._detail.show_rows([])  # reset the detail to its prompt
 
     def set_results(
         self, frame: pd.DataFrame, *, progress: Callable[[int, int], None] | None = None
@@ -320,6 +221,7 @@ class SignalExplorationView(QtWidgets.QWidget):
         """
         self._frame = frame
         self._result_list.set_frame(frame, progress=progress)
+        self._detail.set_context(frame, self._traces)  # the finds search the filtered frame
         self._scatter.set_series(scatter_series_by_source(frame))
         self._feature_grid.set_groups(feature_groups_by_source(frame))
         self._summary_panel.set_summaries(_summaries_by_source(frame))
@@ -341,9 +243,7 @@ class SignalExplorationView(QtWidgets.QWidget):
     def restyle(self, palette: Any, chart_style: PgChartStyle) -> None:
         """Re-apply the theme to the open detail + the distribution grid + the scatter."""
         self._palette = palette
-        content = self._waveforms.content
-        if isinstance(content, TraceView):
-            content.restyle(palette)
+        self._detail.restyle(palette)
         self._feature_grid.set_style(chart_style)
         self._scatter.set_style(chart_style)
 
@@ -356,42 +256,3 @@ class SignalExplorationView(QtWidgets.QWidget):
         """
         self._result_list.select_row_ids([row_id])
         self.show_explore()
-
-    def _on_selection(self, row_ids: list[int]) -> None:
-        """Track the single-selected source trace (for Find similar), then show the detail."""
-        self._source_row_id = row_ids[0] if len(row_ids) == 1 else None
-        self._update_find_enabled()
-        self._show_detail(row_ids)
-
-    def _update_find_enabled(self) -> None:
-        """Enable Find similar only with a single source trace + at least one other bank."""
-        has_others = "source" in self._frame.columns and self._frame["source"].nunique() > 1
-        self._find_button.setEnabled(self._source_row_id is not None and has_others)
-
-    def _on_find_similar_clicked(self) -> None:
-        if self._source_row_id is not None:
-            self._find_similar(self._source_row_id)
-
-    def _find_similar(self, source_row_id: int) -> None:
-        """Show ``source_row_id`` beside its nearest trace in each other bank (B7.10).
-
-        Shared by the detail-pane button (the current single selection) and the result
-        list's right-click action (the clicked row). The match search runs over the
-        current result frame — so any active filter is respected — along the chosen
-        feature; source + matches fill the (up-to-3) compare panes, source first.
-        """
-        feature = self._feature_combo.currentText()
-        matches = similar_in_other_sources(self._frame, source_row_id, feature)
-        self._show_detail([source_row_id, *matches])
-
-    def _show_detail(self, row_ids: list[int]) -> None:
-        # row_id is the global position in the combined traces list (B7.8).
-        shown = [i for i in row_ids[:_DETAIL_CAP] if 0 <= i < len(self._traces)]
-        if not shown:
-            self._detail_stack.setCurrentIndex(0)
-            return
-        self._waveforms.show_widget(
-            TraceView([self._traces[i] for i in shown], palette=self._palette)
-        )
-        self._detail_table.set_detail(trace_detail(self._frame, shown))
-        self._detail_stack.setCurrentIndex(1)

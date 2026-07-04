@@ -18,13 +18,16 @@ from typing import Any
 import pandas as pd
 
 from myocard_egm_studio.view_model.builder import FEATURE_COLUMNS, feature_units
+from myocard_egm_studio.view_model.ml_outcomes import ML_COLUMNS
 
-# Plumbing identity columns never shown as metadata; features are listed separately.
+# Plumbing identity columns never shown as metadata; features + ML outcomes are listed separately.
 _HIDDEN = frozenset(
     {"trace_idx", "row_id", "source_bank_id", "source_bank_type", "amp_type", "label"}
 )
 # Metadata columns shown first (the rest follow in frame order).
 _METADATA_LEAD = ("label_name", "source", "split")
+# ML-outcome columns whose per-trace change vs the source is meaningful (continuous).
+_ML_NUMERIC = frozenset({"predicted_prob", "per_trace_loss", "calibration_residual"})
 
 
 @dataclass(frozen=True)
@@ -44,18 +47,20 @@ class DetailRow:
 
 @dataclass(frozen=True)
 class TraceDetail:
-    """The detail table: per-trace column headers + the feature and metadata rows."""
+    """The detail table: per-trace column headers + feature, ML-outcome, and metadata rows."""
 
     headers: tuple[str, ...]
     features: tuple[DetailRow, ...]
     metadata: tuple[DetailRow, ...]
+    ml: tuple[DetailRow, ...] = ()  # model-output rows (empty for a raw, unevaluated bank)
 
 
 def trace_detail(frame: pd.DataFrame, row_ids: Sequence[int]) -> TraceDetail:
-    """Project ``frame`` rows for the selected ``row_ids`` into feature + metadata rows.
+    """Project ``frame`` rows for the selected ``row_ids`` into feature + ML + metadata rows.
 
     Rows are selected by the global ``row_id``; each column header still shows the
-    row's own bank-relative ``trace_idx`` as ``#`` (so it matches the result list).
+    row's own bank-relative ``trace_idx`` as ``#`` (so it matches the result list). The
+    ML-outcome section (B8g) is present only for an evaluated bank (its columns exist).
     """
     rows = _rows_for(frame, row_ids)
     headers = tuple(f"#{int(row['trace_idx'])}" for row in rows)
@@ -65,11 +70,19 @@ def trace_detail(frame: pd.DataFrame, row_ids: Sequence[int]) -> TraceDetail:
         for column in FEATURE_COLUMNS
         if column in frame.columns
     )
+    ml = tuple(_ml_row(column, rows) for column in ML_COLUMNS if column in frame.columns)
     metadata = tuple(
         DetailRow(column, tuple(_fmt(row.get(column)) for row in rows))
         for column in _metadata_columns(frame)
     )
-    return TraceDetail(headers=headers, features=features, metadata=metadata)
+    return TraceDetail(headers=headers, features=features, metadata=metadata, ml=ml)
+
+
+def _ml_row(column: str, rows: list[pd.Series]) -> DetailRow:
+    """An ML-outcome row: values + deltas vs the source for the continuous columns only."""
+    raw = [row.get(column) for row in rows]
+    deltas = _deltas(raw) if column in _ML_NUMERIC else ()
+    return DetailRow(column, tuple(_fmt(v) for v in raw), "", deltas)
 
 
 def _feature_row(column: str, rows: list[pd.Series], unit: str) -> DetailRow:
@@ -98,7 +111,8 @@ def _rows_for(frame: pd.DataFrame, row_ids: Sequence[int]) -> list[pd.Series]:
 
 
 def _metadata_columns(frame: pd.DataFrame) -> list[str]:
-    shown = [c for c in frame.columns if c not in _HIDDEN and c not in FEATURE_COLUMNS]
+    excluded = _HIDDEN | set(FEATURE_COLUMNS) | set(ML_COLUMNS)  # features + ML get own sections
+    shown = [c for c in frame.columns if c not in excluded]
     lead = [c for c in _METADATA_LEAD if c in shown]
     return lead + [c for c in shown if c not in lead]
 
