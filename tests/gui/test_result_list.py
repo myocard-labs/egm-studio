@@ -114,3 +114,9 @@ def test_select_row_ids_is_sort_agnostic(qtbot: QtBot) -> None:
     widget._table.sortItems(entropy_col, QtCore.Qt.SortOrder.DescendingOrder)
     widget.select_row_ids([10])  # row_id 10 (entropy 2.0) sits mid-table when sorted
     assert widget.selected_row_ids() == [10]
+
+
+def test_row_id_at_reads_the_hidden_key(qtbot: QtBot) -> None:
+    """The right-click helper resolves a table row to its hidden row_id (B7.10)."""
+    widget = _list(qtbot)
+    assert widget._row_id_at(0) == 10  # first row's global row_id, not its trace_idx (0)

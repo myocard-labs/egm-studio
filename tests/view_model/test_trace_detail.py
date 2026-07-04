@@ -51,6 +51,19 @@ def test_feature_values_and_amplitude_unit() -> None:
     assert by_label["sample_entropy"].unit == ""  # entropy is unitless
 
 
+def test_feature_deltas_vs_the_source_column() -> None:
+    """Feature rows carry each column's signed delta vs the first (source) column."""
+    by_label = {row.label: row for row in trace_detail(_df(), [10, 11]).features}
+    entropy = by_label["sample_entropy"]  # 1.5 (source) then 0.5
+    assert entropy.deltas == ("", "-1")  # source has no delta; #1 is 0.5 - 1.5 = -1
+    assert by_label["peak_to_peak"].deltas == ("", "+1")  # 3.0 - 2.0 = +1
+
+
+def test_single_trace_has_no_deltas() -> None:
+    (entropy,) = [r for r in trace_detail(_df(), [10]).features if r.label == "sample_entropy"]
+    assert entropy.deltas == ("",)  # a lone source column: nothing to compare against
+
+
 def test_metadata_lead_order() -> None:
     labels = [row.label for row in trace_detail(_df(), [10]).metadata]
     assert labels[:3] == ["label_name", "source", "split"]
