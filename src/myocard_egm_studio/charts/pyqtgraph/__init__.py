@@ -6,7 +6,15 @@ matches its matplotlib counterpart. Unlike the matplotlib recipes (which return 
 Figure for headless file output), these return live pyqtgraph widgets.
 """
 
-from myocard_egm_studio.charts.pyqtgraph.feature_distribution import feature_distribution_overlay
+from myocard_egm_studio.charts.pyqtgraph.feature_distribution import (
+    draw_feature_panel,
+    feature_distribution_overlay,
+)
 from myocard_egm_studio.charts.pyqtgraph.style import DEFAULT_STYLE, PgChartStyle
 
-__all__ = ["DEFAULT_STYLE", "PgChartStyle", "feature_distribution_overlay"]
+__all__ = [
+    "DEFAULT_STYLE",
+    "PgChartStyle",
+    "draw_feature_panel",
+    "feature_distribution_overlay",
+]

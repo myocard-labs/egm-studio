@@ -53,7 +53,7 @@ def _panel_title(feature: str, arrays: list[NDArray[np.float64]], annotate: str)
         return feature
 
 
-def _draw_panel(
+def draw_feature_panel(
     plot: pg.PlotItem,
     feature: str,
     data: list[FeatureGroup],
@@ -64,7 +64,13 @@ def _draw_panel(
     units: dict[str, str],
     style: PgChartStyle,
 ) -> None:
-    """Overlay each group's density for one feature into ``plot``."""
+    """Overlay each group's density for one feature into ``plot``.
+
+    The single-panel primitive: shared by :func:`feature_distribution_overlay`
+    (which tiles it into one GraphicsLayoutWidget) and the GUI's responsive
+    bank-summary grid (which hosts one per PlotWidget, B7.7). One group draws a
+    plain distribution; two groups add the KS / Wasserstein distance to the title.
+    """
     arrays = [g.values[feature] for g in data]
     plot.setTitle(_panel_title(feature, arrays, annotate), color=style.foreground)
     pen = pg.mkPen(style.foreground)
@@ -157,7 +163,7 @@ def feature_distribution_overlay(
     for idx, feature in enumerate(feats):
         row, col = divmod(idx, ncols)
         plot = widget.addPlot(row=row + 1, col=col)  # row 0 is the legend strip
-        _draw_panel(
+        draw_feature_panel(
             plot,
             feature,
             list(data),
