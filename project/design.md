@@ -243,8 +243,8 @@ prior block.
 
 ### Block 1+ — implementation
 
-Enumerated in `project/roadmap.md` (13 blocks total: 1 retroactive
-done + 12 to do; ~10-13 days focused effort / ~1-1.5 weeks elapsed).
+Enumerated in `project/roadmap.md` (14 blocks total: 1 retroactive
+done + 13 to do; ~11-15 days focused effort / ~1.5-2 weeks elapsed).
 Critical-path dependency: `myocard-egm-contracts` v0.5.0 ships
 before Block 2 starts.
 
@@ -1726,7 +1726,7 @@ blockers for v0.1:
 
 ### Block 1+ implementation plan
 
-Enumerated at `project/roadmap.md` — 13 blocks total (1 retroactive
-done + 12 to do), ~10-13 days focused effort. The first
+Enumerated at `project/roadmap.md` — 14 blocks total (1 retroactive
+done + 13 to do), ~11-15 days focused effort. The first
 implementation block (Block 2) is gated on
 `myocard-egm-contracts` v0.5.0.

@@ -31,7 +31,7 @@ building*; read `design.md` for *why we picked it*. ADR pointers
 This file is the as-built reference and stays in lock-step with
 the code. Update it whenever an implementation block surfaces an
 architectural change (new module boundary, dependency shift, pattern
-that didn't exist at design time). Roadmap Block 11
+that didn't exist at design time). Roadmap Block 12
 ("Design-phase doc updates") runs late in the v0.1 sequence to do a
 sweep before the tag, but **don't wait** for that block — fix-on-
 contact while building. The final pre-tag pass also fills in the
@@ -114,13 +114,14 @@ myocard_egm_studio/
 │   │   └── <recipe>.py   #     one self-registering recipe per module
 │   └── pyqtgraph/        #   interactive, GUI-embedded chart recipes
 │       ├── style.py      #     PgChartStyle (background / foreground)
-│       └── feature_distribution.py  # feature-distribution overlay (GUI twin)
+│       ├── feature_distribution.py  # feature-distribution overlay (GUI twin)
+│       └── feature_scatter.py       # 2-D feature scatter (GUI-only; no mpl twin) [B7.9]
 ├── figures/              # Thin headless layer over charts/matplotlib/.
 │   └── render.py         #   render(spec, *, data, overwrite) -> Path (pure rendering)
 ├── gui/                  # Qt shell — imports PySide6 + pyqtgraph.
 │   ├── app.py            #   QApplication entry (`egm-studio` script)  [B4]
 │   ├── shell.py          #   Layout shell + CollapsibleSidebar    [ADR-025, B4]
-│   ├── preferences.py    #   QSettings-backed prefs (theme)    [ADR-017 seed, B4]
+│   ├── preferences.py    #   QSettings-backed prefs (theme + view state)  [ADR-017 seed, B4]
 │   ├── theme/            #   dark + light + vibrant QSS themes    [ADR-012, B4]
 │   │   ├── palette.py    #     colour + typography tokens per theme
 │   │   └── _qss.py       #     one shared QSS template + builder

@@ -434,7 +434,31 @@ Sub-blocks:
   view build ("Building views…", chunked table build). `source` is the filter
   dimension. Side-by-side grids were considered but overlaid KDE won for comparison.
 - **B7.9 — feature scatter.** A 2-D `(feat_x, feat_y)` scatter over the current
-  filter result — pan / zoom, per-point colour by `data_source`.
+  filter result — pan / zoom, per-point colour by source. **✓ Shipped 2026-07-04** —
+  a `charts.inputs.ScatterSeries` input (per-source feature arrays + per-point
+  `row_id`) drawn by `charts/pyqtgraph.draw_feature_scatter` (one colour per source,
+  finite-only points), fed by `loaders.scatter_series_by_source` (shares an
+  `_iter_sources` split with the summary's `feature_groups_by_source`). The
+  interactive `gui/widgets/feature_scatter.FeatureScatterView` — two axis pickers, a
+  shared `SourceLegend`, persisted axes — sits in a third **Scatter** sub-tab fed by
+  the filtered frame; clicking a point selects that trace and reveals the Explore
+  detail (`ResultList.select_row_ids`). A click→detail Scatter tab was chosen over an
+  embedded list/scatter toggle; selection reuses the existing `row_id` → detail path.
+- **B7-recalc — manual apply + filter progress (addendum).** **✓ Shipped 2026-07-04** —
+  the filter no longer recomputes live; a **Recalculate** button (`gui/widgets/filter.py`,
+  enabled only when the edited spec differs from the applied one) applies several
+  conditions in one pass, and the shell runs that rebuild under a progress dialog
+  (reusing the load's build-phase pump, gated so a quick filter doesn't flash one) so a
+  big-bank filter apply shows progress instead of freezing. Deeper load/compute
+  optimizations (in-memory + disk caching) are **Block 11**.
+- **B7-filter — filtered distributions, recenter, cross-bank matching (addendum).**
+  **✓ Shipped 2026-07-04** — the filter now also drives the Summary distribution grid +
+  per-bank stats (`set_results` feeds them the filtered frame), so narrowing a metadata
+  range shows how the distributions shift; the grid + scatter recenter to the new data on
+  each apply and each gained a **Recenter** button; and a third Match mode **"Match all
+  that exist"** (`filtering.apply_filter` `and_present`) skips a condition for rows whose
+  bank lacks that field, so filtering a single-bank field keeps the other banks. Filtering
+  a *shared* field on just one bank (per-condition bank scoping) is a Post-v0.1 follow-up.
 - **B7.10 — per-feature similarity + 3-pane compare.** "Find similar in other
   bank" via `analysis.similarity.nearest_along_feature` + a feature-axis dropdown
   → 3-pane compare-with-feature-deltas (shares the pair-comparison machinery with
@@ -560,7 +584,51 @@ path.
 
 **Estimated effort:** ~1-1.5 days.
 
-### Block 11 — Design-phase doc updates (capture drift)
+### Block 11 — Performance / optimization
+
+Load + per-bank feature computation are already noticeable on a large
+bank (e.g. IAFDB) and get annoying when switching banks — every switch
+recomputes from scratch. This block makes the exploration loop smooth.
+It opens with a short research/profiling spike to inventory the wins,
+then implements them.
+
+**Scope:**
+
+- **Research + profiling spike (first).** Profile the load → summary →
+  filter → switch loop on a large bank; inventory the concrete wins and
+  their cost/benefit before committing (candidates below).
+- **In-memory result cache.** Cache the per-bank computed view-model
+  (features) keyed by bank id, so re-selecting an already-loaded bank is
+  instant and a bank switch doesn't recompute. Bounded (LRU / by count).
+- **Disk-backed cache (decided by the spike).** Persist computed results
+  to a cache dir keyed by bank id + a content/version hash, so the
+  computation survives an egm-studio restart. Open question carried from
+  the backlog: session-scoped (cleared on exit) vs persistent — decide
+  here.
+- **Candidates to weigh in the spike:** background-thread feature
+  extraction (keep the GUI responsive without a modal dialog);
+  virtualized / lazy result table (build rows on demand, not all up
+  front); incremental filtering; point-decimation for the scatter at
+  very large N.
+
+**Deps:**
+
+- Blocks 7-10 done (the flows whose loops are being optimized exist).
+- Builds on the B7-recalc addendum (manual apply already removed the
+  per-keystroke recompute).
+
+**Exit:**
+
+- Switching between two already-loaded banks does not recompute features
+  (served from cache).
+- The chosen disk-cache policy (session vs persistent) is decided,
+  implemented, and documented.
+- The load / filter loop on a large bank feels responsive — no
+  multi-second unfeedbacked freezes (target set by the spike).
+
+**Estimated effort:** ~1-2 days (spike + implementation).
+
+### Block 12 — Design-phase doc updates (capture drift)
 
 Sweep the design-phase docs for any drift introduced during
 implementation. Per the living-document commitment in
@@ -585,7 +653,7 @@ is the safety net to catch anything that slipped.
 
 **Deps:**
 
-- Blocks 2-10 done (need the implementation to compare against).
+- Blocks 2-11 done (need the implementation to compare against).
 
 **Exit:**
 
@@ -595,7 +663,7 @@ is the safety net to catch anything that slipped.
 
 **Estimated effort:** ~0.5 day.
 
-### Block 12 — User documentation
+### Block 13 — User documentation
 
 The polished public face of the project. Daniel called this out
 explicitly: "this is the main way other people will be able to access
@@ -627,8 +695,8 @@ documentation really good." Budget real time here.
 
 **Deps:**
 
-- Blocks 2-10 done (functionality must be in place to screenshot).
-- Block 11 done so user docs aren't built on a stale design.
+- Blocks 2-11 done (functionality must be in place to screenshot).
+- Block 12 done so user docs aren't built on a stale design.
 
 **Exit:**
 
@@ -639,7 +707,7 @@ documentation really good." Budget real time here.
 
 **Estimated effort:** ~1.5-2 days.
 
-### Block 13 — Ship v0.1.0
+### Block 14 — Ship v0.1.0
 
 Final pin-and-tag.
 
@@ -678,10 +746,11 @@ Final pin-and-tag.
 | 8 | Flow B ML diagnostics | 1 |
 | 9 | Flow C paper figure prep | 0.5-1 |
 | 10 | Save flow + manifest writes | 1-1.5 |
-| 11 | Design-phase doc updates | 0.5 |
-| 12 | User documentation | 1.5-2 |
-| 13 | Ship v0.1.0 | 0.5 |
-| **Total** | | **~10-13 days focused, ~1-1.5 weeks elapsed** |
+| 11 | Performance / optimization | 1-2 |
+| 12 | Design-phase doc updates | 0.5 |
+| 13 | User documentation | 1.5-2 |
+| 14 | Ship v0.1.0 | 0.5 |
+| **Total** | | **~11-15 days focused, ~1.5-2 weeks elapsed** |
 
 ## Post-v0.1.0 follow-ups
 
@@ -691,6 +760,7 @@ condition for when it becomes priority work.
 | Item | Trigger | Approx. effort |
 |---|---|---|
 | P1 / P2 / P3 recipes (Phase 2+ paper figures) | Each paper enters writing phase | ~1-2 days per paper-worth |
+| Per-condition filter bank scoping | A filter on a field *shared* across banks needs to apply to just one bank (the "Match all that exist" mode only skips banks that *lack* the field) | Small — per-row bank multiselect in `gui/widgets/filter.py` + a bank set on `FilterSpec.conditions` |
 | Figure-math theory doc (per recipe / spec) | All P0 recipes shipped (Block 3 done) — Daniel wants the math behind each spec written up in one place | Medium — covers what each recipe + `analysis` fn computes (ROC / AUROC, reliability / ECE, KS / Wasserstein / KDE distances, aggregate distance). Honor the theory-docs split: egm-classifier `docs/theory.md` owns the eval-metric derivations + operational guidance, egm-studio owns visual interpretation — so egm-studio documents the analysis-layer implementations and cross-links to egm-classifier for the ML-eval theory |
 | Feature-extraction progress feedback | Feature-based recipes (feature-distribution-overlay, trace-pair-gallery, ...) are slow on real banks — the view-model build runs `bundle.extract_all` over every trace (the O(T^2) sample-entropy pass dominates) | Small — thread a `tqdm` / callback through `build_view_model` -> `extract_all`; possibly an egm-features param. Parallels the egm-classifier eval progress bar. **Callback plumbing + a cancelable GUI dialog shipped in B7-async (2026-07-03)** — `build_view_model(progress=...)` chunks `extract_all` and the shell wraps it in a QProgressDialog; the CLI/recipe `tqdm` surface remains |
 | Feature-computation cache (reuse view-model tables across bank switches) | Flow A re-runs the O(T^2) `extract_all` pass every time a bank is (re)opened — switching away from a bank and back re-pays the whole cost. Worsens with multi-bank loading (B7.8) and large banks (the IAFDB unlabeled bank) | Small-medium — wrap the `build_view_model` call in `gui.sources.load_exploration` / `loaders`; the builder stays pure and is **already keyed by the stable `bank_id`**, so this is a loader-layer add with no builder / contract / egm-features change (⇒ deferring costs nothing). **Start in-memory, session-scoped**: a `{bank_id: DataFrame}` cache — feature tables are small (N×11 floats), so the cost being saved is CPU, not RAM, and an in-memory cache fully covers the switch-away-and-back case. Cache key = (`bank_id`, egm-features `__version__`, `FEATURE_COLUMNS`). Promote to on-disk parquet **only if** instant reopen across launches becomes a felt need — and only then take on cross-session invalidation (the version-keyed key + a bank-file fingerprint), which is exactly why session-scoped is the safe default |
@@ -749,7 +819,7 @@ When a block closes:
 2. Re-review the remaining blocks for any drift the closing block
    introduced.
 3. Fix-on-contact any architecture.md drift surfaced by the block
-   (the living-document commitment); flag it for Block 11's sweep
+   (the living-document commitment); flag it for Block 12's sweep
    pass if a fuller fix isn't trivial.
 4. Move to the next pending block.
 

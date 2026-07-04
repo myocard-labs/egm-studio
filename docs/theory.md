@@ -3,7 +3,7 @@
 The math behind each Phase-1.5 paper figure: what the `analysis/` layer computes
 to turn a bank (or a run record) into the numbers a recipe plots. One section per
 computation — each with the equation, a definition of every symbol, and a small
-worked example on EGM-shaped data. How to *read* each figure lives in the Block 12
+worked example on EGM-shaped data. How to *read* each figure lives in the Block 13
 user guide (`docs/usage.md`), which links back here for the underlying math.
 
 > **Rendering note.** Equations are written in LaTeX (`$$…$$`). GitHub and VS
@@ -21,7 +21,7 @@ This project spans three repos, and the theory splits along the same lines
   per-feature similarity ranking, and *how* the classifier eval metrics are
   computed (ROC construction, rank-based AUROC, reliability binning, ECE).
   egm-studio also owns the **visual interpretation** of every figure — how to read
-  it — but that lives in the Block 12 user guide (`docs/usage.md`), which links
+  it — but that lives in the Block 13 user guide (`docs/usage.md`), which links
   back to this doc for the math.
 - **egm-classifier** owns the *theory* of the classifier eval metrics — what
   AUROC / ECE / a reliability diagram *mean* for a model, and the operational

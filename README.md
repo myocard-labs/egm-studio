@@ -127,10 +127,10 @@ ks = distributions.ks_distance(synthetic_feature_values, iafdb_feature_values)
 | `myocard_egm_studio.analysis` | Pure data computation (no rendering, no Qt): `distributions` (CDF / KS / Wasserstein / histogram / KDE), `aggregation` (between-group feature distance), `similarity` (per-feature nearest). |
 | `myocard_egm_studio.view_model` | Prepared, Qt-free view data. `build_view_model` — the unified per-trace table joining identity + bank metadata + egm-features columns — `combine` (`combine_view_models` — pool loaded banks into one frame under a unique global `row_id`, the multi-bank result-list + detail key), `summary` (`bank_summary` — the Flow A landing's count / class balance / provenance), plus the Phase-tree view models: `phase_groups` (manifest → the ten role groups), `phase_status` (per-artifact existence + validation), `phase_actions` (right-click policy), `artifact_metadata` (file-level metadata). |
 | `myocard_egm_studio.charts.matplotlib` | The publication (static) rendering backend + the recipe registry the dispatch fills. |
-| `myocard_egm_studio.charts.pyqtgraph` | The interactive (GUI-embedded) rendering backend — pyqtgraph chart widgets that reuse `analysis/` and the shared `charts.inputs` / `charts.palette`, so a chart matches its matplotlib twin. |
+| `myocard_egm_studio.charts.pyqtgraph` | The interactive (GUI-embedded) rendering backend — pyqtgraph chart widgets that reuse `analysis/` and the shared `charts.inputs` / `charts.palette`, so a chart matches its matplotlib twin — plus a GUI-only `draw_feature_scatter` (a live `(feat_x, feat_y)` scatter coloured by source, no matplotlib twin). |
 | `myocard_egm_studio.figures` | `render(spec, *, data) -> Path` — the thin headless dispatch over `charts/matplotlib`. Pure rendering; the data-loading step lives in `loaders/`. |
-| `myocard_egm_studio.loaders` | Data-loading (ids/paths → in-memory inputs): `figure_inputs` (spec + `{id: path}` → recipe inputs + the permanent bank → recipe-input adapters), `feature_group` (`feature_group_from_frame` + `feature_groups_by_source` — view-model-frame → charts `FeatureGroup`(s), shared by the figure loader + the GUI summary grid; the by-source split feeds the multi-bank overlay), and `manifest` (`bank_paths_from_phase` — a phase's `manifest.json` → `{artifact_id: path}`). |
-| `myocard_egm_studio.gui` | The PySide6 desktop shell (Block 4): `app` (the `egm-studio` entry), `shell` (ADR-025 layout — collapsible sidebars + 3-mode switch), `theme` (dark / light / vibrant QSS), `preferences` (persisted theme via QSettings). `widgets/` holds the Block 5 trace-display primitive, the Block 6 right-rail Phase artifact tree, and the Block 7 composable filter / result list / `feature_grid` (the ADR-018 responsive distribution grid, which overlays one KDE / histogram curve per source with a legend + toggle) / `bank_list` (the loaded-banks roster); `views/signal_exploration` assembles the Signal-exploration mode as Summary (per-bank stats + the overlaid grid) and Explore (filter → list → detail) sub-tabs. Loading many banks pools them under one `row_id`, with a progress dialog spanning extraction + the view build. |
+| `myocard_egm_studio.loaders` | Data-loading (ids/paths → in-memory inputs): `figure_inputs` (spec + `{id: path}` → recipe inputs + the permanent bank → recipe-input adapters), `feature_group` (`feature_group_from_frame` + `feature_groups_by_source` — view-model-frame → charts `FeatureGroup`(s), shared by the figure loader + the GUI summary grid; the by-source split feeds the multi-bank overlay — plus `scatter_series_by_source`, the same split into id-carrying `ScatterSeries` for the scatter view), and `manifest` (`bank_paths_from_phase` — a phase's `manifest.json` → `{artifact_id: path}`). |
+| `myocard_egm_studio.gui` | The PySide6 desktop shell (Block 4): `app` (the `egm-studio` entry), `shell` (ADR-025 layout — collapsible sidebars + 3-mode switch), `theme` (dark / light / vibrant QSS), `preferences` (persisted theme via QSettings). `widgets/` holds the Block 5 trace-display primitive, the Block 6 right-rail Phase artifact tree, and the Block 7 composable filter / result list / `feature_grid` (the ADR-018 responsive distribution grid, which overlays one KDE / histogram curve per source with a legend + toggle) / `feature_scatter` (the interactive `(feat_x, feat_y)` scatter with axis pickers) / `bank_list` (the loaded-banks roster) / a shared `SourceLegend`; `views/signal_exploration` assembles the Signal-exploration mode as Summary (per-bank stats + the overlaid grid), Explore (filter → list → detail) and Scatter (click a point → the Explore detail) sub-tabs. Loading many banks pools them under one `row_id`, with a progress dialog spanning extraction + the view build. |
 | `myocard_egm_studio.cli` | Console-script entry points: `render` (`egm-studio-render`). |
 
 The Qt shell (`gui/`) landed in Block 4 (layout + theming); Block 5 added the
@@ -165,7 +165,7 @@ machine with no display.
 
 ## Project status
 
-Pre-v0.1.0; built across 13 blocks (see
+Pre-v0.1.0; built across 14 blocks (see
 [`project/roadmap.md`](project/roadmap.md)). **Blocks 2–6 have shipped.** The
 headless figure pipeline (Blocks 2–3): the `charts/matplotlib/` foundation, the
 `render(spec, *, data)` contract, the figure-data loaders (`egm-studio-render
@@ -194,7 +194,7 @@ v0.1.1`.
   and the ADR log [`project/design.md`](project/design.md).
 - For the block-by-block implementation plan, see
   [`project/roadmap.md`](project/roadmap.md).
-- The full user manual lands in Block 12 at `docs/usage.md`.
+- The full user manual lands in Block 13 at `docs/usage.md`.
 - For the broader refactor context, see
   `intracardiac-platform/project/project_plan.md`.
 
