@@ -10,15 +10,17 @@ from myocard_egm_studio.gui.sources import traces_from_bank
 from myocard_egm_studio.gui.theme import plot_palette
 from myocard_egm_studio.gui.views import SignalExplorationView
 from myocard_egm_studio.gui.widgets import TraceView
-from myocard_egm_studio.view_model import build_view_model
+from myocard_egm_studio.view_model import build_view_model, combine_view_models
 from myocard_egm_studio.view_model.builder import FEATURE_COLUMNS
 
 
 def _view(qtbot: QtBot, bank: ClassifierBank) -> SignalExplorationView:
     view = SignalExplorationView(plot_palette("dark"))
     qtbot.addWidget(view)
+    # the GUI keys detail selection on row_id, so feed a combined frame (B7.8)
+    frame = combine_view_models([build_view_model(bank, source="Synthetic")])
     view.set_traces(traces_from_bank(bank))
-    view.set_results(build_view_model(bank, source="Synthetic"))
+    view.set_results(frame)
     return view
 
 

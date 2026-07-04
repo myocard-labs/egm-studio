@@ -10,9 +10,12 @@ from myocard_egm_studio.gui.widgets import ResultList
 
 
 def _df() -> pd.DataFrame:
+    # row_id distinct from trace_idx (as it would be for a second loaded bank), so
+    # the selection tests prove the list emits row_id, not the per-bank trace_idx.
     return pd.DataFrame(
         {
             "trace_idx": [0, 1, 2],
+            "row_id": [10, 11, 12],  # hidden global key
             "source_bank_id": ["b", "b", "b"],  # hidden plumbing column
             "source": ["synthetic", "synthetic", "iafdb"],
             "label_name": ["healthy", "fibrotic", "healthy"],
@@ -55,6 +58,7 @@ def test_set_frame_populates_and_hides_plumbing(qtbot: QtBot) -> None:
     assert "#" in headers  # trace_idx renders as #
     assert {"source", "label_name", "sample_entropy"}.issubset(headers)
     assert "source_bank_id" not in headers  # a hidden plumbing column
+    assert widget._table.isColumnHidden(widget._columns.index("row_id"))  # hidden, not dropped
     assert widget._table.rowCount() == 3
     assert "3 trace(s)" in widget._count.text()
 
@@ -68,11 +72,11 @@ def test_numeric_columns_sort_numerically(qtbot: QtBot) -> None:
     assert _hash_column(widget) == ["2", "0", "1"]
 
 
-def test_selection_emits_trace_idx(qtbot: QtBot) -> None:
+def test_selection_emits_row_id(qtbot: QtBot) -> None:
     widget = _list(qtbot)
     with qtbot.waitSignal(widget.selectionChanged) as blocker:
         widget._table.selectRow(0)
-    assert blocker.args[0] == [0]
+    assert blocker.args[0] == [10]  # row_id of the first row, not its trace_idx (0)
 
 
 def test_selection_is_sort_aware(qtbot: QtBot) -> None:
@@ -80,5 +84,5 @@ def test_selection_is_sort_aware(qtbot: QtBot) -> None:
     entropy_col = widget._columns.index("sample_entropy")
     widget._table.sortItems(entropy_col, QtCore.Qt.SortOrder.AscendingOrder)
     with qtbot.waitSignal(widget.selectionChanged) as blocker:
-        widget._table.selectRow(0)  # smallest entropy -> trace_idx 2
-    assert blocker.args[0] == [2]
+        widget._table.selectRow(0)  # smallest entropy -> trace_idx 2 / row_id 12
+    assert blocker.args[0] == [12]
