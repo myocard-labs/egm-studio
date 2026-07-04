@@ -10,6 +10,8 @@ header carries the three-mode segmented control. The theme (ADR-012) persists vi
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -18,6 +20,7 @@ from myocard_egm_contracts import role_of
 from myocard_egm_data.phases import PhaseManifest, load_phase_dir
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from myocard_egm_studio.charts.palette import color_for
 from myocard_egm_studio.gui.preferences import load_theme, save_theme
 from myocard_egm_studio.gui.sources import load_exploration
 from myocard_egm_studio.gui.theme import (
@@ -28,7 +31,7 @@ from myocard_egm_studio.gui.theme import (
     plot_palette,
 )
 from myocard_egm_studio.gui.views import SignalExplorationView
-from myocard_egm_studio.gui.widgets import FilterPanel, PhaseTree, TraceData
+from myocard_egm_studio.gui.widgets import FilterPanel, LoadedBanksList, PhaseTree, TraceData
 from myocard_egm_studio.view_model import (
     apply_filter,
     combine_view_models,
@@ -64,6 +67,16 @@ _EXPAND_GLYPH: dict[_Side, str] = {"left": "▸", "right": "◂"}
 
 class _LoadCancelled(Exception):
     """Raised by the load progress callback when the user hits Cancel mid-load."""
+
+
+@dataclass
+class _LoadedBank:
+    """One bank open in Flow A: its label, path, per-bank frame + display traces."""
+
+    label: str
+    path: str
+    frame: pd.DataFrame
+    traces: list[TraceData]
 
 
 class _Placeholder(QtWidgets.QFrame):
@@ -195,7 +208,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._phase_dir = Path()
         self._last_metadata_text = ""  # last "Show metadata" text (for tests)
         self._metadata_dialog: QtWidgets.QDialog | None = None
-        self._explore_df: pd.DataFrame | None = None  # the loaded bank's view-model table
+        self._loaded_banks: list[_LoadedBank] = []  # banks open in Flow A (B7.8)
+        self._explore_df: pd.DataFrame | None = None  # the combined view-model table
         self.setWindowTitle(_WINDOW_TITLE)
         self.setMinimumSize(_MIN_WIDTH, _MIN_HEIGHT)
         self._build_menu_bar()
@@ -208,9 +222,9 @@ class MainWindow(QtWidgets.QMainWindow):
         menubar = self.menuBar()
 
         file_menu = menubar.addMenu("&File")
-        open_action = file_menu.addAction("&Open bank…")
-        open_action.setObjectName("openBank")
-        open_action.triggered.connect(self._open_bank)
+        self._open_action = file_menu.addAction("&Open bank…")
+        self._open_action.setObjectName("openBank")
+        self._open_action.triggered.connect(self._open_bank)
         open_phase_action = file_menu.addAction("Open &phase…")
         open_phase_action.setObjectName("openPhase")
         open_phase_action.triggered.connect(self._open_phase)
@@ -317,13 +331,23 @@ class MainWindow(QtWidgets.QMainWindow):
         splitter.setChildrenCollapsible(False)
 
         self._left_sidebar = CollapsibleSidebar(
-            title="Filters", subtitle="Open a bank to filter its traces", side="left"
+            title="Banks & filters",
+            subtitle="Open or add a bank to explore its traces",
+            side="left",
         )
         self._left_sidebar.setObjectName("leftSidebar")
         self._left_sidebar.toggleRequested.connect(lambda: self._toggle_sidebar("left"))
+        self._bank_list = LoadedBanksList()
+        self._bank_list.removeRequested.connect(self._remove_bank)
         self._filter_panel = FilterPanel()
         self._filter_panel.filterChanged.connect(self._on_filter_changed)
-        self._left_sidebar.set_body(self._filter_panel)
+        left_body = QtWidgets.QWidget()
+        left_layout = QtWidgets.QVBoxLayout(left_body)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(10)
+        left_layout.addWidget(self._bank_list)
+        left_layout.addWidget(self._filter_panel, 1)
+        self._left_sidebar.set_body(left_body)
 
         self._explore_view = SignalExplorationView(
             plot_palette(self._current_theme), chart_style(self._current_theme)
@@ -381,24 +405,38 @@ class MainWindow(QtWidgets.QMainWindow):
         sizes[_COL_MAIN] = max(_MAIN_MIN_W, sizes[_COL_MAIN] - delta)
         self._splitter.setSizes(sizes)
 
-    # -- open bank (direct load; File > Open bank) -----------------------------
+    # -- open / add banks (direct load; File > Open bank) ----------------------
 
     def _open_bank(self) -> None:
-        """File > Open bank…: pick an HDF5 bank and open it in Signal exploration."""
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Open bank", "", "EGM banks (*.h5 *.hdf5);;All files (*)"
+        """File > Open bank…: load bank file(s) — replace when nothing is loaded,
+        append when one or more banks already are (the menu label reflects which).
+
+        Starting fresh once banks are loaded is done by removing them in the
+        loaded-banks roster, so this single action covers open + add.
+        """
+        replace_first = not self._loaded_banks
+        title = "Add bank(s)" if self._loaded_banks else "Open bank(s)"
+        for index, path in enumerate(self._pick_banks(title)):
+            self._open_bank_explore(path, replace=replace_first and index == 0)
+
+    def _pick_banks(self, title: str) -> list[str]:
+        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self, title, "", "EGM banks (*.h5 *.hdf5);;All files (*)"
         )
-        if path:
-            self._open_bank_explore(path)
+        return paths
 
     def _open_bank_explore(
-        self, path: str, *, focus: Literal["summary", "explore"] = "summary"
+        self,
+        path: str,
+        *,
+        focus: Literal["summary", "explore"] | None = "summary",
+        replace: bool = True,
     ) -> None:
-        """Load a bank as the view-model table + traces; feed the filter + Flow A view.
+        """Load one bank + add it to (or ``replace``) the loaded set; feed Flow A.
 
-        ``focus`` picks the sub-tab to land on: the Summary landing by default
-        (File ▸ Open bank, "View feature distributions"), or "explore" straight to
-        the result list ("Explore signal").
+        ``focus`` picks the sub-tab to land on — Summary by default (File ▸ Open
+        bank, "View feature distributions"), "explore" straight to the result list
+        ("Explore signal"), or None to keep the current tab (Add / Remove bank).
 
         Feature extraction (O(T^2) sample entropy) is the slow step and runs on the
         GUI thread, so a large bank would freeze the window. A modal QProgressDialog
@@ -428,42 +466,101 @@ class MainWindow(QtWidgets.QMainWindow):
             frame, traces = load_exploration(path, progress=on_progress)
         except _LoadCancelled:
             self.statusBar().showMessage("Bank load canceled.")
+            dialog.close()
             return
         except Exception as exc:  # surface any read / validation error to the status bar
             self.statusBar().showMessage(f"Could not open bank: {exc}")
+            dialog.close()
             return
+
+        # Extraction is done, but building the views (combine + summary grid + the
+        # result table) is also slow on a big bank — keep the dialog up for a second
+        # "Building views…" phase so the bar spans the whole load, not just extraction.
+        dialog.setLabelText("Building views…")
+        dialog.setCancelButton(None)  # past the point of a clean abort
+
+        def on_build(done: int, total: int) -> None:
+            if dialog.maximum() != total:
+                dialog.setMaximum(total)
+            dialog.setValue(done)
+            QtWidgets.QApplication.processEvents()
+
+        try:
+            self._add_loaded_bank(
+                path, frame, traces, replace=replace, focus=focus, progress=on_build
+            )
         finally:
             dialog.close()
 
-        self._on_bank_loaded(path, frame, traces, focus=focus)
-
-    def _on_bank_loaded(
+    def _add_loaded_bank(
         self,
         path: str,
         frame: pd.DataFrame,
         traces: list[TraceData],
         *,
-        focus: Literal["summary", "explore"] = "summary",
+        replace: bool,
+        focus: Literal["summary", "explore"] | None,
+        progress: Callable[[int, int], None] | None = None,
     ) -> None:
-        """Populate the filter + Flow A view from a freshly loaded bank."""
+        """Add (or ``replace`` the set with) a freshly loaded bank, then rebuild."""
         if frame.empty:
             self.statusBar().showMessage("That bank has no traces to display.")
             return
-        self._bank_name = Path(path).name
-        # Route even a single bank through the combiner so the GUI always keys on
-        # row_id (the B7.8 global row key); multi-bank loading joins here in B7.8b.
-        combined = combine_view_models([frame])
-        self._explore_df = combined
+        label = str(frame["source"].iloc[0]) if "source" in frame.columns else Path(path).stem
+        bank = _LoadedBank(label=label, path=path, frame=frame, traces=list(traces))
+        kept = [] if replace else [b for b in self._loaded_banks if b.path != path]
+        self._loaded_banks = [*kept, bank]
+        self._refresh_loaded(focus=focus, progress=progress)
+
+    def _remove_bank(self, path: str) -> None:
+        """Drop the loaded bank at ``path`` (the loaded-banks list remove button)."""
+        self._loaded_banks = [b for b in self._loaded_banks if b.path != path]
+        self._refresh_loaded(focus=None)
+
+    def _refresh_loaded(
+        self,
+        *,
+        focus: Literal["summary", "explore"] | None,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> None:
+        """Rebuild the combined view-model + traces from the loaded banks; feed the view.
+
+        The banks pool into one combined frame (unique row_id) + one traces list in
+        load order, so the result list + detail span every loaded bank. The summary
+        is fed the combined frame (B7.8c overlays it per source); an empty set (last
+        bank removed) resets the view. ``progress`` reports the result-table build on
+        the big-bank load (B7.8b-perf).
+        """
+        combined = combine_view_models([b.frame for b in self._loaded_banks])
+        traces = [trace for b in self._loaded_banks for trace in b.traces]
+        self._explore_df = combined if self._loaded_banks else None
+        self._bank_name = ", ".join(b.label for b in self._loaded_banks)
+        self._bank_list.set_banks(
+            [(b.label, b.path, color_for(i)) for i, b in enumerate(self._loaded_banks)]
+        )
+        # Once a bank is loaded, the bank openers become "Add …" (B7.8b-fix).
+        loaded = bool(self._loaded_banks)
+        self._open_action.setText("&Add bank…" if loaded else "&Open bank…")
+        self._phase_tree.set_add_mode(loaded)
         self._explore_view.set_traces(traces)
-        self._explore_view.set_summary(combined)  # full-bank stats + grid; lands on Summary
-        # set_columns emits filterChanged -> _on_filter_changed, which populates the list.
+        self._explore_view.set_summary(combined)  # stats + grid; lands on Summary
+        # Set the filter columns without re-triggering a build (blockSignals), then
+        # build the result table exactly once — progress-reported for the big load.
+        self._filter_panel.blockSignals(True)
         self._filter_panel.set_columns(filter_columns(combined))
+        self._filter_panel.blockSignals(False)
+        self._explore_view.set_results(combined, progress=progress)
         self._show_mode(0)
         if focus == "explore":
             self._explore_view.show_explore()
-        self.statusBar().showMessage(
-            f"Loaded {self._bank_name} — {len(frame.index)} trace(s); filter or sort, then select"
-        )
+        self.statusBar().showMessage(self._loaded_status(combined))
+
+    def _loaded_status(self, combined: pd.DataFrame) -> str:
+        count = len(self._loaded_banks)
+        if count == 0:
+            return "No banks loaded."
+        banks = "1 bank" if count == 1 else f"{count} banks"
+        return f"Loaded {banks} — {len(combined.index)} trace(s); filter or sort, then select"
 
     def _on_filter_changed(self, spec: FilterSpec) -> None:
         """Re-apply the filter to the loaded frame and refresh the result list."""
@@ -549,11 +646,16 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_metadata(entry.id, text)
         elif action_id == "reveal_file":
             self._reveal(reveal_target(self._phase_dir, entry.path))
-        elif action_id in ("explore_signal", "view_feature_distributions"):
-            focus: Literal["summary", "explore"] = (
-                "explore" if action_id == "explore_signal" else "summary"
+        elif action_id == "explore_signal":
+            # Explore signal always replaces the loaded set (B7.8b-fix).
+            self._open_bank_explore(str(self._phase_dir / entry.path), focus="explore")
+        elif action_id == "view_feature_distributions":
+            # Additive when a bank is already loaded — builds the summary overlay.
+            self._open_bank_explore(
+                str(self._phase_dir / entry.path),
+                focus="summary",
+                replace=not self._loaded_banks,
             )
-            self._open_bank_explore(str(self._phase_dir / entry.path), focus=focus)
 
     def _copy_to_clipboard(self, text: str) -> None:
         app = QtWidgets.QApplication.instance()

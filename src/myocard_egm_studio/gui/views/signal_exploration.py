@@ -11,21 +11,26 @@ trace(s) — the seed of the B7.10 compare view.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import pandas as pd
 from PySide6 import QtCore, QtWidgets
 
 from myocard_egm_studio.charts.pyqtgraph import DEFAULT_STYLE, PgChartStyle
-from myocard_egm_studio.gui.preferences import load_ui_scale, save_ui_scale
+from myocard_egm_studio.gui.preferences import (
+    load_plot_kind,
+    load_ui_scale,
+    save_plot_kind,
+    save_ui_scale,
+)
 from myocard_egm_studio.gui.widgets import (
     FeatureDistributionGrid,
     ResultList,
     TraceData,
     TraceView,
 )
-from myocard_egm_studio.loaders import feature_group_from_frame
+from myocard_egm_studio.loaders import feature_groups_by_source
 from myocard_egm_studio.view_model import BankSummary, TraceDetail, bank_summary, trace_detail
 
 _DETAIL_CAP = 3  # traces shown side-by-side in the detail (the 3-pane comparison cap)
@@ -42,7 +47,7 @@ def _placeholder(text: str) -> QtWidgets.QLabel:
 
 
 def _provenance_text(summary: BankSummary) -> str:
-    """Compact provenance line: bank type(s) · amp · splits · bank id(s)."""
+    """Compact provenance: bank type(s) · amp · splits (the id lives in the roster)."""
     parts: list[str] = []
     if summary.bank_types:
         parts.append(" / ".join(summary.bank_types))
@@ -50,35 +55,70 @@ def _provenance_text(summary: BankSummary) -> str:
         parts.append(f"amp {summary.amp_type}")
     if summary.splits:
         parts.append("splits: " + ", ".join(summary.splits))
-    if summary.bank_ids:
-        parts.append(" / ".join(summary.bank_ids))
     return "   ·   ".join(parts)
 
 
+def _bank_line(name: str, summary: BankSummary) -> str:
+    """One per-bank stats line: name — count · class balance · provenance."""
+    parts = [f"{name} — {summary.n_traces:,} traces"]
+    balance = "  ·  ".join(f"{label} {count:,}" for label, count in summary.class_balance)
+    if balance:
+        parts.append(balance)
+    provenance = _provenance_text(summary)
+    if provenance:
+        parts.append(provenance)
+    return "   ·   ".join(parts)
+
+
+def _clear_layout(layout: QtWidgets.QLayout) -> None:
+    while layout.count():
+        item = layout.takeAt(0)
+        widget = item.widget() if item is not None else None
+        if widget is not None:
+            widget.setParent(None)
+            widget.deleteLater()
+
+
+def _summaries_by_source(frame: pd.DataFrame) -> list[tuple[str, BankSummary]]:
+    """One (source name, BankSummary) per distinct source, in load order."""
+    if not len(frame.index):
+        return []
+    if "source" not in frame.columns:
+        return [("bank", bank_summary(frame))]
+    return [
+        (str(source), bank_summary(frame[frame["source"] == source]))
+        for source in frame["source"].dropna().unique()
+    ]
+
+
 class _SummaryPanel(QtWidgets.QFrame):
-    """The bank-summary header: trace count, class balance, and provenance."""
+    """The bank-summary header: total trace count over one stats line per bank."""
 
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("summaryPanel")
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 8)
-        layout.setSpacing(2)
+        outer = QtWidgets.QVBoxLayout(self)
+        outer.setContentsMargins(12, 10, 12, 8)
+        outer.setSpacing(2)
         self._count = QtWidgets.QLabel()
         self._count.setObjectName("summaryCount")
-        self._balance = QtWidgets.QLabel()
-        self._balance.setObjectName("summaryLine")
-        self._provenance = QtWidgets.QLabel()
-        self._provenance.setObjectName("summaryLine")
-        self._provenance.setWordWrap(True)
-        for widget in (self._count, self._balance, self._provenance):
-            layout.addWidget(widget)
+        outer.addWidget(self._count)
+        self._banks = QtWidgets.QVBoxLayout()
+        self._banks.setContentsMargins(0, 0, 0, 0)
+        self._banks.setSpacing(1)
+        outer.addLayout(self._banks)
 
-    def set_summary(self, summary: BankSummary) -> None:
-        self._count.setText(f"{summary.n_traces:,} traces")
-        balance = "   ·   ".join(f"{name} {count:,}" for name, count in summary.class_balance)
-        self._balance.setText(balance or "—")
-        self._provenance.setText(_provenance_text(summary))
+    def set_summaries(self, summaries: Sequence[tuple[str, BankSummary]]) -> None:
+        """Show the total count then one stats line per loaded bank."""
+        total = sum(summary.n_traces for _, summary in summaries)
+        suffix = f"   ·   {len(summaries)} banks" if len(summaries) > 1 else ""
+        self._count.setText(f"{total:,} traces{suffix}")
+        _clear_layout(self._banks)
+        for name, summary in summaries:
+            line = QtWidgets.QLabel(_bank_line(name, summary))
+            line.setObjectName("summaryLine")
+            line.setWordWrap(True)
+            self._banks.addWidget(line)
 
 
 class _WaveformHost(QtWidgets.QWidget):
@@ -162,6 +202,8 @@ class SignalExplorationView(QtWidgets.QWidget):
         self._feature_grid = FeatureDistributionGrid(chart_style)
         self._feature_grid.set_scale_factor(load_ui_scale(1.0))  # ADR-018 persisted scale
         self._feature_grid.scaleChanged.connect(save_ui_scale)
+        self._feature_grid.set_kind(load_plot_kind("kde"))  # persisted KDE / histogram choice
+        self._feature_grid.kindChanged.connect(save_plot_kind)
         page = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -205,20 +247,25 @@ class SignalExplorationView(QtWidgets.QWidget):
         self._detail_stack.setCurrentIndex(0)
 
     def set_summary(self, frame: pd.DataFrame) -> None:
-        """Populate the Summary landing from the full-bank frame and land on it.
+        """Populate the Summary landing from the full (combined) frame and land on it.
 
-        Called once per bank load with the unfiltered view-model (the summary +
-        distribution grid describe the whole bank, unlike the filter-driven list).
+        Called once per (re)load with the unfiltered view-model. The grid overlays
+        one distribution curve per ``source`` (an empty frame clears it); the stats
+        panel shows one line per bank.
         """
-        self._summary_panel.set_summary(bank_summary(frame))
-        if len(frame.index):
-            self._feature_grid.set_group(feature_group_from_frame(frame))
+        self._feature_grid.set_groups(feature_groups_by_source(frame))
+        self._summary_panel.set_summaries(_summaries_by_source(frame))
         self._tabs.setCurrentIndex(_TAB_SUMMARY)
 
-    def set_results(self, frame: pd.DataFrame) -> None:
-        """Show the rows the filter kept (also called with the full frame on open)."""
+    def set_results(
+        self, frame: pd.DataFrame, *, progress: Callable[[int, int], None] | None = None
+    ) -> None:
+        """Show the rows the filter kept (also called with the full frame on open).
+
+        ``progress`` is forwarded to the table build (the initial big-bank load).
+        """
         self._frame = frame
-        self._result_list.set_frame(frame)
+        self._result_list.set_frame(frame, progress=progress)
 
     def show_summary(self) -> None:
         self._tabs.setCurrentIndex(_TAB_SUMMARY)

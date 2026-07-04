@@ -102,6 +102,18 @@ _VIEWERS_BY_ROLE: dict[Role, tuple[ArtifactAction, ...]] = {
 }
 
 
+#: Additive-when-loaded relabels (B7.8): once a bank is open, the viewers that
+#: *append* say "Add" instead. "explore_signal" is deliberately absent — it always
+#: replaces the loaded set, so it keeps its label.
+_ADD_LABELS: dict[str, str] = {"view_feature_distributions": "Add feature distribution"}
+
+
+def menu_label(action: ArtifactAction, *, add_mode: bool) -> str:
+    """The action's menu label, in its ``Add`` form when ``add_mode`` (a bank is
+    already loaded) and the action appends rather than replaces; else its label."""
+    return _ADD_LABELS.get(action.id, action.label) if add_mode else action.label
+
+
 def type_actions(role: Role) -> tuple[ArtifactAction, ...]:
     """The role-specific viewer actions (may be empty); shown before the divider."""
     return _VIEWERS_BY_ROLE.get(role, ())

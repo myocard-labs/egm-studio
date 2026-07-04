@@ -17,6 +17,8 @@ ORG_NAME = "myocard-labs"
 APP_NAME = "egm-studio"
 _THEME_KEY = "appearance/theme"
 _UI_SCALE_KEY = "appearance/ui_scale"
+_PLOT_KIND_KEY = "appearance/plot_kind"
+_PLOT_KINDS = ("kde", "histogram")
 
 
 def _settings() -> QtCore.QSettings:
@@ -55,3 +57,14 @@ def load_ui_scale(default: float) -> float:
 def save_ui_scale(value: float) -> None:
     """Persist the panel scale factor (ADR-018) to restore on next launch."""
     _settings().setValue(_UI_SCALE_KEY, float(value))
+
+
+def load_plot_kind(default: str) -> str:
+    """Return the persisted summary plot kind (``kde`` / ``histogram``), or ``default``."""
+    raw = _settings().value(_PLOT_KIND_KEY, default)
+    return str(raw) if raw in _PLOT_KINDS else default
+
+
+def save_plot_kind(kind: str) -> None:
+    """Persist the summary plot kind (KDE / histogram) to restore on next launch."""
+    _settings().setValue(_PLOT_KIND_KEY, kind)

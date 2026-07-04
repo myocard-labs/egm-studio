@@ -65,6 +65,11 @@ class PhaseTree(QtWidgets.QTreeWidget):
         self.customContextMenuRequested.connect(self._on_context_menu)
         self._items_by_id: dict[str, QtWidgets.QTreeWidgetItem] = {}
         self._groups: list[tuple[QtWidgets.QTreeWidgetItem, tuple[str, ...]]] = []
+        self._add_mode = False  # a bank is loaded -> additive viewers relabel to "Add …"
+
+    def set_add_mode(self, add_mode: bool) -> None:
+        """Toggle the additive-when-loaded relabel of the bank viewers (B7.8)."""
+        self._add_mode = add_mode
 
     def set_groups(self, groups: Sequence[ArtifactGroup]) -> None:
         """Populate from a phase's display groups, replacing any prior contents."""
@@ -116,7 +121,7 @@ class PhaseTree(QtWidgets.QTreeWidget):
     def _add_action(
         self, menu: QtWidgets.QMenu, action: phase_actions.ArtifactAction, artifact_id: str
     ) -> None:
-        qaction = menu.addAction(action.label)
+        qaction = menu.addAction(phase_actions.menu_label(action, add_mode=self._add_mode))
         qaction.setEnabled(action.available)
         if action.note:
             qaction.setToolTip(action.note)

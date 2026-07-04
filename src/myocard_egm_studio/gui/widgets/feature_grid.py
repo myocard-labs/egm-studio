@@ -4,16 +4,22 @@ Each egm-features column is drawn as its own pyqtgraph panel (reusing
 ``charts/pyqtgraph.draw_feature_panel``, so a panel matches its paper-figure
 twin), laid out in a wrap-on-overflow flow inside a scroll area. ADR-018: panels
 keep a readable min/max size, clamped by a user scale factor; the grid wraps to
-more rows as the window narrows and scrolls when the panels overflow — it never
-squishes them below readability the way a fill-to-fit layout would.
+more rows as the window narrows and scrolls when the panels overflow.
+
+Multiple banks overlay per panel — one coloured curve per source, with a legend
+(B7.8c). A KDE / Histogram toggle picks the display; KDE is the default (smooth
+curves compare more cleanly than overlaid step histograms).
 """
 
 from __future__ import annotations
+
+from collections.abc import Sequence
 
 import pyqtgraph as pg
 from PySide6 import QtCore, QtWidgets
 
 from myocard_egm_studio.charts.inputs import FeatureGroup
+from myocard_egm_studio.charts.palette import color_for
 from myocard_egm_studio.charts.pyqtgraph import DEFAULT_STYLE, PgChartStyle, draw_feature_panel
 
 _PANEL_BASE = (300, 220)  # panel (w, h) in px at scale 1.0
@@ -21,7 +27,8 @@ _PANEL_MIN = (200, 150)  # smallest readable panel — below this the grid wraps
 _PANEL_MAX = (560, 400)  # cap before the grid just adds whitespace
 _SCALE_MIN, _SCALE_MAX = 0.6, 2.0
 _SCALE_STEPS = 14  # slider granularity between min and max
-_HIST_BINS = 30  # per-panel histogram resolution for the summary
+_HIST_BINS = 30  # per-panel histogram resolution
+_KINDS = ("kde", "histogram")  # combo order; index 0 (KDE) is the default
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -95,17 +102,58 @@ class _FlowLayout(QtWidgets.QLayout):
         return y + line_height + margins.bottom() - rect.y()
 
 
-class FeatureDistributionGrid(QtWidgets.QWidget):
-    """A wrap + scroll grid of per-feature distribution panels with a scale control.
+class _Legend(QtWidgets.QWidget):
+    """A horizontal source legend: a colour swatch + name per overlaid group."""
 
-    Feed it a :class:`FeatureGroup` (:meth:`set_group`); it draws one histogram
-    panel per feature. The scale slider clamps panel size within ADR-018's
-    min/max; :attr:`scaleChanged` reports the factor so the shell can persist it
-    (B7.7c), and :meth:`set_scale_factor` restores it. :meth:`set_style` recolours
-    on a theme change.
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("gridLegend")
+        self._layout = QtWidgets.QHBoxLayout(self)
+        self._layout.setContentsMargins(8, 0, 8, 2)
+        self._layout.setSpacing(14)
+        self.set_entries([])
+
+    def set_entries(self, entries: Sequence[tuple[str, str]]) -> None:
+        """Show ``(name, colour hex)`` per group; hidden unless there are 2+."""
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+        for name, color in entries:
+            self._layout.addWidget(_legend_entry(name, color))
+        self._layout.addStretch(1)
+        self.setVisible(len(entries) > 1)
+
+
+def _legend_entry(name: str, color: str) -> QtWidgets.QWidget:
+    row = QtWidgets.QWidget()
+    layout = QtWidgets.QHBoxLayout(row)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(5)
+    swatch = QtWidgets.QLabel()
+    swatch.setFixedSize(11, 11)
+    swatch.setStyleSheet(f"background-color: {color}; border-radius: 2px;")
+    label = QtWidgets.QLabel(name)
+    label.setObjectName("legendName")
+    layout.addWidget(swatch)
+    layout.addWidget(label)
+    return row
+
+
+class FeatureDistributionGrid(QtWidgets.QWidget):
+    """A wrap + scroll grid of per-feature distribution panels (ADR-018).
+
+    Feed it one or more :class:`FeatureGroup` (:meth:`set_groups`); it overlays a
+    coloured curve per group in each feature panel, with a legend for 2+. The
+    KDE / Histogram combo picks the display (:attr:`kindChanged` reports it) and
+    the scale slider clamps panel size (:attr:`scaleChanged`); the shell persists
+    both. :meth:`set_style` recolours on a theme change.
     """
 
     scaleChanged = QtCore.Signal(float)
+    kindChanged = QtCore.Signal(str)
 
     def __init__(
         self, style: PgChartStyle = DEFAULT_STYLE, parent: QtWidgets.QWidget | None = None
@@ -113,9 +161,15 @@ class FeatureDistributionGrid(QtWidgets.QWidget):
         super().__init__(parent)
         self.setObjectName("featureGrid")
         self._style = style
-        self._group: FeatureGroup | None = None
+        self._groups: list[FeatureGroup] = []
         self._scale = 1.0
+        self._kind = "kde"
         self._panels: list[pg.PlotWidget] = []
+
+        self._kind_combo = QtWidgets.QComboBox()
+        self._kind_combo.setObjectName("plotKind")
+        self._kind_combo.addItems(["KDE", "Histogram"])
+        self._kind_combo.currentIndexChanged.connect(self._on_kind)
 
         self._scale_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self._scale_slider.setObjectName("panelScale")
@@ -126,9 +180,13 @@ class FeatureDistributionGrid(QtWidgets.QWidget):
 
         header = QtWidgets.QHBoxLayout()
         header.setContentsMargins(8, 4, 8, 0)
+        header.addWidget(QtWidgets.QLabel("Plot"))
+        header.addWidget(self._kind_combo)
         header.addStretch(1)
         header.addWidget(QtWidgets.QLabel("Panel size"))
         header.addWidget(self._scale_slider)
+
+        self._legend = _Legend()
 
         self._flow_host = QtWidgets.QWidget()
         self._flow = _FlowLayout(self._flow_host)
@@ -141,15 +199,24 @@ class FeatureDistributionGrid(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(header)
+        layout.addWidget(self._legend)
         layout.addWidget(self._scroll, 1)
         self._sync_slider()
 
     # -- public API -----------------------------------------------------------
 
-    def set_group(self, group: FeatureGroup) -> None:
-        """Draw one distribution panel per feature in ``group`` (rebuilds the grid)."""
-        self._group = group
+    def set_groups(self, groups: Sequence[FeatureGroup]) -> None:
+        """Overlay one distribution curve per group in each feature panel."""
+        self._groups = list(groups)
         self._rebuild()
+
+    def set_group(self, group: FeatureGroup) -> None:
+        """Convenience for the single-bank case: overlay just one group."""
+        self.set_groups([group])
+
+    def clear(self) -> None:
+        """Remove every panel (e.g. the last loaded bank was removed)."""
+        self.set_groups([])
 
     def set_style(self, style: PgChartStyle) -> None:
         """Recolour the panels for a theme change."""
@@ -164,6 +231,17 @@ class FeatureDistributionGrid(QtWidgets.QWidget):
         self._scale = _clamp(factor, _SCALE_MIN, _SCALE_MAX)
         self._sync_slider()
         self._apply_panel_size()
+
+    def kind(self) -> str:
+        return self._kind
+
+    def set_kind(self, kind: str) -> None:
+        """Set the display to ``"kde"`` or ``"histogram"``; syncs the combo + redraws."""
+        self._kind = kind if kind in _KINDS else "kde"
+        self._kind_combo.blockSignals(True)
+        self._kind_combo.setCurrentIndex(_KINDS.index(self._kind))
+        self._kind_combo.blockSignals(False)
+        self._rebuild()
 
     @property
     def panels(self) -> list[pg.PlotWidget]:
@@ -187,27 +265,34 @@ class FeatureDistributionGrid(QtWidgets.QWidget):
             item = self._flow.takeAt(0)
             widget = item.widget() if item is not None else None
             if widget is not None:
+                widget.setParent(None)
                 widget.deleteLater()
         self._panels = []
-        if self._group is None:
+        self._legend.set_entries([(g.name, color_for(i)) for i, g in enumerate(self._groups)])
+        if not self._groups:
             return
-        units = self._group.units or {}
-        for feature in self._group.values:
+        units = self._groups[0].units or {}
+        for feature in self._groups[0].values:
             panel = pg.PlotWidget()
             panel.setBackground(self._style.background)
             draw_feature_panel(
                 panel.getPlotItem(),
                 feature,
-                [self._group],
-                kind="histogram",
+                self._groups,
+                kind=self._kind,
                 bins=_HIST_BINS,
-                annotate="none",
+                annotate="ks",  # two groups -> KS distance in the title; silent otherwise
                 units=units,
                 style=self._style,
             )
             self._flow.addWidget(panel)
             self._panels.append(panel)
         self._apply_panel_size()
+
+    def _on_kind(self, index: int) -> None:
+        self._kind = _KINDS[index]
+        self._rebuild()
+        self.kindChanged.emit(self._kind)
 
     def _on_slider(self, step: int) -> None:
         self._scale = _SCALE_MIN + (_SCALE_MAX - _SCALE_MIN) * step / _SCALE_STEPS

@@ -16,7 +16,25 @@ import pandas as pd
 from myocard_egm_studio.charts.inputs import FeatureGroup
 from myocard_egm_studio.view_model import FEATURE_COLUMNS, feature_units
 
-__all__ = ["feature_group_from_frame"]
+__all__ = ["feature_group_from_frame", "feature_groups_by_source"]
+
+
+def feature_groups_by_source(frame: pd.DataFrame) -> list[FeatureGroup]:
+    """Split a (possibly multi-bank) frame into one FeatureGroup per ``source``.
+
+    One group per distinct ``source``, in first-appearance (load) order — so group
+    *i* is the *i*-th loaded bank and lines up with ``color_for(i)`` used by the
+    summary overlay + the loaded-banks roster (B7.8c). A frame with no ``source``
+    column collapses to a single unnamed group; an empty frame yields no groups.
+    """
+    if not len(frame.index):
+        return []
+    if "source" not in frame.columns:
+        return [feature_group_from_frame(frame)]
+    return [
+        feature_group_from_frame(frame[frame["source"] == source], name=str(source))
+        for source in frame["source"].dropna().unique()
+    ]
 
 
 def feature_group_from_frame(frame: pd.DataFrame, *, name: str | None = None) -> FeatureGroup:

@@ -15,6 +15,7 @@ the signal-exploration view wires filter -> list -> detail (B7.5).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -29,6 +30,11 @@ _HIDDEN = frozenset({"source_bank_id", "source_bank_type", "amp_type", "label"})
 
 #: The global row key (B7.8): kept as a hidden column so selection reads it per row.
 _ROW_ID = "row_id"
+
+#: Rows populated between progress ticks on a big-bank load (keeps the UI painting).
+_ROW_CHUNK = 500
+#: Cap the rows auto-resize scans, so a huge table's column-fit stays ~O(1) not O(N).
+_RESIZE_PRECISION = 200
 
 
 class _Cell(QtWidgets.QTableWidgetItem):
@@ -78,6 +84,7 @@ class ResultList(QtWidgets.QWidget):
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
         self._table.setSortingEnabled(True)
         self._table.horizontalHeader().setStretchLastSection(True)
+        self._table.horizontalHeader().setResizeContentsPrecision(_RESIZE_PRECISION)
         self._table.itemSelectionChanged.connect(self._emit_selection)
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -85,8 +92,15 @@ class ResultList(QtWidgets.QWidget):
         layout.addWidget(self._count)
         layout.addWidget(self._table, 1)
 
-    def set_frame(self, df: pd.DataFrame) -> None:
-        """Show ``df`` (already filtered) — one row per trace, every column sortable."""
+    def set_frame(
+        self, df: pd.DataFrame, *, progress: Callable[[int, int], None] | None = None
+    ) -> None:
+        """Show ``df`` (already filtered) — one row per trace, every column sortable.
+
+        ``progress`` (the initial big-bank load, B7.8b-perf) is called
+        ``(rows_done, rows_total)`` as the table populates, so the caller can drive a
+        progress bar + pump events; it stays None for the small filter updates.
+        """
         frame = df.reset_index(drop=True)
         self._columns = [name for name in frame.columns if name not in _HIDDEN]
         self._table.setSortingEnabled(False)  # off while populating, else rows re-sort mid-fill
@@ -94,16 +108,21 @@ class ResultList(QtWidgets.QWidget):
         headers = ["#" if name == "trace_idx" else name for name in self._columns]
         self._table.setColumnCount(len(headers))
         self._table.setHorizontalHeaderLabels(headers)
-        self._table.setRowCount(len(frame.index))
-        for col, name in enumerate(self._columns):
-            series = frame[name]
-            for row in range(len(frame.index)):
-                self._table.setItem(row, col, _cell(series.iat[row]))
+        rows = len(frame.index)
+        self._table.setRowCount(rows)
+        series = [frame[name] for name in self._columns]  # indexed per row below
+        for row in range(rows):
+            for col, col_series in enumerate(series):
+                self._table.setItem(row, col, _cell(col_series.iat[row]))
+            if progress is not None and row % _ROW_CHUNK == 0:
+                progress(row, rows)
+        if progress is not None:
+            progress(rows, rows)
         self._table.setSortingEnabled(True)
         self._table.resizeColumnsToContents()
         if _ROW_ID in self._columns:  # queryable per row, but never shown
             self._table.setColumnHidden(self._columns.index(_ROW_ID), True)
-        self._count.setText(f"{len(frame.index)} trace(s)")
+        self._count.setText(f"{rows} trace(s)")
         self._emit_selection()
 
     def selected_row_ids(self) -> list[int]:
