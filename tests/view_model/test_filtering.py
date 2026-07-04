@@ -60,6 +60,22 @@ def test_missing_values_never_match() -> None:
     assert _kept(_df(), FilterSpec((Condition("label_name", "!=", "healthy"),))) == [1]
 
 
+def test_and_present_keeps_rows_missing_the_field() -> None:
+    # "and" excludes the NaN-entropy row (idx 3); "and_present" skips the condition for
+    # it and keeps it — a field only some banks carry doesn't drop the banks that lack it
+    spec = FilterSpec((Condition("sample_entropy", ">", "1.5"),), "and_present")
+    assert _kept(_df(), spec) == [1, 2, 3]
+
+
+def test_and_present_still_filters_rows_that_have_the_field() -> None:
+    # a condition whose value *is* present still applies: only synthetic + entropy>1.5
+    spec = FilterSpec(
+        (Condition("source", "==", "synthetic"), Condition("sample_entropy", ">", "1.5")),
+        "and_present",
+    )
+    assert _kept(_df(), spec) == [1]  # idx 3's NaN entropy is skipped, but its source fails
+
+
 def test_bad_numeric_value_raises() -> None:
     with pytest.raises(ValueError):
         apply_filter(_df(), FilterSpec((Condition("sample_entropy", ">", "high"),)))

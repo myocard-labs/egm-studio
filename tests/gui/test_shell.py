@@ -175,15 +175,17 @@ def test_selecting_a_trace_shows_the_detail(
     assert window.findChild(TraceContainer) is not None
 
 
-def test_filter_narrows_the_result_list(
+def test_recalculate_narrows_the_result_list(
     qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
 ) -> None:
     window = _open(qtbot, tiny_classifier_bank, tmp_path)
     total = window._explore_view.result_list._table.rowCount()
-    window._on_filter_changed(FilterSpec((Condition("label_name", "==", "fibrotic"),)))
+    window._on_recalculate(FilterSpec((Condition("label_name", "==", "fibrotic"),)))
     kept = window._explore_view.result_list._table.rowCount()
     assert 0 < kept < total
     assert "match" in window.statusBar().currentMessage()
+    # the summary grid + stats reflect the filtered set too (point 3), not the full bank
+    assert f"{kept:,} traces" in window._explore_view._summary_panel._count.text()
 
 
 def test_open_bank_cancel_aborts_the_load(

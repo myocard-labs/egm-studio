@@ -90,3 +90,22 @@ def test_empty_series_clears(qtbot: QtBot, tiny_classifier_bank: ClassifierBank)
     view = _view(qtbot, (tiny_classifier_bank, "Synthetic"))
     view.clear()
     assert view.items == []
+
+
+def test_new_data_recenters_the_view(qtbot: QtBot, tiny_classifier_bank: ClassifierBank) -> None:
+    """Feeding new series auto-fits the view to the new data (not the old zoom)."""
+    view = _view(qtbot, (tiny_classifier_bank, "Synthetic"))
+    vb = view._plot.getPlotItem().getViewBox()
+    vb.setRange(xRange=(1000, 2000), padding=0)  # zoom far off the data
+    view.set_series(_series((tiny_classifier_bank, "Synthetic")))
+    assert vb.viewRange()[0][1] < 1000  # refit back toward the data
+
+
+def test_recenter_button_refits_the_view(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank
+) -> None:
+    view = _view(qtbot, (tiny_classifier_bank, "Synthetic"))
+    vb = view._plot.getPlotItem().getViewBox()
+    vb.setRange(xRange=(1000, 2000), padding=0)
+    view._recenter_button.click()
+    assert vb.viewRange()[0][1] < 1000  # the button re-fits to the points

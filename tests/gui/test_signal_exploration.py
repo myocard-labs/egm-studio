@@ -64,15 +64,18 @@ def test_detail_caps_at_three_traces(qtbot: QtBot, tiny_classifier_bank: Classif
     assert view._detail_table.columnCount() == 1 + 3  # attribute column + 3 trace columns
 
 
-def test_summary_populates_grid_and_lands_on_summary(
+def test_results_populate_the_grid_and_stats(
     qtbot: QtBot, tiny_classifier_bank: ClassifierBank
 ) -> None:
-    """set_summary fills the stats panel + the 11-panel grid and shows the Summary tab."""
-    view = _view(qtbot, tiny_classifier_bank)
-    view.set_summary(build_view_model(tiny_classifier_bank, source="Synthetic"))
+    """set_results fills the 11-panel grid + stats too, so filtering drives them."""
+    view = _view(qtbot, tiny_classifier_bank)  # _view already calls set_results
     assert len(view._feature_grid.panels) == len(FEATURE_COLUMNS)
-    assert view._tabs.currentIndex() == 0  # landed on Summary
     assert "traces" in view._summary_panel._count.text()
+    # a narrower frame re-feeds the grid + stats (the point-3 filter-drives-grid path)
+    subset = combine_view_models([build_view_model(tiny_classifier_bank, source="Synthetic")])
+    view.set_results(subset.head(4))
+    assert len(view._feature_grid.panels) == len(FEATURE_COLUMNS)
+    assert "4 traces" in view._summary_panel._count.text()
 
 
 def test_tab_switch_helpers(qtbot: QtBot, tiny_classifier_bank: ClassifierBank) -> None:
@@ -95,7 +98,45 @@ def test_summary_overlays_per_source_with_a_stats_line_each(
             build_view_model(tiny_unlabeled_bank, source="B"),
         ]
     )
-    view.set_summary(combined)
+    view.set_results(combined)
     assert len(view._feature_grid.panels) == len(FEATURE_COLUMNS)  # overlaid, not doubled
     assert len(view._feature_grid._groups) == 2  # two source curves
     assert view._summary_panel._banks.count() == 2  # one stats line per bank
+
+
+def test_has_three_subtabs_including_scatter(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank
+) -> None:
+    view = _view(qtbot, tiny_classifier_bank)
+    assert [view._tabs.tabText(i) for i in range(view._tabs.count())] == [
+        "Summary",
+        "Explore",
+        "Scatter",
+    ]
+
+
+def test_results_feed_the_scatter(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tiny_unlabeled_bank: ClassifierBank
+) -> None:
+    """set_results feeds the scatter the same filtered set — one cloud per source."""
+    view = SignalExplorationView(plot_palette("dark"))
+    qtbot.addWidget(view)
+    combined = combine_view_models(
+        [
+            build_view_model(tiny_classifier_bank, source="A"),
+            build_view_model(tiny_unlabeled_bank, source="B"),
+        ]
+    )
+    view.set_results(combined)
+    assert len(view._scatter.items) == 2  # one scatter cloud per source
+
+
+def test_scatter_click_selects_row_and_shows_explore_detail(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank
+) -> None:
+    """A scatter point click selects the row, opens the detail, and jumps to Explore."""
+    view = _view(qtbot, tiny_classifier_bank)
+    view._scatter.pointClicked.emit(0)  # click the trace at row_id 0
+    assert view.result_list.selected_row_ids() == [0]  # list selection synced
+    assert view._detail_stack.currentIndex() == 1  # detail populated
+    assert view._tabs.currentIndex() == 1  # revealed the Explore tab

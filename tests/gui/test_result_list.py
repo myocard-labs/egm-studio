@@ -96,3 +96,21 @@ def test_selection_is_sort_aware(qtbot: QtBot) -> None:
     with qtbot.waitSignal(widget.selectionChanged) as blocker:
         widget._table.selectRow(0)  # smallest entropy -> trace_idx 2 / row_id 12
     assert blocker.args[0] == [12]
+
+
+def test_select_row_ids_selects_by_row_id(qtbot: QtBot) -> None:
+    """select_row_ids (the scatter-click entry point) selects by row_id + emits it."""
+    widget = _list(qtbot)
+    with qtbot.waitSignal(widget.selectionChanged) as blocker:
+        widget.select_row_ids([12])  # the third row's global key
+    assert blocker.args[0] == [12]
+    assert widget.selected_row_ids() == [12]
+
+
+def test_select_row_ids_is_sort_agnostic(qtbot: QtBot) -> None:
+    """A row_id resolves to its row regardless of the current sort order."""
+    widget = _list(qtbot)
+    entropy_col = widget._columns.index("sample_entropy")
+    widget._table.sortItems(entropy_col, QtCore.Qt.SortOrder.DescendingOrder)
+    widget.select_row_ids([10])  # row_id 10 (entropy 2.0) sits mid-table when sorted
+    assert widget.selected_row_ids() == [10]

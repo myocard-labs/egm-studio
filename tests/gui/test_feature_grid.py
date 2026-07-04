@@ -82,3 +82,11 @@ def test_kind_defaults_to_kde_and_toggles(
     grid._kind_combo.setCurrentIndex(1)  # Histogram
     assert grid.kind() == "histogram"
     assert seen == ["histogram"]
+
+
+def test_recenter_button_refits_panels(qtbot: QtBot, tiny_classifier_bank: ClassifierBank) -> None:
+    grid = _grid(qtbot, tiny_classifier_bank)
+    vb = grid.panels[0].getPlotItem().getViewBox()
+    vb.setRange(xRange=(1000, 2000), padding=0)  # zoom a panel far off its data
+    grid._recenter_button.click()
+    assert vb.viewRange()[0][1] < 1000  # re-fit toward the panel's data
