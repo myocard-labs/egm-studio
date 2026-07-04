@@ -459,6 +459,13 @@ Sub-blocks:
   that exist"** (`filtering.apply_filter` `and_present`) skips a condition for rows whose
   bank lacks that field, so filtering a single-bank field keeps the other banks. Filtering
   a *shared* field on just one bank (per-condition bank scoping) is a Post-v0.1 follow-up.
+- **B7-scatter-front — bring a bank's points to the front (addendum).**
+  **✓ Shipped 2026-07-04** — scatter draw order is load order, so a huge bank (IAFDB)
+  loaded last buries the rest; each roster row (`gui/widgets/bank_list.py`) gained a
+  bring-to-front button that raises that source above the others by z-value
+  (`FeatureScatterView.bring_to_front`, persisted across redraws). The harder case — *two*
+  large banks overplotting each other — is deferred to **Block 11** (decimation / density /
+  hexbin).
 - **B7.10 — per-feature similarity + 3-pane compare.** "Find similar in other
   bank" via `analysis.similarity.nearest_along_feature` + a feature-axis dropdown
   → 3-pane compare-with-feature-deltas (shares the pair-comparison machinery with
@@ -608,8 +615,13 @@ then implements them.
 - **Candidates to weigh in the spike:** background-thread feature
   extraction (keep the GUI responsive without a modal dialog);
   virtualized / lazy result table (build rows on demand, not all up
-  front); incremental filtering; point-decimation for the scatter at
-  very large N.
+  front); incremental filtering.
+- **Scatter at very large N (overplotting).** The B7-scatter-front
+  bring-to-front button is the short-term fix for *one* huge bank burying
+  the others; when *two* banks are both very large it can't help (whichever
+  is on top still hides the other). Needs a real strategy: point-decimation,
+  per-point alpha / density shading, or 2-D-histogram / hexbin rendering so
+  neither source overplots the other. Decide + implement here.
 
 **Deps:**
 
