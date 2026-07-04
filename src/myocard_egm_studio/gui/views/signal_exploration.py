@@ -20,22 +20,32 @@ from PySide6 import QtCore, QtWidgets
 from myocard_egm_studio.charts.pyqtgraph import DEFAULT_STYLE, PgChartStyle
 from myocard_egm_studio.gui.preferences import (
     load_plot_kind,
+    load_scatter_axes,
     load_ui_scale,
     save_plot_kind,
+    save_scatter_axes,
     save_ui_scale,
 )
 from myocard_egm_studio.gui.widgets import (
     FeatureDistributionGrid,
+    FeatureScatterView,
     ResultList,
     TraceData,
     TraceView,
 )
-from myocard_egm_studio.loaders import feature_groups_by_source
-from myocard_egm_studio.view_model import BankSummary, TraceDetail, bank_summary, trace_detail
+from myocard_egm_studio.loaders import feature_groups_by_source, scatter_series_by_source
+from myocard_egm_studio.view_model import (
+    FEATURE_COLUMNS,
+    BankSummary,
+    TraceDetail,
+    bank_summary,
+    trace_detail,
+)
 
 _DETAIL_CAP = 3  # traces shown side-by-side in the detail (the 3-pane comparison cap)
 _SELECT_PROMPT = "Select trace(s) in the list to view"
-_TAB_SUMMARY, _TAB_EXPLORE = 0, 1  # sub-tab order; Summary is the post-load landing
+_TAB_SUMMARY, _TAB_EXPLORE, _TAB_SCATTER = 0, 1, 2  # sub-tab order; Summary is the landing
+_DEFAULT_AXES = (FEATURE_COLUMNS[0], FEATURE_COLUMNS[1])  # scatter's first-load (x, y)
 
 
 def _placeholder(text: str) -> QtWidgets.QLabel:
@@ -191,6 +201,7 @@ class SignalExplorationView(QtWidgets.QWidget):
         self._tabs.setObjectName("flowATabs")
         self._tabs.addTab(self._build_summary_page(chart_style), "Summary")
         self._tabs.addTab(self._build_explore_page(), "Explore")
+        self._tabs.addTab(self._build_scatter_page(chart_style), "Scatter")
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -241,31 +252,40 @@ class SignalExplorationView(QtWidgets.QWidget):
         layout.addWidget(splitter)
         return page
 
+    def _build_scatter_page(self, chart_style: PgChartStyle) -> QtWidgets.QWidget:
+        """The Scatter tab: a 2-D feature scatter of the filtered result (click -> detail)."""
+        self._scatter = FeatureScatterView(chart_style)
+        self._scatter.set_axes(*load_scatter_axes(_DEFAULT_AXES))  # persisted (x, y) axes
+        self._scatter.axesChanged.connect(save_scatter_axes)
+        self._scatter.pointClicked.connect(self._on_scatter_pick)
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._scatter)
+        return page
+
     def set_traces(self, traces: Sequence[TraceData]) -> None:
         """Set the display traces of a newly opened bank (indexed by ``trace_idx``)."""
         self._traces = list(traces)
         self._detail_stack.setCurrentIndex(0)
 
-    def set_summary(self, frame: pd.DataFrame) -> None:
-        """Populate the Summary landing from the full (combined) frame and land on it.
-
-        Called once per (re)load with the unfiltered view-model. The grid overlays
-        one distribution curve per ``source`` (an empty frame clears it); the stats
-        panel shows one line per bank.
-        """
-        self._feature_grid.set_groups(feature_groups_by_source(frame))
-        self._summary_panel.set_summaries(_summaries_by_source(frame))
-        self._tabs.setCurrentIndex(_TAB_SUMMARY)
-
     def set_results(
         self, frame: pd.DataFrame, *, progress: Callable[[int, int], None] | None = None
     ) -> None:
-        """Show the rows the filter kept (also called with the full frame on open).
+        """Set the current (filtered) frame everywhere — list, scatter, summary grid + stats.
 
-        ``progress`` is forwarded to the table build (the initial big-bank load).
+        The one "here is the data to show" entry point: the full frame on open, the
+        filtered frame on every Recalculate. The distribution grid + per-bank stats
+        reflect the filter just like the list and scatter, so filtering shows how the
+        distributions shift (e.g. narrowing a metadata range). No tab switch — the
+        landing is an explicit :meth:`show_summary` / :meth:`show_explore`. ``progress``
+        drives the table build on the big initial load.
         """
         self._frame = frame
         self._result_list.set_frame(frame, progress=progress)
+        self._scatter.set_series(scatter_series_by_source(frame))
+        self._feature_grid.set_groups(feature_groups_by_source(frame))
+        self._summary_panel.set_summaries(_summaries_by_source(frame))
 
     def show_summary(self) -> None:
         self._tabs.setCurrentIndex(_TAB_SUMMARY)
@@ -278,12 +298,23 @@ class SignalExplorationView(QtWidgets.QWidget):
         return self._result_list
 
     def restyle(self, palette: Any, chart_style: PgChartStyle) -> None:
-        """Re-apply the theme to the open detail + the distribution grid."""
+        """Re-apply the theme to the open detail + the distribution grid + the scatter."""
         self._palette = palette
         content = self._waveforms.content
         if isinstance(content, TraceView):
             content.restyle(palette)
         self._feature_grid.set_style(chart_style)
+        self._scatter.set_style(chart_style)
+
+    def _on_scatter_pick(self, row_id: int) -> None:
+        """A scatter point was clicked: select that trace + reveal the Explore detail.
+
+        Routes through the result list's selection (not straight to the detail) so the
+        list highlight, the detail pane, and the selection all stay in sync — the same
+        ``selectionChanged`` -> detail path as clicking the row.
+        """
+        self._result_list.select_row_ids([row_id])
+        self.show_explore()
 
     def _show_detail(self, row_ids: list[int]) -> None:
         # row_id is the global position in the combined traces list (B7.8).

@@ -58,7 +58,7 @@ class FilterSpec:
     """A flat set of conditions combined by one ``and`` / ``or``."""
 
     conditions: tuple[Condition, ...] = ()
-    combine: str = "and"  # "and" | "or"
+    combine: str = "and"  # "and" | "or" | "and_present"
 
 
 def filter_columns(df: pd.DataFrame) -> list[FilterColumn]:
@@ -85,15 +85,26 @@ def filter_columns(df: pd.DataFrame) -> list[FilterColumn]:
 def apply_filter(df: pd.DataFrame, spec: FilterSpec) -> pd.Series[bool]:
     """A boolean row mask for ``df``: every condition combined by ``spec.combine``.
 
-    An empty spec matches every row. Missing values never match (a NaN feature or
-    an unlabeled row is excluded by any condition on that column).
+    An empty spec matches every row. ``combine`` is ``"and"`` (all conditions),
+    ``"or"`` (any), or ``"and_present"`` — like ``"and"`` but a condition is *skipped*
+    (treated as satisfied) for rows whose value is missing. Under ``"and"`` / ``"or"`` a
+    missing value never matches (a NaN feature or an unlabeled row fails any condition
+    on that column); ``"and_present"`` instead keeps such rows, so filtering a field
+    that only some banks carry (e.g. a synthetic-only ``electrode_height``) narrows the
+    banks that have it while keeping every row of the banks that don't.
     """
     if not spec.conditions:
         return pd.Series(True, index=df.index)
     masks = [_condition_mask(df, condition) for condition in spec.conditions]
+    if spec.combine == "and_present":  # a missing value skips that condition, not fails it
+        masks = [
+            mask | df[condition.column].isna()
+            for mask, condition in zip(masks, spec.conditions, strict=True)
+        ]
+    use_or = spec.combine == "or"
     combined = masks[0]
     for mask in masks[1:]:
-        combined = combined | mask if spec.combine == "or" else combined & mask
+        combined = combined | mask if use_or else combined & mask
     return combined
 
 

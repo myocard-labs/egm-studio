@@ -139,6 +139,11 @@ class FeatureDistributionGrid(QtWidgets.QWidget):
         self._scale_slider.setToolTip("Panel size")
         self._scale_slider.valueChanged.connect(self._on_slider)
 
+        self._recenter_button = QtWidgets.QPushButton("Recenter")
+        self._recenter_button.setObjectName("recenterView")
+        self._recenter_button.setToolTip("Re-fit the panels to the data")
+        self._recenter_button.clicked.connect(self.recenter)
+
         header = QtWidgets.QHBoxLayout()
         header.setContentsMargins(8, 4, 8, 0)
         header.addWidget(QtWidgets.QLabel("Plot"))
@@ -146,6 +151,7 @@ class FeatureDistributionGrid(QtWidgets.QWidget):
         header.addStretch(1)
         header.addWidget(QtWidgets.QLabel("Panel size"))
         header.addWidget(self._scale_slider)
+        header.addWidget(self._recenter_button)
 
         self._legend = SourceLegend()
 
@@ -183,6 +189,11 @@ class FeatureDistributionGrid(QtWidgets.QWidget):
         """Recolour the panels for a theme change."""
         self._style = style
         self._rebuild()
+
+    def recenter(self) -> None:
+        """Re-fit every panel to its data (after a manual zoom / pan)."""
+        for panel in self._panels:
+            panel.getPlotItem().getViewBox().autoRange()
 
     def scale_factor(self) -> float:
         return self._scale

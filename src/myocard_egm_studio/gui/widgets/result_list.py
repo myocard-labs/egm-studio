@@ -15,7 +15,7 @@ the signal-exploration view wires filter -> list -> detail (B7.5).
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import numpy as np
@@ -137,6 +137,34 @@ class ResultList(QtWidgets.QWidget):
             if item is not None:
                 out.append(int(item.data(_SORT_KEY)))
         return out
+
+    def select_row_ids(self, ids: Sequence[int]) -> None:
+        """Select the rows whose ``row_id`` is in ``ids`` (sort / filter-order agnostic).
+
+        The scatter view calls this when a point is clicked, so the click drives the
+        same ``selectionChanged`` -> detail path as clicking the row (B7.9c). Rows are
+        matched by the hidden ``row_id`` column, so sorting doesn't matter; the first
+        match is scrolled into view. A no-op if no row carries a wanted id.
+        """
+        if _ROW_ID not in self._columns:
+            return
+        id_col = self._columns.index(_ROW_ID)
+        wanted = {int(i) for i in ids}
+        model = self._table.model()
+        selection = QtCore.QItemSelection()
+        first_row: int | None = None
+        for row in range(self._table.rowCount()):
+            item = self._table.item(row, id_col)
+            if item is not None and int(item.data(_SORT_KEY)) in wanted:
+                selection.select(
+                    model.index(row, 0), model.index(row, self._table.columnCount() - 1)
+                )
+                first_row = row if first_row is None else first_row
+        flag = QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect
+        self._table.selectionModel().select(selection, flag)
+        anchor = self._table.item(first_row, 0) if first_row is not None else None
+        if anchor is not None:
+            self._table.scrollToItem(anchor)
 
     def _emit_selection(self) -> None:
         self.selectionChanged.emit(self.selected_row_ids())

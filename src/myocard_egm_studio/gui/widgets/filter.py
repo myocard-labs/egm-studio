@@ -1,14 +1,16 @@
 """Composable filter panel over the per-trace view-model (Block 7, ADR-002).
 
 A flat list of condition rows (column / operator / value) combined by one
-"Match all" (AND) / "Match any" (OR); it emits a :class:`FilterSpec` whenever it
-changes. The logic is pure (:mod:`view_model.filtering`) — this widget only edits
-a spec. Each row's editor follows its column: numeric columns get a validated
-value field + threshold operators; categorical ones get a value dropdown of the
-column's known values + equality operators, so an invalid spec can't be built.
+"Match all" (AND) / "Match any" (OR). Editing the conditions does **not** recompute
+live — a big bank's result rebuild is slow — so the user composes several conditions
+and then presses **Recalculate** to apply them at once (:attr:`recalculateRequested`).
+The logic is pure (:mod:`view_model.filtering`) — this widget only edits a spec. Each
+row's editor follows its column: numeric columns get a validated value field +
+threshold operators; categorical ones get a value dropdown of the column's known
+values + equality operators, so an invalid spec can't be built.
 
 Feeds the result list (B7.4); the signal-exploration view (B7.5) hands in
-``filter_columns(df)`` and applies the emitted spec.
+``filter_columns(df)`` and applies the spec on Recalculate.
 """
 
 from __future__ import annotations
@@ -19,7 +21,11 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from myocard_egm_studio.view_model.filtering import Condition, FilterColumn, FilterSpec
 
-_COMBINE_LABELS = ("Match all", "Match any")  # index 0 -> "and", index 1 -> "or"
+#: Combine dropdown entries; the parallel ``_COMBINE_VALUES`` are the FilterSpec codes.
+#: "Match all that exist" (and_present) skips a condition for rows whose bank lacks that
+#: field, so filtering a single-bank field keeps the other banks' rows (cross-bank compare).
+_COMBINE_LABELS = ("Match all", "Match any", "Match all that exist")
+_COMBINE_VALUES = ("and", "or", "and_present")
 
 
 def _is_number(text: str) -> bool:
@@ -108,20 +114,28 @@ class _ConditionRow(QtWidgets.QWidget):
 
 
 class FilterPanel(QtWidgets.QWidget):
-    """Edits a FilterSpec over the view-model and emits it on every change."""
+    """Edits a FilterSpec over the view-model; applies it on an explicit Recalculate.
 
-    filterChanged = QtCore.Signal(object)  # a view_model.FilterSpec
+    Editing conditions only updates the spec; :attr:`recalculateRequested` fires when
+    the user presses **Recalculate**, so several conditions apply in one (potentially
+    slow) rebuild rather than one per keystroke. The button enables only while the
+    edited spec differs from the last applied one, so an unchanged filter can't
+    trigger a needless recompute.
+    """
+
+    recalculateRequested = QtCore.Signal(object)  # a view_model.FilterSpec, on apply
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("filterPanel")
         self._columns: list[FilterColumn] = []
         self._rows: list[_ConditionRow] = []
+        self._applied = FilterSpec()  # the spec the shown result currently reflects
 
         self._combine = QtWidgets.QComboBox()
         self._combine.setObjectName("filterCombine")
         self._combine.addItems(_COMBINE_LABELS)
-        self._combine.currentIndexChanged.connect(self._emit)
+        self._combine.currentIndexChanged.connect(self._sync_recalc)
 
         self._rows_box = QtWidgets.QVBoxLayout()
         self._rows_box.setContentsMargins(0, 0, 0, 0)
@@ -132,6 +146,11 @@ class FilterPanel(QtWidgets.QWidget):
         self._add_button.setObjectName("addCondition")
         self._add_button.clicked.connect(self._add_row)
 
+        self._recalc_button = QtWidgets.QPushButton("Recalculate")
+        self._recalc_button.setObjectName("recalculate")
+        self._recalc_button.setToolTip("Apply the filter conditions to the result list")
+        self._recalc_button.clicked.connect(self._apply)
+
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         top = QtWidgets.QHBoxLayout()
@@ -140,37 +159,45 @@ class FilterPanel(QtWidgets.QWidget):
         layout.addLayout(top)
         layout.addWidget(rows_host)
         layout.addWidget(self._add_button)
+        layout.addWidget(self._recalc_button)
         layout.addStretch(1)
+        self._sync_recalc()
 
     def set_columns(self, columns: Sequence[FilterColumn]) -> None:
-        """Set the offered columns (from ``filter_columns(df)``) and reset the rows."""
+        """Set the offered columns (from ``filter_columns(df)``) and reset the rows.
+
+        A fresh load shows the full frame, i.e. the empty filter — so the applied spec
+        resets to empty and Recalculate starts disabled until a condition is added.
+        """
         self._columns = list(columns)
         self._clear_rows()
         self._add_button.setEnabled(bool(self._columns))
-        self._emit()
+        self._applied = FilterSpec()
+        self._sync_recalc()
 
     def spec(self) -> FilterSpec:
-        """The current FilterSpec (incomplete rows are dropped)."""
+        """The current (edited) FilterSpec (incomplete rows are dropped)."""
         conditions = tuple(c for c in (row.condition() for row in self._rows) if c is not None)
-        combine = "or" if self._combine.currentIndex() == 1 else "and"
-        return FilterSpec(conditions=conditions, combine=combine)
+        return FilterSpec(
+            conditions=conditions, combine=_COMBINE_VALUES[self._combine.currentIndex()]
+        )
 
     def _add_row(self) -> None:
         if not self._columns:
             return
         row = _ConditionRow(self._columns)
-        row.changed.connect(self._emit)
+        row.changed.connect(self._sync_recalc)
         row.removed.connect(lambda: self._remove_row(row))
         self._rows.append(row)
         self._rows_box.addWidget(row)
-        self._emit()
+        self._sync_recalc()
 
     def _remove_row(self, row: _ConditionRow) -> None:
         if row in self._rows:
             self._rows.remove(row)
             self._rows_box.removeWidget(row)
             row.deleteLater()
-            self._emit()
+            self._sync_recalc()
 
     def _clear_rows(self) -> None:
         for row in self._rows:
@@ -178,5 +205,12 @@ class FilterPanel(QtWidgets.QWidget):
             row.deleteLater()
         self._rows = []
 
-    def _emit(self) -> None:
-        self.filterChanged.emit(self.spec())
+    def _apply(self) -> None:
+        """Apply the edited spec (the Recalculate button) and mark it as the shown one."""
+        self._applied = self.spec()
+        self._sync_recalc()
+        self.recalculateRequested.emit(self._applied)
+
+    def _sync_recalc(self) -> None:
+        """Enable Recalculate only when the edited spec differs from the applied one."""
+        self._recalc_button.setEnabled(bool(self._columns) and self.spec() != self._applied)

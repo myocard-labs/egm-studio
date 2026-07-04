@@ -64,6 +64,11 @@ class FeatureScatterView(QtWidgets.QWidget):
         for combo in (self._x_combo, self._y_combo):
             combo.currentIndexChanged.connect(self._on_axis)
 
+        self._recenter_button = QtWidgets.QPushButton("Recenter")
+        self._recenter_button.setObjectName("recenterView")
+        self._recenter_button.setToolTip("Fit the view to the points")
+        self._recenter_button.clicked.connect(self.recenter)
+
         header = QtWidgets.QHBoxLayout()
         header.setContentsMargins(8, 4, 8, 0)
         header.addWidget(QtWidgets.QLabel("X"))
@@ -72,6 +77,7 @@ class FeatureScatterView(QtWidgets.QWidget):
         header.addWidget(QtWidgets.QLabel("Y"))
         header.addWidget(self._y_combo)
         header.addStretch(1)
+        header.addWidget(self._recenter_button)
 
         self._legend = SourceLegend()
 
@@ -102,6 +108,10 @@ class FeatureScatterView(QtWidgets.QWidget):
         self._style = style
         self._plot.setBackground(style.background)
         self._redraw()
+
+    def recenter(self) -> None:
+        """Fit the view back to the current points (after a manual pan / zoom)."""
+        self._plot.getPlotItem().getViewBox().autoRange()
 
     def x_feature(self) -> str:
         return self._x
@@ -164,6 +174,7 @@ class FeatureScatterView(QtWidgets.QWidget):
         for item in self._items:
             item.sigClicked.connect(self._on_points_clicked)
         self._legend.set_entries([(s.name, color_for(i)) for i, s in enumerate(self._series)])
+        plot.getViewBox().autoRange()  # recenter to the new data (filter / axis change)
 
     def _on_axis(self, _index: int) -> None:
         self._x = self._x_combo.currentText()

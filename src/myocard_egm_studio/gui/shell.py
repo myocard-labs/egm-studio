@@ -58,6 +58,10 @@ _COL_LEFT, _COL_MAIN, _COL_RIGHT = 0, 1, 2
 
 _MODES = ("Signal exploration", "ML diagnostics", "Paper figures")
 
+#: A filter rebuild only shows its progress dialog if it runs longer than this, so a
+#: quick filter applies without flashing a dialog while a slow one still gets a bar.
+_RECALC_DIALOG_DELAY_MS = 300
+
 _Side = Literal["left", "right"]
 # Chevrons: the panel's collapse button points at the edge it hides toward; the
 # strip's expand button points back toward the centre.
@@ -340,7 +344,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._bank_list = LoadedBanksList()
         self._bank_list.removeRequested.connect(self._remove_bank)
         self._filter_panel = FilterPanel()
-        self._filter_panel.filterChanged.connect(self._on_filter_changed)
+        self._filter_panel.recalculateRequested.connect(self._on_recalculate)
         left_body = QtWidgets.QWidget()
         left_layout = QtWidgets.QVBoxLayout(left_body)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -479,18 +483,41 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog.setLabelText("Building views…")
         dialog.setCancelButton(None)  # past the point of a clean abort
 
-        def on_build(done: int, total: int) -> None:
-            if dialog.maximum() != total:
-                dialog.setMaximum(total)
-            dialog.setValue(done)
-            QtWidgets.QApplication.processEvents()
-
         try:
             self._add_loaded_bank(
-                path, frame, traces, replace=replace, focus=focus, progress=on_build
+                path, frame, traces, replace=replace, focus=focus, progress=self._pump(dialog)
             )
         finally:
             dialog.close()
+
+    def _recalc_dialog(self) -> QtWidgets.QProgressDialog:
+        """A modal, cancel-less progress dialog for a filter-apply rebuild.
+
+        Unlike the load dialog it isn't force-painted: ``_RECALC_DIALOG_DELAY_MS`` gates
+        the show, so a quick filter finishes without flashing a dialog while a slow
+        rebuild still surfaces one. ``setValue(0)`` starts that min-duration timer.
+        """
+        dialog = QtWidgets.QProgressDialog("Applying filter…", "", 0, 0, self)
+        dialog.setCancelButton(None)
+        dialog.setWindowTitle(_WINDOW_TITLE)
+        dialog.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+        dialog.setMinimumDuration(_RECALC_DIALOG_DELAY_MS)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.setValue(0)
+        return dialog
+
+    def _pump(self, dialog: QtWidgets.QProgressDialog) -> Callable[[int, int], None]:
+        """A progress callback that advances ``dialog`` and keeps the UI painting."""
+
+        def on_progress(done: int, total: int) -> None:
+            if dialog.maximum() != total:
+                dialog.setMaximum(total)  # 0 -> total: the busy spinner becomes a real bar
+            dialog.setValue(done)
+            QtWidgets.QApplication.processEvents()
+
+        return on_progress
 
     def _add_loaded_bank(
         self,
@@ -543,16 +570,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._open_action.setText("&Add bank…" if loaded else "&Open bank…")
         self._phase_tree.set_add_mode(loaded)
         self._explore_view.set_traces(traces)
-        self._explore_view.set_summary(combined)  # stats + grid; lands on Summary
-        # Set the filter columns without re-triggering a build (blockSignals), then
-        # build the result table exactly once — progress-reported for the big load.
-        self._filter_panel.blockSignals(True)
+        # A fresh load shows the full frame; set_columns resets the filter to empty
+        # (Recalculate re-enables once a condition is added, and never fires live).
+        # set_results feeds list + scatter + summary grid/stats exactly once here —
+        # progress-reported for the big load — then we land on the requested tab.
         self._filter_panel.set_columns(filter_columns(combined))
-        self._filter_panel.blockSignals(False)
         self._explore_view.set_results(combined, progress=progress)
         self._show_mode(0)
         if focus == "explore":
             self._explore_view.show_explore()
+        else:  # "summary" or None (Add / Remove bank) land on the summary overview
+            self._explore_view.show_summary()
         self.statusBar().showMessage(self._loaded_status(combined))
 
     def _loaded_status(self, combined: pd.DataFrame) -> str:
@@ -562,12 +590,22 @@ class MainWindow(QtWidgets.QMainWindow):
         banks = "1 bank" if count == 1 else f"{count} banks"
         return f"Loaded {banks} — {len(combined.index)} trace(s); filter or sort, then select"
 
-    def _on_filter_changed(self, spec: FilterSpec) -> None:
-        """Re-apply the filter to the loaded frame and refresh the result list."""
+    def _on_recalculate(self, spec: FilterSpec) -> None:
+        """Apply the filter to the loaded frame + rebuild the result views (with progress).
+
+        Fired by the FilterPanel's Recalculate button (not live), so several conditions
+        apply in one pass. The rebuild (result table + scatter) can be slow on a big
+        bank, so it runs under a progress dialog like the initial load rather than
+        freezing the window.
+        """
         if self._explore_df is None:
             return
         filtered = self._explore_df[apply_filter(self._explore_df, spec)]
-        self._explore_view.set_results(filtered)
+        dialog = self._recalc_dialog()
+        try:
+            self._explore_view.set_results(filtered, progress=self._pump(dialog))
+        finally:
+            dialog.close()
         total, kept = len(self._explore_df.index), len(filtered.index)
         if kept == total:
             self.statusBar().showMessage(f"{total} trace(s)")
