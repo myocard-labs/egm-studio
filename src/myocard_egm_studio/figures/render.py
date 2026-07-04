@@ -27,11 +27,15 @@ from myocard_egm_studio.charts.matplotlib import RECIPES
 from myocard_egm_studio.charts.matplotlib.style import paper_style
 
 if TYPE_CHECKING:
+    from matplotlib.figure import Figure
     from myocard_egm_contracts._generated.python.figure_spec import FigureSpec
+
+    from myocard_egm_studio.charts.matplotlib.registry import RecipeFn
 
 __all__ = [
     "FigureDataNotLoadedError",
     "UnknownRecipeError",
+    "draw_figure",
     "render",
 ]
 
@@ -69,6 +73,39 @@ class FigureDataNotLoadedError(NotImplementedError):
         )
 
 
+def _recipe_for(spec: FigureSpec, data: Any) -> RecipeFn:
+    """Validate + return the registered recipe for ``spec`` (shared lookup).
+
+    Raises :class:`UnknownRecipeError` if the recipe isn't registered, or
+    :class:`FigureDataNotLoadedError` if ``data`` is ``None`` — in that order, so a
+    caller learns about a bad recipe before an unresolved data reference regardless
+    of any later output guard.
+    """
+    recipe = RECIPES.get(spec.recipe)
+    if recipe is None:
+        raise UnknownRecipeError(spec.recipe, sorted(RECIPES))
+    if data is None:
+        raise FigureDataNotLoadedError(spec.recipe)
+    return recipe
+
+
+def draw_figure(spec: FigureSpec, data: Any) -> Figure:
+    """Look up ``spec.recipe`` and draw the (styled) :class:`~matplotlib.figure.Figure`.
+
+    The single recipe invocation both output paths share: :func:`render` (disk) and
+    the GUI preview (:func:`figures.preview.preview_png`, Block 9). A recipe wraps its
+    own drawing in ``paper_style()``, so the returned figure is already journal-styled;
+    the caller decides how to serialize it (``savefig`` to a file, or to an in-memory
+    PNG for the preview). Routing both through here guarantees the preview draws the
+    *exact* figure the export writes.
+
+    Raises :class:`UnknownRecipeError` / :class:`FigureDataNotLoadedError` (see
+    :func:`_recipe_for`).
+    """
+    figure: Figure = _recipe_for(spec, data)(data, spec)
+    return figure
+
+
 def render(
     spec: FigureSpec,
     *,
@@ -104,11 +141,10 @@ def render(
     FileExistsError
         If the resolved output path exists and ``overwrite`` is False.
     """
-    recipe = RECIPES.get(spec.recipe)
-    if recipe is None:
-        raise UnknownRecipeError(spec.recipe, sorted(RECIPES))
-    if data is None:
-        raise FigureDataNotLoadedError(spec.recipe)
+    # Validate the recipe + data first (Unknown/DataNotLoaded), then guard the output
+    # *before* drawing so an existing file isn't silently clobbered and no work is
+    # wasted, then draw + write.
+    recipe = _recipe_for(spec, data)
 
     path = Path(output_path) if output_path is not None else Path(spec.output.path)
     if path.exists() and not overwrite:

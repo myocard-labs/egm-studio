@@ -15,14 +15,19 @@ pure rendering.
 
 from __future__ import annotations
 
+from myocard_egm_studio.figures.preview import PREVIEW_DPI, preview_png
 from myocard_egm_studio.figures.render import (
     FigureDataNotLoadedError,
     UnknownRecipeError,
+    draw_figure,
     render,
 )
 
 __all__ = [
+    "PREVIEW_DPI",
     "FigureDataNotLoadedError",
     "UnknownRecipeError",
+    "draw_figure",
+    "preview_png",
     "render",
 ]
