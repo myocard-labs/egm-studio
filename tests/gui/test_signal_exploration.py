@@ -25,7 +25,7 @@ def _view(qtbot: QtBot, bank: ClassifierBank) -> SignalExplorationView:
 
 
 def _top(view: SignalExplorationView, index: int) -> QtWidgets.QTreeWidgetItem:
-    item = view._detail_table.topLevelItem(index)
+    item = view._detail._detail_table.topLevelItem(index)
     assert item is not None
     return item
 
@@ -40,8 +40,8 @@ def test_selecting_rows_shows_waveforms_and_detail(
 ) -> None:
     view = _view(qtbot, tiny_classifier_bank)
     view.result_list._table.selectRow(0)
-    assert view._detail_stack.currentIndex() == 1  # the waveform + detail page
-    assert isinstance(view._waveforms.content, TraceView)
+    assert view._detail._stack.currentIndex() == 1  # the waveform + detail page
+    assert isinstance(view._detail._waveforms.content, TraceView)
     assert [_top(view, 0).text(0), _top(view, 1).text(0)] == ["Features", "Metadata"]
     assert _top(view, 0).childCount() == len(FEATURE_COLUMNS)  # the 11 egm-features
     assert _top(view, 1).childCount() > 0  # metadata rows
@@ -52,16 +52,16 @@ def test_clearing_selection_returns_to_placeholder(
 ) -> None:
     view = _view(qtbot, tiny_classifier_bank)
     view.result_list._table.selectRow(0)
-    assert view._detail_stack.currentIndex() == 1
+    assert view._detail._stack.currentIndex() == 1
     view.result_list._table.clearSelection()
-    assert view._detail_stack.currentIndex() == 0  # back to the prompt
+    assert view._detail._stack.currentIndex() == 0  # back to the prompt
 
 
 def test_detail_caps_at_three_traces(qtbot: QtBot, tiny_classifier_bank: ClassifierBank) -> None:
     view = _view(qtbot, tiny_classifier_bank)
-    view._show_detail(list(range(len(tiny_classifier_bank.traces))))  # "select all 12"
-    assert isinstance(view._waveforms.content, TraceView)  # capped to 3 internally
-    assert view._detail_table.columnCount() == 1 + 3  # attribute column + 3 trace columns
+    view._detail.show_rows(list(range(len(tiny_classifier_bank.traces))))  # "select all 12"
+    assert isinstance(view._detail._waveforms.content, TraceView)  # capped to 3 internally
+    assert view._detail._detail_table.columnCount() == 1 + 3  # attribute column + 3 trace columns
 
 
 def test_results_populate_the_grid_and_stats(
@@ -138,7 +138,7 @@ def test_scatter_click_selects_row_and_shows_explore_detail(
     view = _view(qtbot, tiny_classifier_bank)
     view._scatter.pointClicked.emit(0)  # click the trace at row_id 0
     assert view.result_list.selected_row_ids() == [0]  # list selection synced
-    assert view._detail_stack.currentIndex() == 1  # detail populated
+    assert view._detail._stack.currentIndex() == 1  # detail populated
     assert view._tabs.currentIndex() == 1  # revealed the Explore tab
 
 
@@ -157,9 +157,9 @@ def test_find_similar_enabled_only_on_single_selection_with_another_bank(
     qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tiny_unlabeled_bank: ClassifierBank
 ) -> None:
     view = _two_bank_view(qtbot, tiny_classifier_bank, tiny_unlabeled_bank)
-    assert not view._find_button.isEnabled()  # nothing selected
+    assert not view._detail._buttons[0].isEnabled()  # nothing selected
     view.result_list._table.selectRow(0)
-    assert view._find_button.isEnabled()  # one source trace + another bank to search
+    assert view._detail._buttons[0].isEnabled()  # one source trace + another bank to search
 
 
 def test_find_similar_disabled_for_a_single_bank(
@@ -167,7 +167,7 @@ def test_find_similar_disabled_for_a_single_bank(
 ) -> None:
     view = _view(qtbot, tiny_classifier_bank)  # one bank
     view.result_list._table.selectRow(0)
-    assert not view._find_button.isEnabled()  # no other bank to search
+    assert not view._detail._buttons[0].isEnabled()  # no other bank to search
 
 
 def test_find_similar_button_shows_source_plus_match(
@@ -175,9 +175,11 @@ def test_find_similar_button_shows_source_plus_match(
 ) -> None:
     view = _two_bank_view(qtbot, tiny_classifier_bank, tiny_unlabeled_bank)
     view.result_list._table.selectRow(0)  # a source trace in bank A
-    view._find_button.click()
-    assert view._detail_stack.currentIndex() == 1
-    assert view._detail_table.columnCount() == 1 + 2  # attribute + source + its nearest in B
+    view._detail._buttons[0].click()
+    assert view._detail._stack.currentIndex() == 1
+    assert (
+        view._detail._detail_table.columnCount() == 1 + 2
+    )  # attribute + source + its nearest in B
 
 
 def test_right_click_find_similar_shows_compare(
@@ -185,15 +187,15 @@ def test_right_click_find_similar_shows_compare(
 ) -> None:
     view = _two_bank_view(qtbot, tiny_classifier_bank, tiny_unlabeled_bank)
     view.result_list.findSimilarRequested.emit(0)  # right-click row_id 0
-    assert view._detail_table.columnCount() == 1 + 2  # source + match
+    assert view._detail._detail_table.columnCount() == 1 + 2  # source + match
 
 
 def test_compare_table_annotates_feature_deltas(
     qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tiny_unlabeled_bank: ClassifierBank
 ) -> None:
     view = _two_bank_view(qtbot, tiny_classifier_bank, tiny_unlabeled_bank)
-    view._show_detail([0, 1])  # two traces -> the second column carries deltas
-    features = view._detail_table.topLevelItem(0)  # the "Features" section
+    view._detail.show_rows([0, 1])  # two traces -> the second column carries deltas
+    features = view._detail._detail_table.topLevelItem(0)  # the "Features" section
     assert features is not None
     first_feature = features.child(0)
     assert "(" in first_feature.text(2)  # the match column shows a "(Δ)" annotation

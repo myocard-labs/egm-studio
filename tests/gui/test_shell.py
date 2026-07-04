@@ -221,6 +221,16 @@ def test_opening_a_raw_bank_leaves_flow_b_in_the_landing_state(
     assert "Open a bank with model predictions" in diagnostics._header.text()
 
 
+def test_recalculate_drives_flow_b_explore_from_the_shared_filter(
+    qtbot: QtBot, tiny_predictions_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    """The one Banks-&-filter panel narrows the Flow B Explore list too (B8g-r1)."""
+    window = _open(qtbot, tiny_predictions_bank, tmp_path)
+    total = window._diagnostics_view.result_list._table.rowCount()
+    window._on_recalculate(FilterSpec((Condition("correctness_bucket", "==", "TP"),)))
+    assert window._diagnostics_view.result_list._table.rowCount() < total  # Flow B list narrowed
+
+
 def _training_record() -> TrainingRunRecord:
     """A 3-epoch training run record (falling loss, rising AUROC)."""
     return TrainingRunRecord.model_validate(
@@ -331,6 +341,6 @@ def test_theme_change_restyles_the_detail(
     light = window.findChild(QtGui.QAction, "themeAction_light")
     assert light is not None
     light.trigger()
-    content = window._explore_view._waveforms.content
+    content = window._explore_view._detail._waveforms.content
     assert isinstance(content, TraceView)
     assert content.container.palette == plot_palette("light")

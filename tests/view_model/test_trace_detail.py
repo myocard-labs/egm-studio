@@ -73,3 +73,37 @@ def test_single_trace_metadata_values() -> None:
     by_label = {row.label: row for row in trace_detail(_df(), [11]).metadata}
     assert by_label["label_name"].values == ("healthy",)
     assert by_label["patient_id"].values == ("P01",)
+
+
+def _evaluated_df() -> pd.DataFrame:
+    df = _df()
+    df["predicted_prob"] = [0.9, 0.2]
+    df["predicted_class"] = [1, 0]
+    df["correctness_bucket"] = ["TP", "TN"]
+    df["per_trace_loss"] = [0.1, 0.3]
+    df["calibration_residual"] = [-0.1, 0.2]
+    return df
+
+
+def test_ml_section_present_and_excluded_from_metadata() -> None:
+    detail = trace_detail(_evaluated_df(), [10, 11])
+    assert [row.label for row in detail.ml] == [
+        "predicted_prob",
+        "predicted_class",
+        "correctness_bucket",
+        "per_trace_loss",
+        "calibration_residual",
+    ]
+    # the ML columns live in the Model section, not folded into Metadata
+    assert not {"predicted_prob", "correctness_bucket"} & {r.label for r in detail.metadata}
+
+
+def test_ml_numeric_rows_carry_deltas_categorical_do_not() -> None:
+    by_label = {row.label: row for row in trace_detail(_evaluated_df(), [10, 11]).ml}
+    assert by_label["predicted_prob"].deltas == ("", "-0.7")  # 0.2 - 0.9
+    assert by_label["correctness_bucket"].deltas == ()  # a bucket has no delta
+    assert by_label["predicted_class"].deltas == ()  # a discrete class has no delta
+
+
+def test_ml_section_empty_without_prediction_columns() -> None:
+    assert trace_detail(_df(), [10]).ml == ()
