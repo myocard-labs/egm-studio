@@ -196,29 +196,34 @@ most — looking for a *why*.
    epoch, train + val on shared axes. Sanity check: did training
    complete cleanly?
 
-   *(Sidebar — "Load Evaluated Bank" entry point.* The
-   training-run entry point above is one way in. The other is
-   **"Load Evaluated Bank"** — a single-button action that takes
-   any ClassifierBank with predictions attached and figures out
-   what analysis to run. Three branches:
-   - *Bank has no predictions at all* → pop a warning ("this bank
-     has not been evaluated; load it from the bank-loader if you
-     want to inspect raw traces") and refuse to open the diagnostic
-     view.
-   - *Bank has predictions but no truth labels* (the IAFDB shape) →
-     load it; show the qualitative-only analysis (output histogram,
-     per-trace inspection, attention overlay). No metrics.
-   - *Bank has both predictions AND truth labels* (synthetic eval
-     bank, or anything with ground truth) → load it; show the full
-     metric suite (ROC + confusion + calibration + per-class
-     histograms + drill-down on misclassifications).
+   *(No separate "Load Evaluated Bank" entry — **amended 2026-07-04**.*
+   The training-run entry point above is one way in. The bank way in
+   is just the ordinary **Open bank** action — the same one Flow A
+   uses; there is no second "load evaluated bank" button. Studio
+   builds one view-model per loaded bank, and when the traces carry
+   predictions `build_view_model` joins the ML-outcome columns (B8a);
+   the shell reads the result with `frame_eval_mode` and populates
+   Flow B automatically. Three cases:
+   - *No predictions at all* → Flow B stays in its landing state
+     (nothing to diagnose). No warning, no refusal — the bank still
+     opens normally in Flow A for raw-trace inspection.
+   - *Predictions but no truth labels* (the IAFDB shape) → Flow B
+     shows the qualitative-only analysis (output histogram, per-trace
+     inspection, attention overlay). No metrics.
+   - *Predictions AND truth labels* (synthetic eval bank, or anything
+     with ground truth) → Flow B shows the full metric suite (ROC +
+     confusion + calibration + per-class histograms + drill-down on
+     misclassifications).
 
    This means a Phase 1.5 evaluation can target either real IAFDB
    data OR a held-out synthetic eval bank built with deliberately
    different sim parameters than train/val — the GUI's analysis
-   surface adjusts automatically based on what the bank contains.
-   The branching logic is part of the bank-load handler, not
-   something the user has to pick from a mode menu.)*
+   surface adjusts automatically based on what the loaded set
+   contains. The branching lives in the bank-load handler, not in a
+   mode menu the user picks from. **Why the change:** a bank either
+   has predictions or it doesn't; a separate "evaluated" entry that
+   refuses raw banks just duplicates Open-bank with a worse error
+   path.)*
 3. **Add v1 baseline as a second run.** Load button picks the v1
    `run.json`. Now two runs loaded; the training-curves view
    becomes a multi-line overlay (one color per run). At a glance:
@@ -559,6 +564,8 @@ incorporated same day. Major changes from pass-1 review:
 - **"Load Evaluated Bank"** unified entry point in Flow B with
   conditional branching (no predictions → warning; predictions
   only → qualitative; predictions + labels → full metrics).
+  *(Superseded 2026-07-04 — folded into the single Open-bank path;
+  no separate entry, no warning branch. See Flow B step 2.)*
 - **Per-feature similarity** in v0.1; joint metric deferred
   (ADR-020 reframed).
 - **Observations save to meta repo, not egm-studio** (Flow A step
