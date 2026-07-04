@@ -173,3 +173,35 @@ def test_calibration_single_class_raises(fn: Callable[..., object]) -> None:
     """Calibration reuses the both-classes guard."""
     with pytest.raises(ValueError, match="both"):
         fn(np.array([0, 0, 0]), np.array([0.2, 0.5, 0.9]))
+
+
+# --------------------------------------------------------------------------- #
+# Confusion matrix + positive_prob
+# --------------------------------------------------------------------------- #
+
+
+def test_confusion_matrix_counts() -> None:
+    """M[i, j] = # true labels[i] predicted labels[j] (rows=true, cols=pred)."""
+    matrix = metrics.confusion_matrix([1, 1, 0, 0, 1], [1, 0, 0, 1, 1], labels=[0, 1])
+    assert matrix.tolist() == [[1, 1], [1, 2]]  # true0: TN,FP=1,1 ; true1: FN,TP=1,2
+
+
+def test_confusion_matrix_default_labels_are_the_sorted_union() -> None:
+    matrix = metrics.confusion_matrix([2, 0], [0, 2])
+    assert matrix.shape == (2, 2)  # classes {0, 2}
+    assert matrix.tolist() == [[0, 1], [1, 0]]  # each misclassified as the other
+
+
+def test_confusion_matrix_shape_mismatch_raises() -> None:
+    with pytest.raises(ValueError, match="same shape"):
+        metrics.confusion_matrix([1, 0], [1])
+
+
+def test_positive_prob_softmax() -> None:
+    assert metrics.positive_prob({0: 0.0, 1: 0.0}, 1) == pytest.approx(0.5)  # equal logits
+    assert metrics.positive_prob({0: 0.0, 1: 100.0}, 1) == pytest.approx(1.0)  # class 1 dominates
+
+
+def test_positive_prob_missing_class_raises() -> None:
+    with pytest.raises(ValueError, match="not among"):
+        metrics.positive_prob({0: 1.0}, 1)
