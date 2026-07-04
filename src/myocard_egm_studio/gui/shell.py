@@ -31,9 +31,13 @@ from myocard_egm_studio.gui.theme import (
     chart_style,
     plot_palette,
 )
-from myocard_egm_studio.gui.views import MlDiagnosticsView, SignalExplorationView
+from myocard_egm_studio.gui.views import (
+    MlDiagnosticsView,
+    PaperFigurePrepView,
+    SignalExplorationView,
+)
 from myocard_egm_studio.gui.widgets import FilterPanel, LoadedBanksList, PhaseTree, TraceData
-from myocard_egm_studio.loaders import training_curve_from_run
+from myocard_egm_studio.loaders import bank_paths_from_phase, training_curve_from_run
 from myocard_egm_studio.view_model import (
     apply_filter,
     combine_view_models,
@@ -83,29 +87,6 @@ class _LoadedBank:
     path: str
     frame: pd.DataFrame
     traces: list[TraceData]
-
-
-class _Placeholder(QtWidgets.QFrame):
-    """A labelled stand-in panel for the main work area until Blocks 5+ fill it."""
-
-    def __init__(self, title: str, subtitle: str = "") -> None:
-        super().__init__()
-        self.setObjectName("regionPanel")
-        self.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-
-        heading = QtWidgets.QLabel(title)
-        heading.setObjectName("placeholderTitle")
-        heading.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(heading)
-
-        if subtitle:
-            caption = QtWidgets.QLabel(subtitle)
-            caption.setObjectName("placeholderSubtitle")
-            caption.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            caption.setWordWrap(True)
-            layout.addWidget(caption)
 
 
 class CollapsibleSidebar(QtWidgets.QWidget):
@@ -374,11 +355,13 @@ class MainWindow(QtWidgets.QMainWindow):
             plot_palette(self._current_theme), chart_style(self._current_theme)
         )
         self._diagnostics_view.runRemoveRequested.connect(self._remove_training_run)
+        self._figure_view = PaperFigurePrepView()
+        self._figure_view.statusMessage.connect(self.statusBar().showMessage)
         self._modes_stack = QtWidgets.QStackedWidget()
         self._modes_stack.setMinimumWidth(_MAIN_MIN_W)
         self._modes_stack.addWidget(self._explore_view)  # 0 — signal exploration
         self._modes_stack.addWidget(self._diagnostics_view)  # 1 — ML diagnostics (Flow B)
-        self._modes_stack.addWidget(_Placeholder("Paper figures", "Flow C — lands in Block 9"))
+        self._modes_stack.addWidget(self._figure_view)  # 2 — paper figure prep (Flow C)
 
         self._right_sidebar = CollapsibleSidebar(
             title="Phase tree",
@@ -720,6 +703,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._phase_tree.set_groups(groups)
         self._phase_manifest = manifest
         self._phase_dir = Path(folder)
+        # Flow C resolves a figure spec's bank ids against this phase's manifest.
+        self._figure_view.set_bank_paths(bank_paths_from_phase(self._phase_dir))
         statuses = phase_statuses(manifest, self._phase_dir)
         self._phase_tree.set_statuses(statuses)
         total = len(statuses)
