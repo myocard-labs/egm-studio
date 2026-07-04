@@ -588,3 +588,14 @@ def load_training_curve(spec: FigureSpec, bank_paths: BankPaths) -> TrainingCurv
         raise UnmappedBankIdError([run_id], sorted(bank_paths))
     metric_key = str((spec.styling or {}).get("metric", "auroc"))
     return _training_curve(load_training_run_record(path), metric_key)
+
+
+def training_curve_from_run(path: str | Path, *, metric_key: str = "auroc") -> TrainingCurve:
+    """Direct adapter: a training-run ``run.json`` path -> :class:`TrainingCurve`.
+
+    The Flow B / GUI path — reads the run-record sidecar via egm-data and pulls the
+    per-epoch loss + ``metric_key`` validation metric, bypassing a FigureSpec (as
+    :func:`prediction_group_from_bank` does for a predictions bank). Reused by the
+    training-curves view; ``metric_key`` defaults to ``"auroc"``.
+    """
+    return _training_curve(load_training_run_record(str(path)), metric_key)
