@@ -221,6 +221,16 @@ def test_opening_a_raw_bank_leaves_flow_b_in_the_landing_state(
     assert "Open a bank with model predictions" in diagnostics._header.text()
 
 
+def test_flow_c_view_is_mounted_at_mode_two(qtbot: QtBot) -> None:
+    """The paper-figure-prep view occupies mode-stack index 2 (Flow C, B9c)."""
+    from myocard_egm_studio.gui.views import PaperFigurePrepView
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    assert window._modes_stack.widget(2) is window._figure_view
+    assert isinstance(window._figure_view, PaperFigurePrepView)
+
+
 def test_recalculate_drives_flow_b_explore_from_the_shared_filter(
     qtbot: QtBot, tiny_predictions_bank: ClassifierBank, tmp_path: Path
 ) -> None:
