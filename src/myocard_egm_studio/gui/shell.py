@@ -286,6 +286,7 @@ class MainWindow(QtWidgets.QMainWindow):
         save_theme(name)
         self._current_theme = name
         self._explore_view.restyle(plot_palette(name), chart_style(name))
+        self._diagnostics_view.restyle(chart_style(name))
 
     # -- body -----------------------------------------------------------------
 

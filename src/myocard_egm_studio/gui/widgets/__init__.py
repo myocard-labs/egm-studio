@@ -9,6 +9,7 @@ from myocard_egm_studio.gui.widgets.bank_list import LoadedBanksList
 from myocard_egm_studio.gui.widgets.feature_grid import FeatureDistributionGrid
 from myocard_egm_studio.gui.widgets.feature_scatter import FeatureScatterView
 from myocard_egm_studio.gui.widgets.filter import FilterPanel
+from myocard_egm_studio.gui.widgets.output_distribution import OutputDistributionView
 from myocard_egm_studio.gui.widgets.phase_tree import PhaseTree
 from myocard_egm_studio.gui.widgets.result_list import ResultList
 from myocard_egm_studio.gui.widgets.time_scale import TimeScaleWidget
@@ -20,6 +21,7 @@ __all__ = [
     "FeatureScatterView",
     "FilterPanel",
     "LoadedBanksList",
+    "OutputDistributionView",
     "PhaseTree",
     "ResultList",
     "TimeScaleWidget",

@@ -11,6 +11,10 @@ from myocard_egm_studio.charts.pyqtgraph.feature_distribution import (
     feature_distribution_overlay,
 )
 from myocard_egm_studio.charts.pyqtgraph.feature_scatter import draw_feature_scatter
+from myocard_egm_studio.charts.pyqtgraph.output_distribution import (
+    draw_output_distribution,
+    output_distribution_overlay,
+)
 from myocard_egm_studio.charts.pyqtgraph.style import DEFAULT_STYLE, PgChartStyle
 
 __all__ = [
@@ -18,5 +22,7 @@ __all__ = [
     "PgChartStyle",
     "draw_feature_panel",
     "draw_feature_scatter",
+    "draw_output_distribution",
     "feature_distribution_overlay",
+    "output_distribution_overlay",
 ]

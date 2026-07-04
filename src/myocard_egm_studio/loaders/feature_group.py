@@ -16,12 +16,14 @@ from collections.abc import Iterator
 import numpy as np
 import pandas as pd
 
-from myocard_egm_studio.charts.inputs import FeatureGroup, ScatterSeries
+from myocard_egm_studio.charts.inputs import FeatureGroup, PredictionGroup, ScatterSeries
 from myocard_egm_studio.view_model import FEATURE_COLUMNS, ROW_ID, feature_units
 
 __all__ = [
     "feature_group_from_frame",
     "feature_groups_by_source",
+    "prediction_group_from_frame",
+    "prediction_groups_by_source",
     "scatter_series_by_source",
     "scatter_series_from_frame",
 ]
@@ -97,6 +99,34 @@ def scatter_series_from_frame(frame: pd.DataFrame, *, name: str | None = None) -
     return ScatterSeries(
         name=label, values=values, ids=ids, units=feature_units(_first(frame, "amp_type"))
     )
+
+
+def prediction_groups_by_source(frame: pd.DataFrame) -> list[PredictionGroup]:
+    """Split an evaluated frame into one :class:`PredictionGroup` per ``source``.
+
+    The output-distribution analog of :func:`feature_groups_by_source`: same
+    per-source split + load order (so group *i* matches ``color_for(i)`` used by the
+    overlay + roster), but each group carries the source's ``predicted_prob`` (the
+    B8a ML column) rather than the feature arrays. Fed the GUI's combined frame; an
+    empty frame yields no groups.
+    """
+    if not len(frame.index):
+        return []
+    return [prediction_group_from_frame(sub, name=name) for name, sub in _iter_sources(frame)]
+
+
+def prediction_group_from_frame(frame: pd.DataFrame, *, name: str | None = None) -> PredictionGroup:
+    """Pull ``predicted_prob`` out of ``frame`` as one named PredictionGroup.
+
+    ``name`` resolves as in :func:`feature_group_from_frame` (source, else source bank
+    id, else ``"bank"``). The frame must carry ``predicted_prob`` (the ML-outcome join,
+    B8a) — the caller (Flow B) only builds these for an evaluated set. ``labels`` is left
+    unset: the Output overlay compares sources, not classes; the labelled per-class facet
+    arrives with the metric suite (B8f).
+    """
+    label = name or _first(frame, "source") or _first(frame, "source_bank_id") or "bank"
+    probs = frame["predicted_prob"].to_numpy(dtype=np.float64)
+    return PredictionGroup(name=label, probs=probs)
 
 
 def _first(frame: pd.DataFrame, column: str) -> str | None:

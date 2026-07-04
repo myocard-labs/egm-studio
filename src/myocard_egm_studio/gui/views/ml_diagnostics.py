@@ -18,11 +18,11 @@ import pandas as pd
 from PySide6 import QtCore, QtWidgets
 
 from myocard_egm_studio.charts.pyqtgraph import DEFAULT_STYLE, PgChartStyle
-from myocard_egm_studio.gui.widgets import ResultList
+from myocard_egm_studio.gui.widgets import OutputDistributionView, ResultList
+from myocard_egm_studio.loaders import prediction_groups_by_source
 
 _LANDING = "Open a bank with model predictions (File ▸ Open bank) to run ML diagnostics."
 _PENDING = {
-    "Output": "Output-distribution overlay lands in B8e.",
     "Metrics": "ROC / confusion / calibration metric suite lands in B8f.",
     "Training": "Training-curve overlay lands in B8f.",
 }
@@ -51,10 +51,11 @@ class MlDiagnosticsView(QtWidgets.QWidget):
         self._header.setObjectName("diagnosticsHeader")
         self._header.setWordWrap(True)
 
+        self._output_view = OutputDistributionView(chart_style)  # P(positive) per source (B8e)
         self._result_list = ResultList()  # the evaluated traces + their ML-outcome columns
         self._tabs = QtWidgets.QTabWidget()
         self._tabs.setObjectName("flowBTabs")
-        self._tabs.addTab(_placeholder(_PENDING["Output"]), "Output")
+        self._tabs.addTab(self._output_view, "Output")
         self._tabs.addTab(_placeholder(_PENDING["Metrics"]), "Metrics")
         self._tabs.addTab(_placeholder(_PENDING["Training"]), "Training")
         self._tabs.addTab(self._result_list, "Explore")
@@ -66,28 +67,39 @@ class MlDiagnosticsView(QtWidgets.QWidget):
         layout.addWidget(self._tabs, 1)
 
     def set_evaluated(self, frame: pd.DataFrame, mode: str) -> None:
-        """Show a freshly loaded evaluated bank: header (source · count · mode) + trace list.
+        """Show a freshly loaded evaluated set: header + the Output overlay + trace list.
 
-        ``mode`` (``"full"`` / ``"qualitative"``) reports whether the metric suite applies;
-        the Explore tab lists every trace with its ML-outcome columns. B8e-g fill the
-        Output / Metrics / Training tabs and add filtering + pair-compare.
+        Lands on the **Output** tab — the P(positive)-per-source overlay that is Flow B's
+        headline (B8e); the Explore tab lists every trace with its ML-outcome columns.
+        ``mode`` (``"full"`` / ``"qualitative"``) reports whether the metric suite applies.
+        The header names the single source, or ``"N sources"`` for a multi-bank compare.
+        B8f-g fill the Metrics / Training tabs and add filtering + pair-compare.
         """
         self._frame = frame
+        self._output_view.set_groups(prediction_groups_by_source(frame))
         self._result_list.set_frame(frame)
         source = (
             str(frame["source"].iloc[0])
             if "source" in frame.columns and len(frame.index)
             else "bank"
         )
-        self._header.setText(f"{source}  ·  {len(frame.index):,} traces  ·  {mode} diagnostics")
-        self._tabs.setCurrentIndex(self._TAB_EXPLORE)
+        n_sources = frame["source"].nunique() if "source" in frame.columns else 1
+        header = source if n_sources < 2 else f"{n_sources} sources"
+        self._header.setText(f"{header}  ·  {len(frame.index):,} traces  ·  {mode} diagnostics")
+        self._tabs.setCurrentIndex(0)  # land on the Output overlay — the headline comparison
 
     def clear(self) -> None:
         """Reset to the landing state — the current load carries no predictions."""
         self._frame = pd.DataFrame()
+        self._output_view.clear()
         self._result_list.set_frame(pd.DataFrame())
         self._header.setText(_LANDING)
         self._tabs.setCurrentIndex(0)
+
+    def restyle(self, chart_style: PgChartStyle) -> None:
+        """Re-apply the theme to the embedded charts (the shell calls this on a toggle)."""
+        self._style = chart_style
+        self._output_view.set_style(chart_style)
 
     @property
     def result_list(self) -> ResultList:
