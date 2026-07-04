@@ -25,6 +25,15 @@ def test_input_bank_viewers() -> None:
     assert explore.available and feature_dist.available  # both wired to Flow A (B7.7)
 
 
+def test_menu_label_relabels_only_the_additive_viewer() -> None:
+    """With a bank loaded, View feature distributions becomes Add …; Explore signal
+    (which always replaces) keeps its label (B7.8b-fix)."""
+    explore, feature_dist = type_actions(Role.training_bank)
+    assert phase_actions.menu_label(feature_dist, add_mode=False) == "View feature distributions"
+    assert phase_actions.menu_label(feature_dist, add_mode=True) == "Add feature distribution"
+    assert phase_actions.menu_label(explore, add_mode=True) == "Explore signal"
+
+
 def test_prediction_bank_adds_ml_actions() -> None:
     ids = [a.id for a in type_actions(Role.labeled_prediction_bank)]
     assert ids == [

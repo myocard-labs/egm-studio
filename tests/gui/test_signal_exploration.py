@@ -81,3 +81,21 @@ def test_tab_switch_helpers(qtbot: QtBot, tiny_classifier_bank: ClassifierBank) 
     assert view._tabs.currentIndex() == 1
     view.show_summary()
     assert view._tabs.currentIndex() == 0
+
+
+def test_summary_overlays_per_source_with_a_stats_line_each(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tiny_unlabeled_bank: ClassifierBank
+) -> None:
+    """Two banks overlay one curve per source in the 11 panels + a stats line each."""
+    view = SignalExplorationView(plot_palette("dark"))
+    qtbot.addWidget(view)
+    combined = combine_view_models(
+        [
+            build_view_model(tiny_classifier_bank, source="A"),
+            build_view_model(tiny_unlabeled_bank, source="B"),
+        ]
+    )
+    view.set_summary(combined)
+    assert len(view._feature_grid.panels) == len(FEATURE_COLUMNS)  # overlaid, not doubled
+    assert len(view._feature_grid._groups) == 2  # two source curves
+    assert view._summary_panel._banks.count() == 2  # one stats line per bank

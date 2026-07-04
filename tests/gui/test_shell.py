@@ -127,6 +127,46 @@ def test_explore_focus_lands_on_explore_tab(
     assert window._explore_view._tabs.currentIndex() == 1  # Explore tab
 
 
+def test_add_bank_combines_then_remove(
+    qtbot: QtBot,
+    tiny_classifier_bank: ClassifierBank,
+    tiny_unlabeled_bank: ClassifierBank,
+    tmp_path: Path,
+) -> None:
+    """Add a second bank -> the list pools both banks' traces + the roster shows two;
+    removing one drops it back to a single bank."""
+    a, b = tmp_path / "a.h5", tmp_path / "b.h5"
+    write_classifier_bank(tiny_classifier_bank, a)
+    write_classifier_bank(tiny_unlabeled_bank, b)
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._open_bank_explore(str(a))  # open (replace)
+    window._open_bank_explore(str(b), focus=None, replace=False)  # add
+    total = len(tiny_classifier_bank.traces) + len(tiny_unlabeled_bank.traces)
+    assert len(window._loaded_banks) == 2
+    assert window._explore_view.result_list._table.rowCount() == total
+
+    window._remove_bank(str(a))
+    assert [bank.path for bank in window._loaded_banks] == [str(b)]
+    assert window._explore_view.result_list._table.rowCount() == len(tiny_unlabeled_bank.traces)
+
+
+def test_open_action_relabels_to_add_when_loaded(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    """The Open-bank menu action toggles Open ↔ Add on the loaded state (B7.8b-fix)."""
+    path = tmp_path / "bank.h5"
+    write_classifier_bank(tiny_classifier_bank, path)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    assert window._open_action.text() == "&Open bank…"  # nothing loaded
+    window._open_bank_explore(str(path))
+    assert window._open_action.text() == "&Add bank…"  # a bank is loaded
+    window._remove_bank(str(path))
+    assert window._open_action.text() == "&Open bank…"  # back to empty
+
+
 def test_selecting_a_trace_shows_the_detail(
     qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
 ) -> None:

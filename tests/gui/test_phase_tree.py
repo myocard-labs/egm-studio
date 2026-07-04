@@ -118,6 +118,18 @@ def test_bank_menu_lists_viewers_then_info(qtbot: QtBot) -> None:
     assert any(action.isSeparator() for action in menu.actions())  # divider before the info group
 
 
+def test_add_mode_relabels_feature_distributions(qtbot: QtBot) -> None:
+    """With a bank loaded (add mode), View feature distributions -> Add feature
+    distribution; Explore signal keeps its label (B7.8b-fix)."""
+    tree = _populated(qtbot)
+    bank_id = _child(_top(tree, 0), 0).text(0)  # a training bank
+    tree.set_add_mode(True)
+    labels = _menu_labels(tree._artifact_menu(bank_id))
+    assert "Add feature distribution" in labels
+    assert "View feature distributions" not in labels
+    assert "Explore signal" in labels
+
+
 def test_run_menu_disables_planned_action(qtbot: QtBot) -> None:
     tree = _populated(qtbot)
     menu = tree._artifact_menu(_child(_top(tree, 5), 0).text(0))  # a training run

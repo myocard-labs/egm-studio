@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from myocard_egm_data.phases import load_phase_dir
 from PySide6 import QtGui, QtWidgets
 from pytestqt.qtbot import QtBot
 
-from myocard_egm_studio.gui.shell import MainWindow
+from myocard_egm_studio.gui.shell import MainWindow, _LoadedBank
 from myocard_egm_studio.view_model import entries_by_id
 from myocard_egm_studio.view_model.phase_actions import reveal_target
 
@@ -106,16 +107,26 @@ def test_reveal_action_targets_the_artifact_folder(
     assert captured == [reveal_target(_FIXTURE_DIR, _BANK_PATH)]
 
 
-def test_bank_actions_open_to_the_right_tab(qtbot: QtBot, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Explore signal opens to the Explore tab; View feature distributions to Summary."""
+def test_bank_actions_dispatch_focus_and_replace(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Explore signal always replaces + opens Explore; View feature distributions
+    opens Summary and appends only once a bank is already loaded (B7.8b-fix)."""
     window = _loaded_window(qtbot)
-    calls: list[tuple[str, str]] = []
+    calls: list[tuple[str, bool]] = []
     monkeypatch.setattr(
         window,
         "_open_bank_explore",
-        lambda path, *, focus="summary": calls.append((path, focus)),
+        lambda _path, *, focus="summary", replace=True: calls.append((focus, replace)),
     )
     window._on_phase_action("explore_signal", _BANK_ID)
     window._on_phase_action("view_feature_distributions", _BANK_ID)
-    path = str(_FIXTURE_DIR / _BANK_PATH)
-    assert calls == [(path, "explore"), (path, "summary")]
+    window._loaded_banks = [_LoadedBank("x", "x", pd.DataFrame(), [])]  # a bank is now loaded
+    window._on_phase_action("explore_signal", _BANK_ID)
+    window._on_phase_action("view_feature_distributions", _BANK_ID)
+    assert calls == [
+        ("explore", True),  # explore signal replaces
+        ("summary", True),  # view feature distributions, none loaded -> replace
+        ("explore", True),  # explore signal replaces even with a bank loaded
+        ("summary", False),  # view feature distributions, a bank loaded -> append
+    ]

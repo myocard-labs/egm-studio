@@ -40,3 +40,19 @@ def test_ui_scale_falls_back_on_nonnumeric_value() -> None:
         preferences.APP_NAME,
     ).setValue("appearance/ui_scale", "huge")
     assert preferences.load_ui_scale(0.9) == 0.9
+
+
+def test_plot_kind_defaults_then_roundtrips() -> None:
+    assert preferences.load_plot_kind("kde") == "kde"  # unset -> default
+    preferences.save_plot_kind("histogram")
+    assert preferences.load_plot_kind("kde") == "histogram"
+
+
+def test_plot_kind_falls_back_on_unknown_value() -> None:
+    QtCore.QSettings(
+        QtCore.QSettings.Format.IniFormat,
+        QtCore.QSettings.Scope.UserScope,
+        preferences.ORG_NAME,
+        preferences.APP_NAME,
+    ).setValue("appearance/plot_kind", "violin")
+    assert preferences.load_plot_kind("kde") == "kde"

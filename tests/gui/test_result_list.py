@@ -79,6 +79,16 @@ def test_selection_emits_row_id(qtbot: QtBot) -> None:
     assert blocker.args[0] == [10]  # row_id of the first row, not its trace_idx (0)
 
 
+def test_set_frame_reports_progress(qtbot: QtBot) -> None:
+    """The table build reports (rows_done, rows_total), bracketed by (0, n)…(n, n)."""
+    widget = ResultList()
+    qtbot.addWidget(widget)
+    seen: list[tuple[int, int]] = []
+    widget.set_frame(_df(), progress=lambda done, total: seen.append((done, total)))
+    assert seen[0] == (0, 3)
+    assert seen[-1] == (3, 3)
+
+
 def test_selection_is_sort_aware(qtbot: QtBot) -> None:
     widget = _list(qtbot)
     entropy_col = widget._columns.index("sample_entropy")

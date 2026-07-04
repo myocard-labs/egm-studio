@@ -55,3 +55,30 @@ def test_restyle_rebuilds_panels(qtbot: QtBot, tiny_classifier_bank: ClassifierB
     grid = _grid(qtbot, tiny_classifier_bank)
     grid.set_style(chart_style("light"))
     assert len(grid.panels) == len(FEATURE_COLUMNS)
+
+
+def test_set_groups_overlays_and_shows_legend(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tiny_unlabeled_bank: ClassifierBank
+) -> None:
+    """Two groups overlay into the same 11 panels and reveal the legend."""
+    grid = FeatureDistributionGrid()
+    qtbot.addWidget(grid)
+    a = feature_group_from_frame(build_view_model(tiny_classifier_bank, source="A"))
+    b = feature_group_from_frame(build_view_model(tiny_unlabeled_bank, source="B"))
+    grid.set_groups([a, b])
+    assert len(grid.panels) == len(FEATURE_COLUMNS)  # overlaid, not doubled
+    assert not grid._legend.isHidden()  # legend shown for 2+ groups
+    grid.set_group(a)  # a single group hides the legend again
+    assert grid._legend.isHidden()
+
+
+def test_kind_defaults_to_kde_and_toggles(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank
+) -> None:
+    grid = _grid(qtbot, tiny_classifier_bank)
+    assert grid.kind() == "kde"  # default
+    seen: list[str] = []
+    grid.kindChanged.connect(seen.append)
+    grid._kind_combo.setCurrentIndex(1)  # Histogram
+    assert grid.kind() == "histogram"
+    assert seen == ["histogram"]
