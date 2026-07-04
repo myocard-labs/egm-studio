@@ -20,6 +20,8 @@ from __future__ import annotations
 from myocard_egm_studio.loaders.feature_group import (
     feature_group_from_frame,
     feature_groups_by_source,
+    scatter_series_by_source,
+    scatter_series_from_frame,
 )
 from myocard_egm_studio.loaders.figure_inputs import (
     LOADERS,
@@ -59,4 +61,6 @@ __all__ = [
     "prediction_group_from_bank",
     "register_loader",
     "resolve_recipe_data",
+    "scatter_series_by_source",
+    "scatter_series_from_frame",
 ]

@@ -23,6 +23,7 @@ __all__ = [
     "BarChartData",
     "FeatureGroup",
     "PredictionGroup",
+    "ScatterSeries",
     "TableData",
     "TracePair",
     "TracePairGallery",
@@ -79,6 +80,38 @@ class FeatureGroup:
 
     name: str
     values: dict[str, NDArray[np.float64]]
+    units: dict[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class ScatterSeries:
+    """One named source's points for the GUI feature scatter (B7.9).
+
+    Like :class:`FeatureGroup` (per-feature value arrays + units) but it also
+    carries the per-point ``row_id``, so a click on the interactive scatter resolves
+    back to a trace. GUI-only — the scatter is a live-exploration view (pan / zoom
+    over the filter result), with no headless recipe / matplotlib twin.
+
+    Attributes
+    ----------
+    name
+        Legend / source label (e.g. ``"Synthetic v1.5"``, ``"IAFDB"``), coloured by
+        load order to match the summary overlay + the loaded-banks roster.
+    values
+        ``{feature_name: (N,) float array}`` — one entry per egm-features column, so
+        the widget's two axis pickers select any (x, y) pair without re-fetching.
+    ids
+        ``(N,)`` per-point ``row_id`` (:data:`view_model.ROW_ID`), aligned with
+        ``values``; a clicked point reports this so the detail view resolves it to a
+        trace. Points non-finite in the drawn axes are dropped, ids alongside.
+    units
+        Optional ``{feature_name: unit}`` (as :class:`FeatureGroup`), used to label
+        the chosen axes; features absent are unitless.
+    """
+
+    name: str
+    values: dict[str, NDArray[np.float64]]
+    ids: NDArray[np.int64]
     units: dict[str, str] | None = None
 
 
