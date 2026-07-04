@@ -52,7 +52,8 @@ from myocard_egm_studio.charts.matplotlib.selection import (
     select_from_available,
     select_layout_features,
 )
-from myocard_egm_studio.view_model import FEATURE_COLUMNS, build_view_model, feature_units
+from myocard_egm_studio.loaders.feature_group import feature_group_from_frame
+from myocard_egm_studio.view_model import FEATURE_COLUMNS, build_view_model
 
 if TYPE_CHECKING:
     from myocard_egm_contracts._generated.python.figure_spec import FigureSpec
@@ -263,15 +264,10 @@ def load_feature_groups(spec: FigureSpec, bank_paths: BankPaths) -> list[Feature
     one :class:`FeatureGroup` per spec group, in spec order. Feature-level, so it
     works on labeled and unlabeled banks alike (it reads signals, not labels).
     """
-    out: list[FeatureGroup] = []
-    for name, bank in load_group_banks(spec, bank_paths):
-        view_model = build_view_model(bank, source=name)
-        values = {col: view_model[col].to_numpy(dtype=np.float64) for col in FEATURE_COLUMNS}
-        # Units track the bank's amplitude convention (peak_to_peak is mV only for
-        # a raw-mV bank); a bank's traces are internally consistent in amp_type.
-        amp_type = bank.traces[0].amp_type if bank.traces else None
-        out.append(FeatureGroup(name=name, values=values, units=feature_units(amp_type)))
-    return out
+    return [
+        feature_group_from_frame(build_view_model(bank, source=name), name=name)
+        for name, bank in load_group_banks(spec, bank_paths)
+    ]
 
 
 @register_loader("bar-chart-with-deltas")

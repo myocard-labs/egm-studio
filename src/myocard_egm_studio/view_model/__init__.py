@@ -35,6 +35,7 @@ from myocard_egm_studio.view_model.phase_groups import (
     entries_by_id,
     phase_artifact_groups,
 )
+from myocard_egm_studio.view_model.summary import BankSummary, bank_summary
 from myocard_egm_studio.view_model.trace_detail import DetailRow, TraceDetail, trace_detail
 
 __all__ = [
@@ -42,6 +43,7 @@ __all__ = [
     "IDENTITY_COLUMNS",
     "ArtifactGroup",
     "ArtifactRow",
+    "BankSummary",
     "Condition",
     "DetailRow",
     "FilterColumn",
@@ -49,6 +51,7 @@ __all__ = [
     "ProgressFn",
     "TraceDetail",
     "apply_filter",
+    "bank_summary",
     "build_view_model",
     "entries_by_id",
     "feature_units",
