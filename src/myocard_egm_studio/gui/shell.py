@@ -31,6 +31,7 @@ from myocard_egm_studio.gui.views import SignalExplorationView
 from myocard_egm_studio.gui.widgets import FilterPanel, PhaseTree, TraceData
 from myocard_egm_studio.view_model import (
     apply_filter,
+    combine_view_models,
     entries_by_id,
     filter_columns,
     phase_artifact_groups,
@@ -449,11 +450,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.statusBar().showMessage("That bank has no traces to display.")
             return
         self._bank_name = Path(path).name
-        self._explore_df = frame
+        # Route even a single bank through the combiner so the GUI always keys on
+        # row_id (the B7.8 global row key); multi-bank loading joins here in B7.8b.
+        combined = combine_view_models([frame])
+        self._explore_df = combined
         self._explore_view.set_traces(traces)
-        self._explore_view.set_summary(frame)  # full-bank stats + grid; lands on Summary
+        self._explore_view.set_summary(combined)  # full-bank stats + grid; lands on Summary
         # set_columns emits filterChanged -> _on_filter_changed, which populates the list.
-        self._filter_panel.set_columns(filter_columns(frame))
+        self._filter_panel.set_columns(filter_columns(combined))
         self._show_mode(0)
         if focus == "explore":
             self._explore_view.show_explore()

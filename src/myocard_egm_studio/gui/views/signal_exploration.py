@@ -238,8 +238,9 @@ class SignalExplorationView(QtWidgets.QWidget):
             content.restyle(palette)
         self._feature_grid.set_style(chart_style)
 
-    def _show_detail(self, trace_indices: list[int]) -> None:
-        shown = [i for i in trace_indices[:_DETAIL_CAP] if 0 <= i < len(self._traces)]
+    def _show_detail(self, row_ids: list[int]) -> None:
+        # row_id is the global position in the combined traces list (B7.8).
+        shown = [i for i in row_ids[:_DETAIL_CAP] if 0 <= i < len(self._traces)]
         if not shown:
             self._detail_stack.setCurrentIndex(0)
             return

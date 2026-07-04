@@ -3,9 +3,10 @@
 The signal-exploration detail pane pairs each selected trace's waveform with a
 focused read of its numbers: the 11 egm-features (with amplitude-aware units) and
 its metadata (label, source, split, and the producer's provenance keys). This is
-pure — it projects the view-model DataFrame rows for the selected ``trace_idx``
-into a display structure; the Qt table just renders it. Multiple selected traces
-become side-by-side value columns (the seed of the B7.10 compare view).
+pure — it projects the view-model DataFrame rows for the selected ``row_id`` (the
+multi-bank global key, B7.8) into a display structure; the Qt table just renders
+it. Multiple selected traces become side-by-side value columns (the seed of the
+B7.10 compare view).
 """
 
 from __future__ import annotations
@@ -19,7 +20,9 @@ import pandas as pd
 from myocard_egm_studio.view_model.builder import FEATURE_COLUMNS, feature_units
 
 # Plumbing identity columns never shown as metadata; features are listed separately.
-_HIDDEN = frozenset({"trace_idx", "source_bank_id", "source_bank_type", "amp_type", "label"})
+_HIDDEN = frozenset(
+    {"trace_idx", "row_id", "source_bank_id", "source_bank_type", "amp_type", "label"}
+)
 # Metadata columns shown first (the rest follow in frame order).
 _METADATA_LEAD = ("label_name", "source", "split")
 
@@ -42,10 +45,14 @@ class TraceDetail:
     metadata: tuple[DetailRow, ...]
 
 
-def trace_detail(frame: pd.DataFrame, trace_indices: Sequence[int]) -> TraceDetail:
-    """Project ``frame`` rows for ``trace_indices`` into feature + metadata rows."""
-    rows = _rows_for(frame, trace_indices)
-    headers = tuple(f"#{index}" for index in trace_indices)
+def trace_detail(frame: pd.DataFrame, row_ids: Sequence[int]) -> TraceDetail:
+    """Project ``frame`` rows for the selected ``row_ids`` into feature + metadata rows.
+
+    Rows are selected by the global ``row_id``; each column header still shows the
+    row's own bank-relative ``trace_idx`` as ``#`` (so it matches the result list).
+    """
+    rows = _rows_for(frame, row_ids)
+    headers = tuple(f"#{int(row['trace_idx'])}" for row in rows)
     units = feature_units(rows[0].get("amp_type") if rows else None)
     features = tuple(
         DetailRow(column, tuple(_fmt(row.get(column)) for row in rows), units.get(column, ""))
@@ -59,9 +66,9 @@ def trace_detail(frame: pd.DataFrame, trace_indices: Sequence[int]) -> TraceDeta
     return TraceDetail(headers=headers, features=features, metadata=metadata)
 
 
-def _rows_for(frame: pd.DataFrame, trace_indices: Sequence[int]) -> list[pd.Series]:
-    by_idx = frame.set_index("trace_idx")
-    return [by_idx.loc[index] for index in trace_indices if index in by_idx.index]
+def _rows_for(frame: pd.DataFrame, row_ids: Sequence[int]) -> list[pd.Series]:
+    by_id = frame.set_index("row_id")
+    return [by_id.loc[row_id] for row_id in row_ids if row_id in by_id.index]
 
 
 def _metadata_columns(frame: pd.DataFrame) -> list[str]:

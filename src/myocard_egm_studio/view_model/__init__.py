@@ -22,6 +22,7 @@ from myocard_egm_studio.view_model.builder import (
     build_view_model,
     feature_units,
 )
+from myocard_egm_studio.view_model.combine import ROW_ID, combine_view_models
 from myocard_egm_studio.view_model.filtering import (
     Condition,
     FilterColumn,
@@ -41,6 +42,7 @@ from myocard_egm_studio.view_model.trace_detail import DetailRow, TraceDetail, t
 __all__ = [
     "FEATURE_COLUMNS",
     "IDENTITY_COLUMNS",
+    "ROW_ID",
     "ArtifactGroup",
     "ArtifactRow",
     "BankSummary",
@@ -53,6 +55,7 @@ __all__ = [
     "apply_filter",
     "bank_summary",
     "build_view_model",
+    "combine_view_models",
     "entries_by_id",
     "feature_units",
     "filter_columns",

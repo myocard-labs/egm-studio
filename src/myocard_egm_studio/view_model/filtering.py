@@ -27,7 +27,7 @@ CATEGORICAL_OPS: tuple[str, ...] = ("==", "!=")
 #: View-model plumbing columns the filter never offers (identity wiring, not
 #: analysis axes). label_name / source / split + the features + metadata remain.
 _HIDDEN_COLUMNS = frozenset(
-    {"trace_idx", "source_bank_id", "source_bank_type", "amp_type", "label"}
+    {"trace_idx", "row_id", "source_bank_id", "source_bank_type", "amp_type", "label"}
 )
 
 

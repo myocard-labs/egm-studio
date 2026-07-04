@@ -4,9 +4,10 @@ A table of the view-model rows the filter narrows to (``FilterPanel`` emits a sp
 the signal-exploration view applies it and hands the filtered frame here). Every
 column is sortable — clicking a header orders by that column, numerically for the
 feature / numeric columns (not lexically), so "sort by ``sample_entropy``
-descending" behaves. Selecting rows emits their ``trace_idx`` values, which the
-detail view (B7.6) resolves back to traces. Plumbing identity columns are hidden;
-``trace_idx`` shows as ``#``.
+descending" behaves. Selecting rows emits their ``row_id`` values (the multi-bank
+global key, B7.8), which the detail view resolves back to traces. Plumbing identity
+columns are hidden; ``trace_idx`` shows as ``#`` and ``row_id`` is a hidden column
+(present per row so it survives sorting, but never displayed).
 
 This is the result-list role the metadata ``trace_selector`` is retired into once
 the signal-exploration view wires filter -> list -> detail (B7.5).
@@ -25,6 +26,9 @@ _SORT_KEY = QtCore.Qt.ItemDataRole.UserRole
 
 #: View-model plumbing columns the table never shows (``trace_idx`` shows as ``#``).
 _HIDDEN = frozenset({"source_bank_id", "source_bank_type", "amp_type", "label"})
+
+#: The global row key (B7.8): kept as a hidden column so selection reads it per row.
+_ROW_ID = "row_id"
 
 
 class _Cell(QtWidgets.QTableWidgetItem):
@@ -54,9 +58,9 @@ def _cell(value: Any) -> _Cell:
 
 
 class ResultList(QtWidgets.QWidget):
-    """A sortable table of view-model rows; emits the selected rows' ``trace_idx``."""
+    """A sortable table of view-model rows; emits the selected rows' ``row_id``."""
 
-    selectionChanged = QtCore.Signal(list)  # list[int] of trace_idx
+    selectionChanged = QtCore.Signal(list)  # list[int] of row_id
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -97,21 +101,23 @@ class ResultList(QtWidgets.QWidget):
                 self._table.setItem(row, col, _cell(series.iat[row]))
         self._table.setSortingEnabled(True)
         self._table.resizeColumnsToContents()
+        if _ROW_ID in self._columns:  # queryable per row, but never shown
+            self._table.setColumnHidden(self._columns.index(_ROW_ID), True)
         self._count.setText(f"{len(frame.index)} trace(s)")
         self._emit_selection()
 
-    def selected_trace_indices(self) -> list[int]:
-        """The ``trace_idx`` of the selected rows (in table order, sort-aware)."""
-        if "trace_idx" not in self._columns:
+    def selected_row_ids(self) -> list[int]:
+        """The ``row_id`` of the selected rows (in table order, sort-aware)."""
+        if _ROW_ID not in self._columns:
             return []
-        idx_col = self._columns.index("trace_idx")
+        id_col = self._columns.index(_ROW_ID)
         rows = sorted({index.row() for index in self._table.selectionModel().selectedRows()})
         out: list[int] = []
         for row in rows:
-            item = self._table.item(row, idx_col)
+            item = self._table.item(row, id_col)
             if item is not None:
                 out.append(int(item.data(_SORT_KEY)))
         return out
 
     def _emit_selection(self) -> None:
-        self.selectionChanged.emit(self.selected_trace_indices())
+        self.selectionChanged.emit(self.selected_row_ids())
