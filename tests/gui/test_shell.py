@@ -8,12 +8,15 @@ headless under the offscreen QPA platform (CI uses xvfb).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
+import pytest
 from myocard_egm_data.banks import ClassifierBank, write_classifier_bank
 from PySide6 import QtGui, QtWidgets
 from pytestqt.qtbot import QtBot
 
+from myocard_egm_studio.gui import shell as shell_mod
 from myocard_egm_studio.gui.shell import CollapsibleSidebar, MainWindow
 from myocard_egm_studio.gui.theme import plot_palette
 from myocard_egm_studio.gui.widgets import TraceContainer, TraceView
@@ -120,6 +123,28 @@ def test_filter_narrows_the_result_list(
     kept = window._explore_view.result_list._table.rowCount()
     assert 0 < kept < total
     assert "match" in window.statusBar().currentMessage()
+
+
+def test_open_bank_cancel_aborts_the_load(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Hitting Cancel mid-load trips the progress dialog; the next progress tick
+    raises, the load unwinds, and no bank state is committed."""
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    def cancel_then_progress(_path: str, *, progress: Callable[[int, int], None]) -> object:
+        dialog = window.findChild(QtWidgets.QProgressDialog)
+        assert dialog is not None  # the shell shows it before load_exploration runs
+        dialog.cancel()  # as if the user clicked Cancel
+        progress(0, 10)  # sees wasCanceled -> raises _LoadCancelled
+        raise AssertionError("progress tick did not abort after Cancel")
+
+    monkeypatch.setattr(shell_mod, "load_exploration", cancel_then_progress)
+    window._open_bank_explore(str(tmp_path / "unused.h5"))
+
+    assert "canceled" in window.statusBar().currentMessage().lower()
+    assert window._explore_df is None  # nothing committed
 
 
 def test_theme_change_restyles_the_detail(

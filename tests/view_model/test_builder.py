@@ -5,15 +5,23 @@ from __future__ import annotations
 import dataclasses
 
 import numpy as np
+import pandas as pd
 import pytest
 from myocard_egm_data.banks import ClassifierBank
+from myocard_egm_features.bundle import extract_all
 
 from myocard_egm_studio.view_model import (
     FEATURE_COLUMNS,
     IDENTITY_COLUMNS,
+    ProgressFn,
     build_view_model,
     feature_units,
 )
+from myocard_egm_studio.view_model.builder import _extract_features
+
+
+class _Abort(Exception):
+    """Stand-in for the GUI's cancel signal — a progress callback that raises."""
 
 
 def test_feature_units_mv_bank() -> None:
@@ -103,3 +111,67 @@ def test_mixed_sample_rate_raises(tiny_classifier_bank: ClassifierBank) -> None:
     bank = dataclasses.replace(tiny_classifier_bank, traces=traces)
     with pytest.raises(ValueError, match="single shared sample rate"):
         build_view_model(bank)
+
+
+def _recorder() -> tuple[list[tuple[int, int]], ProgressFn]:
+    """A progress callback plus the list of ``(done, total)`` pairs it records."""
+    calls: list[tuple[int, int]] = []
+
+    def record(done: int, total: int) -> None:
+        calls.append((done, total))
+
+    return calls, record
+
+
+def test_progress_reports_start_and_completion(tiny_classifier_bank: ClassifierBank) -> None:
+    """``progress`` fires (0, n) first and (n, n) last, monotonically, and does not
+    change the result — it only reports the feature-extraction pass."""
+    n = tiny_classifier_bank.n_traces
+    calls, record = _recorder()
+    with_progress = build_view_model(tiny_classifier_bank, progress=record)
+    assert calls[0] == (0, n)
+    assert calls[-1] == (n, n)
+    done = [c[0] for c in calls]
+    assert done == sorted(done)  # monotonic non-decreasing
+    assert all(total == n for _, total in calls)
+    pd.testing.assert_frame_equal(with_progress, build_view_model(tiny_classifier_bank))
+
+
+def test_extract_features_chunks_and_matches_whole(tiny_classifier_bank: ClassifierBank) -> None:
+    """Chunked extraction reports a progress tick per chunk and, because per-trace
+    features are independent, equals one ``extract_all`` over every trace."""
+    signals = tiny_classifier_bank.signal_array()
+    fs_hz = tiny_classifier_bank.uniform_fs_hz()
+    n = len(signals)
+    calls, record = _recorder()
+    chunked = _extract_features(signals, fs_hz, record, chunk=4)
+    assert calls == [(0, n), (4, n), (8, n), (12, n)]
+    pd.testing.assert_frame_equal(chunked, extract_all(signals, fs_hz=fs_hz))
+
+
+def test_extract_features_small_bank_single_pass(tiny_classifier_bank: ClassifierBank) -> None:
+    """A bank no larger than one chunk extracts in a single ``extract_all`` call,
+    still bracketed by (0, n) and (n, n) progress ticks."""
+    signals = tiny_classifier_bank.signal_array()
+    fs_hz = tiny_classifier_bank.uniform_fs_hz()
+    n = len(signals)
+    calls, record = _recorder()
+    single = _extract_features(signals, fs_hz, record, chunk=n)
+    assert calls == [(0, n), (n, n)]
+    pd.testing.assert_frame_equal(single, extract_all(signals, fs_hz=fs_hz))
+
+
+def test_progress_raise_aborts_the_build(tiny_classifier_bank: ClassifierBank) -> None:
+    """A progress callback that raises (the Cancel path) aborts extraction between
+    chunks — the exception propagates and the later chunks never run."""
+    n = tiny_classifier_bank.n_traces
+    calls: list[tuple[int, int]] = []
+
+    def progress(done: int, total: int) -> None:
+        calls.append((done, total))
+        if done > 0:
+            raise _Abort
+
+    with pytest.raises(_Abort):
+        build_view_model(tiny_classifier_bank, progress=progress)
+    assert calls == [(0, n), (8, n)]  # stopped at the first chunk boundary (default chunk=8)
