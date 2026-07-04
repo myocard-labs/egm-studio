@@ -198,6 +198,26 @@ def test_bring_to_front_raises_the_scatter_source(
     assert window._explore_view._scatter._front_source == bank.label
 
 
+def test_opening_an_evaluated_bank_populates_flow_b(
+    qtbot: QtBot, tiny_predictions_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    """One Open-bank load also feeds ML diagnostics when the bank carries predictions."""
+    window = _open(qtbot, tiny_predictions_bank, tmp_path)  # the single Open-bank path
+    diagnostics = window._diagnostics_view
+    assert diagnostics.result_list._table.rowCount() == tiny_predictions_bank.n_traces
+    assert "full diagnostics" in diagnostics._header.text()
+
+
+def test_opening_a_raw_bank_leaves_flow_b_in_the_landing_state(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    """A bank with no predictions opens in signal exploration; ML diagnostics stays empty."""
+    window = _open(qtbot, tiny_classifier_bank, tmp_path)
+    diagnostics = window._diagnostics_view
+    assert diagnostics.result_list._table.rowCount() == 0
+    assert "Open a bank with model predictions" in diagnostics._header.text()
+
+
 def test_open_bank_cancel_aborts_the_load(
     qtbot: QtBot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
