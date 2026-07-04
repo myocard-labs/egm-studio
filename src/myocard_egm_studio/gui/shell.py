@@ -22,7 +22,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from myocard_egm_studio.charts.palette import color_for
 from myocard_egm_studio.gui.preferences import load_theme, save_theme
-from myocard_egm_studio.gui.sources import load_exploration
+from myocard_egm_studio.gui.sources import frame_eval_mode, load_exploration
 from myocard_egm_studio.gui.theme import (
     DEFAULT_THEME,
     THEME_NAMES,
@@ -30,7 +30,7 @@ from myocard_egm_studio.gui.theme import (
     chart_style,
     plot_palette,
 )
-from myocard_egm_studio.gui.views import SignalExplorationView
+from myocard_egm_studio.gui.views import MlDiagnosticsView, SignalExplorationView
 from myocard_egm_studio.gui.widgets import FilterPanel, LoadedBanksList, PhaseTree, TraceData
 from myocard_egm_studio.view_model import (
     apply_filter,
@@ -357,10 +357,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._explore_view = SignalExplorationView(
             plot_palette(self._current_theme), chart_style(self._current_theme)
         )
+        self._diagnostics_view = MlDiagnosticsView(chart_style(self._current_theme))
         self._modes_stack = QtWidgets.QStackedWidget()
         self._modes_stack.setMinimumWidth(_MAIN_MIN_W)
         self._modes_stack.addWidget(self._explore_view)  # 0 — signal exploration
-        self._modes_stack.addWidget(_Placeholder("ML diagnostics", "Flow B — lands in Block 8"))
+        self._modes_stack.addWidget(self._diagnostics_view)  # 1 — ML diagnostics (Flow B)
         self._modes_stack.addWidget(_Placeholder("Paper figures", "Flow C — lands in Block 9"))
 
         self._right_sidebar = CollapsibleSidebar(
@@ -584,6 +585,13 @@ class MainWindow(QtWidgets.QMainWindow):
         # progress-reported for the big load — then we land on the requested tab.
         self._filter_panel.set_columns(filter_columns(combined))
         self._explore_view.set_results(combined, progress=progress)
+        # ML diagnostics (Flow B) auto-populate when the loaded set carries predictions
+        # (build_view_model joined the ML columns); otherwise the diagnostics view resets.
+        mode = frame_eval_mode(combined)
+        if mode is not None:
+            self._diagnostics_view.set_evaluated(combined, mode)
+        else:
+            self._diagnostics_view.clear()
         self._show_mode(0)
         if focus == "explore":
             self._explore_view.show_explore()

@@ -27,8 +27,24 @@ _ELECTRODE_PREFIX = {"source_channel": "ch", "pair_index": "pair", "electrode_pa
 EvalMode = Literal["full", "qualitative"]
 
 
-class BankNotEvaluatedError(ValueError):
-    """A bank has no predictions, so Flow B can't diagnose it (load it in Flow A instead)."""
+def frame_eval_mode(frame: pd.DataFrame) -> EvalMode | None:
+    """The Flow B diagnostic mode a loaded view-model ``frame`` supports, or ``None``.
+
+    ML diagnostics run automatically on any loaded bank whose traces carry predictions:
+    ``build_view_model`` joins the ML-outcome columns for such a bank (B8a), so there is
+    no separate "evaluated" load — the same Open-bank frame feeds both flows. Returns
+    ``None`` when the frame isn't (fully) evaluated — no ``predicted_prob``, an empty
+    frame, or a mix of evaluated + raw banks. ``"full"`` when every row also carries a
+    ``correctness_bucket`` (a labelled eval set — the metric suite applies), else
+    ``"qualitative"`` (an unlabelled IAFDB eval set — output distribution + inspection).
+    """
+    if "predicted_prob" not in frame.columns or not len(frame.index):
+        return None
+    if not frame["predicted_prob"].notna().all():
+        return None  # a mix of evaluated + raw banks — don't diagnose a partial set
+    if "correctness_bucket" in frame.columns and frame["correctness_bucket"].notna().all():
+        return "full"
+    return "qualitative"
 
 
 def load_view_model(path: str | Path, *, source: str | None = None) -> pd.DataFrame:
@@ -64,49 +80,6 @@ def load_exploration(
     label = source or bank.id or Path(path).stem
     frame = build_view_model(bank, source=label, progress=progress)
     return frame, traces_from_bank(bank)
-
-
-def evaluated_mode(bank: ClassifierBank) -> EvalMode:
-    """The Flow B diagnostic mode for ``bank`` — ``"full"`` (labelled) or ``"qualitative"``.
-
-    Raises :class:`BankNotEvaluatedError` when any trace lacks a ``prediction`` (a raw
-    bank — nothing to diagnose). ``"full"`` when every trace carries a ``label_truth`` (the
-    metric suite applies), ``"qualitative"`` when none do (an IAFDB eval bank — output
-    distribution + per-trace inspection only). A bank mixing labelled + unlabelled traces
-    is rejected as ambiguous.
-    """
-    traces = bank.traces
-    if not traces or any(trace.prediction is None for trace in traces):
-        raise BankNotEvaluatedError(
-            f"bank {bank.id!r} has no predictions; load it in signal exploration for raw traces."
-        )
-    labelled = [trace.label_truth is not None for trace in traces]
-    if all(labelled):
-        return "full"
-    if not any(labelled):
-        return "qualitative"
-    raise ValueError(f"bank {bank.id!r} mixes labelled + unlabelled traces; can't diagnose it.")
-
-
-def load_evaluated(
-    path: str | Path,
-    *,
-    source: str | None = None,
-    positive_label: int = 1,
-    progress: ProgressFn | None = None,
-) -> tuple[pd.DataFrame, list[TraceData], EvalMode]:
-    """Load an *evaluated* bank for Flow B: view-model + display traces + diagnostic mode.
-
-    The Flow B "Load Evaluated Bank" entry — like :func:`load_exploration` but for a
-    predictions bank: it refuses a raw bank (:class:`BankNotEvaluatedError`) *before* the
-    slow feature build, and reports the mode so the view shows the metric suite or the
-    qualitative-only surface. ``build_view_model`` auto-joins the ML-outcome columns (B8a).
-    """
-    bank = load_classifier_bank(path)
-    mode = evaluated_mode(bank)  # raises for a raw / mixed bank before building
-    label = source or bank.id or Path(path).stem
-    frame = build_view_model(bank, source=label, positive_label=positive_label, progress=progress)
-    return frame, traces_from_bank(bank), mode
 
 
 def traces_from_bank(bank: ClassifierBank, *, limit: int | None = None) -> list[TraceData]:
