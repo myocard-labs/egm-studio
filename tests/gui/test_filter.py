@@ -54,6 +54,27 @@ def test_categorical_condition_uses_choices(qtbot: QtBot) -> None:
     assert panel.spec().conditions == (Condition("source", "==", "synthetic"),)
 
 
+def test_set_spec_restores_rows_and_combine(qtbot: QtBot) -> None:
+    """Reloading a saved observation restores the filter panel (numeric + categorical)."""
+    panel = _panel(qtbot)
+    spec = FilterSpec(
+        (Condition("sample_entropy", ">", "1.5"), Condition("source", "==", "synthetic")),
+        combine="or",
+    )
+    panel.set_spec(spec)
+    assert panel.spec() == spec  # rows + combine round-trip
+    assert not panel._recalc_button.isEnabled()  # restored spec is marked applied
+
+
+def test_set_spec_skips_unknown_columns(qtbot: QtBot) -> None:
+    panel = _panel(qtbot)
+    spec = FilterSpec(
+        (Condition("not_a_column", ">", "1"), Condition("sample_entropy", ">", "2")), combine="and"
+    )
+    panel.set_spec(spec)
+    assert panel.spec().conditions == (Condition("sample_entropy", ">", "2"),)  # unknown dropped
+
+
 def test_incomplete_row_is_dropped(qtbot: QtBot) -> None:
     panel = _panel(qtbot)
     panel._add_row()  # numeric row with a blank value

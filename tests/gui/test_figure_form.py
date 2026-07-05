@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from myocard_egm_data.phases import FigureSpec
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 from pytestqt.qtbot import QtBot
 
 from myocard_egm_studio.gui.widgets import FigureForm
@@ -117,3 +117,37 @@ def test_registry_only_names_registered_recipes() -> None:
     from myocard_egm_studio.charts.matplotlib import RECIPES
 
     assert set(RECIPE_FIELDS).issubset(set(RECIPES))
+
+
+def _illustrated_ids(form: FigureForm) -> list[str]:
+    return [obs.root for obs in (form.spec().illustrates_observations or [])]
+
+
+def test_illustrates_observations_round_trips(qtbot: QtBot) -> None:
+    """A spec's illustrated observation is checked on load and preserved on rebuild."""
+    form = FigureForm()
+    qtbot.addWidget(form)
+    form.set_observations(["obs_saturation_iafdb_2026-06-26", "obs_other_2026-06-27"])
+    form.set_spec(_spec(illustrates_observations=["obs_saturation_iafdb_2026-06-26"]))
+    assert form._illustrates.checked() == ["obs_saturation_iafdb_2026-06-26"]
+    assert _illustrated_ids(form) == ["obs_saturation_iafdb_2026-06-26"]
+
+
+def test_checking_an_observation_adds_it_to_the_spec(qtbot: QtBot) -> None:
+    form = _form(qtbot)  # a spec with no illustrates
+    form.set_observations(["obs_a_2026-06-27", "obs_b_2026-06-27"])
+    assert _illustrated_ids(form) == []
+    item = form._illustrates.item(1)
+    assert item is not None
+    item.setCheckState(QtCore.Qt.CheckState.Checked)  # user picks a link -> _emit rebuilds
+    assert _illustrated_ids(form) == ["obs_b_2026-06-27"]
+
+
+def test_spec_only_link_survives_when_absent_from_phase(qtbot: QtBot) -> None:
+    """A spec illustrating an observation not in the phase keeps it (checked, not dropped)."""
+    form = FigureForm()
+    qtbot.addWidget(form)
+    form.set_observations([])  # phase has no observations offered
+    form.set_spec(_spec(illustrates_observations=["obs_from_another_phase_2026-06-01"]))
+    assert form._illustrates.checked() == ["obs_from_another_phase_2026-06-01"]
+    assert _illustrated_ids(form) == ["obs_from_another_phase_2026-06-01"]
