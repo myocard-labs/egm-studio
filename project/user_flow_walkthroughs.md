@@ -607,3 +607,33 @@ to the spec's own `output.path`** (no save dialog; confirms an overwrite); and t
 dynamic on whether the image exists). Live-preview perf on very large banks is a
 Post-v0.1 follow-up. The Flow C → Flow B trace-set bridge waits on the Block 10 save
 flow.
+
+**Block 10 shipped the Save flow (2026-07-05)** — the write path
+described in Flow A step 9 + Flow B step 10 + Flow C, as built:
+
+- **Save an observation** (Flow A / Flow B) via **File ▸ Save
+  observation**. The dialog captures required prose plus optional
+  parent-observation links; egm-studio also snapshots the current **view
+  state** — loaded banks, the filter (with its match type), and the
+  selection — so **Open observation** later *reloads that view*, not just
+  the text. **Edit observation** re-opens the dialog to revise it.
+- **Save a figure** (Flow C) via **Save into…**; the figure entry
+  records the banks / models / observations it consumes and any
+  observations it illustrates.
+- **Save target.** With a phase open, both offer **Add to scratch /
+  Add to phase**. With no phase open, saves go to **scratch** — a
+  per-user, Settings-editable app-data folder that is a full *mini-phase*
+  (its own manifest, the same tree + status dots + viewers). **Promote
+  to phase** moves authored files into the phase and re-indexes producer
+  pointers. This corrects Flow A step 9's "fixed meta-repo path" and the
+  earlier scratch location (ADR-017 → **ADR-026**).
+- **Auto-add dependencies.** Promoting — or saving / loading — into a
+  phase also pulls the artifact's scratch-resident dependencies along
+  (e.g. a promoted figure brings its banks), unless the Settings toggle
+  is off.
+- **Dependency-aware verification.** A well-formed artifact whose
+  referenced ids aren't resolvable shows **amber "unresolved"** with a
+  tooltip naming the missing id; resolution is cross-scope (a scratch
+  item sees scratch + the phase, a phase item sees the phase only).
+- **Still open:** manual add / remove of producer entries directly in a
+  *phase* tree (**B10g**), and the post-write scan-and-validate hook.

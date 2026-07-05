@@ -1201,8 +1201,11 @@ Key points relevant to egm-studio:
   `traces[].bank`; no separate `references.banks` field.
 - **egm-studio writes the file + updates the phase manifest** when
   Save is invoked.
-- **Scratch mode** saves to `intracardiac-platform/project/scratch/`
-  when no phase is loaded; "Promote to Phase" action moves + indexes.
+- **Scratch mode** saves to a scratch area when no phase is loaded;
+  "Promote to Phase" moves + indexes. *As built, the scratch area grew
+  into a full mini-phase (its own manifest, cross-scope resolution,
+  save-target choice, auto-add) and lives in per-user app-data, not
+  `intracardiac-platform/project/scratch/` — see **ADR-026**.*
 
 ### Rationale
 
@@ -1714,6 +1717,87 @@ A **resizable column layout with collapsible side panels**:
 - **Single-column vs. 2-column switching mechanism** (drag a panel to
   split? menu item? both?) — implementation detail, decide at build
   time.
+
+---
+
+## ADR-026: Scratch is a curated mini-phase — cross-scope resolution + auto-add
+
+**Date:** 2026-07-05
+**Status:** Accepted (implemented, B10h)
+
+### Context
+
+ADR-017 introduced "scratch mode": with no phase open, saves land in a
+scratch folder and a later Promote-to-Phase moves them in. As Block 10
+was built out, scratch had to do much more than hold a couple of loose
+files:
+
+- A user with no phase open still wants the same tree, status dots, and
+  viewers a phase gives them.
+- Observations / figures saved to scratch reference banks; those banks
+  (loaded producers) need somewhere to live before a phase exists.
+- Promoting a figure *without* its banks writes a broken phase entry —
+  the concrete bug that kicked this off.
+- The original location (`intracardiac-platform/project/scratch/`)
+  assumed the meta repo is always checked out at a fixed relative path,
+  which isn't true for an installed GUI.
+
+### Options considered
+
+1. **Loose files + a flat sidebar list** — minimal, but no status /
+   validation / viewers, and no way to carry dependencies on promote.
+2. **Scratch as a real, self-contained mini-phase** (its own
+   `manifest.json`, rendered by the same Phase-tree widget) — more
+   machinery, but scratch and phase then share one code path.
+
+### Decision
+
+Scratch is a **real mini-phase**: a per-user app-data folder
+(`<app-data>/scratch`, Settings-editable) with its own `manifest.json`,
+rendered by the same `phase_tree` widget and validated the same way. On
+top of that:
+
+- **Cross-scope resolution.** A scratch artifact resolves its dependency
+  ids against **scratch + the loaded phase**; a phase artifact resolves
+  against the **phase only**. Scratch is a staging area that may lean on
+  the phase; the phase must stay self-contained.
+- **Save-target choice.** With a phase open, Save observation / Save
+  figure offer **Add to scratch / Add to phase**; the to-phase target is
+  enabled only while a phase is loaded.
+- **Auto-add dependencies.** Promoting, or saving / loading into a
+  phase, pulls the artifact's scratch-resident dependency closure
+  (transitive, cycle-safe) into the phase, so a promoted figure brings
+  its banks. A Settings toggle (default on) disables it.
+- **Producer indexing.** Loaded producers (banks, training runs) are
+  indexed as **path-pointer** entries (ADR-021: egm-studio never copies
+  producer files). Pending an egm-contracts change to make
+  `produced_by_*` optional, indexed producers carry sentinel provenance
+  (`unknown` / `0`).
+
+### Rationale
+
+One widget + one manifest schema + one validation path serve both
+scratch and phase — no parallel "scratch" code. Cross-scope resolution
+matches how people actually work (stage loosely, then curate into a
+self-contained phase). Auto-add removes the most common promote
+foot-gun (orphaned dependencies) while the toggle preserves manual
+control.
+
+### Consequences
+
+- Amends ADR-017's scratch-mode bullet (location + behavior); ADR-021's
+  "manifest curator, never copies producer files" boundary is unchanged
+  and now applies to scratch too.
+- The scan-and-validate hook (call `validate_manifest.py` after writes)
+  and **B10g** (manual add / remove of producer entries in a *phase*)
+  remain open.
+- Deferred egm-contracts: make
+  `produced_by_package` / `produced_by_version` optional; add an
+  active-view / tab field to observation `view_state`.
+- Shipped across B10h (2026-07-05): dependency-aware verification (1a),
+  scratch-as-mini-phase (2a), producer load submenus (2b), cross-scope
+  resolution + scratch viewers (2c), save-target submenus (2d),
+  auto-add (1b).
 
 ---
 

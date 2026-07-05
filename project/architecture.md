@@ -125,14 +125,17 @@ myocard_egm_studio/
 ├── gui/                  # Qt shell — imports PySide6 + pyqtgraph.
 │   ├── app.py            #   QApplication entry (`egm-studio` script)  [B4]
 │   ├── shell.py          #   Layout shell + CollapsibleSidebar    [ADR-025, B4]
-│   ├── preferences.py    #   QSettings-backed prefs (theme + view state)  [ADR-017 seed, B4]
+│   ├── preferences.py    #   QSettings-backed prefs (theme, scratch dir, auto-add deps)  [ADR-017 seed, B4]
+│   ├── settings_dialog.py       # Settings modal: scratch folder + theme + auto-add deps  [B10e, B10h-1b]
+│   ├── save_observation_dialog.py  # Save-observation modal (title, prose, parent links)   [B10c]
+│   ├── new_phase_dialog.py      # New-phase modal (phase number + target folder)           [B10e]
 │   ├── theme/            #   dark + light + vibrant QSS themes    [ADR-012, B4]
 │   │   ├── palette.py    #     colour + typography tokens per theme
 │   │   └── _qss.py       #     one shared QSS template + builder
 │   ├── widgets/
 │   │   ├── trace.py      #   TraceWidget + container        [ADR-024, B5]
 │   │   ├── filter.py     #   Filter / query UI              [ADR-002]
-│   │   ├── phase_tree.py #   Phase artifact tree: groups, status dots, menu  [B6]
+│   │   ├── phase_tree.py #   Phase + scratch artifact tree: groups, status dots, menu  [B6, B10h-2a]
 │   │   ├── explore_detail.py  # shared per-trace detail + pluggable finds (both flows) [B8g]
 │   │   ├── figure_form.py    # Flow C: curated per-recipe spec editor          [B9b]
 │   │   ├── figure_preview.py # Flow C: WYSIWYG raster panel (scaled-to-fit)     [B9a]
@@ -147,7 +150,15 @@ myocard_egm_studio/
 ├── loaders/              # Data-loading: ids/paths -> in-memory inputs.   [B7]
 │   ├── figure_inputs.py  #   spec + {id: path} -> recipe inputs + LOADERS
 │   └── manifest.py       #   phase manifest -> {artifact_id: path} resolution
-├── save/                 # Observation + manifest writers   [ADR-017, ADR-021]
+├── save/                 # Authored-artifact + manifest writers; scratch  [ADR-017, ADR-021, ADR-026]
+│   ├── ids.py           #   role-prefixed + date-stamped stable ids       [ADR-022, B10a]
+│   ├── artifacts.py     #   shared authored-artifact write skeleton       [B10d-0]
+│   ├── capture.py       #   live GUI state -> observation view_state       [B10b]
+│   ├── observation.py   #   observation JSON build / write / update       [B10a, B10c]
+│   ├── figure.py        #   figure-spec writer into a phase               [B10d]
+│   ├── manifest.py      #   phase manifest read/write; with_entry / remove_entry / empty  [B10a]
+│   ├── producer.py      #   loaded producer file -> path-pointer entry    [B10h-2b]
+│   └── scratch.py       #   scratch = a real (migrating) mini-phase manifest  [ADR-026, B10h-2a]
 └── view_model/           # Prepared, Qt-free view data       [ADR-002]
     ├── builder.py        #   unified per-trace table (features + metadata + ML outcomes)
     ├── ml_outcomes.py    #   predictions-bank -> ML columns; ML_COLUMNS         [B8a]
@@ -156,7 +167,8 @@ myocard_egm_studio/
     ├── trace_detail.py   #   per-trace feature + metadata + ML detail + deltas [B7.6, B8g]
     ├── similar.py        #   nearest-in-other-bank + correct-pair / in-class finds [B7.10, B8b]
     ├── phase_groups.py   #   manifest -> the ten role-based groups       [B6]
-    ├── phase_status.py   #   per-artifact existence + schema validation  [B6]
+    ├── phase_status.py   #   per-artifact existence + schema + dependency status  [B6, B10h-1a]
+    ├── dependencies.py   #   what each artifact references; closure for auto-add  [B10h]
     ├── phase_actions.py  #   right-click action policy per role (figure menu dynamic) [B6, B9]
     ├── figure_output.py  #   figure image path + per-figure existence    [B9]
     └── artifact_metadata.py  # file-level "Show metadata" summaries       [B6]
@@ -388,7 +400,7 @@ rows [ADR-011].
 
 egm-studio v0.1 has **no generic session persistence** [ADR-003].
 But **partial persistence of meaningful work** is supported via the
-unified save schema [ADR-017]:
+unified save schema [ADR-017] and the scratch-curation model [ADR-026]:
 
 - **Observations** — prose `description` (required) + optional trace list +
   optional `view_state` for reload. Saved as JSON in
@@ -406,9 +418,30 @@ unified save schema [ADR-017]:
 - **Stable IDs** — every saved artifact gets a role-prefixed +
   date-stamped ID: `obs_my_observation_2026-06-25`,
   `fig_F-1-5-2_2026-06-25`, etc. [ADR-022]
-- **Scratch mode** — when no phase is loaded, saves go to
-  `intracardiac-platform/project/scratch/`. "Promote to Phase"
-  action moves + indexes into the proper phase.
+- **Scratch mini-phase** — a per-user **app-data** folder
+  (`<app-data>/scratch`, overridable in Settings — *not*
+  `intracardiac-platform/project/scratch/`) that holds its own
+  `manifest.json` and is rendered by the same Phase-tree widget. Saves
+  land here when no phase is open; loaded producers can be indexed here
+  too. **Promote to phase** moves authored files into the phase folder
+  and re-indexes producer pointers in place. [ADR-026, B10h-2a]
+- **Save target** — with a phase open, **Save observation** and Flow C's
+  **Save into…** let the user choose **Add to scratch** vs **Add to
+  phase** (to-phase enabled only while a phase is loaded). [B10h-2d]
+- **Auto-add dependencies** — promoting, or saving / loading into a
+  phase, also pulls the artifact's scratch-resident dependency closure
+  into the phase (transitive, cycle-safe; `view_model/dependencies.py`).
+  A Settings toggle (default on) disables it. [ADR-026, B10h-1b]
+- **Dependency-aware verification** — a well-formed artifact whose
+  referenced ids aren't resolvable reads **amber "unresolved"** (not
+  green), with a tooltip naming the missing id. Resolution is
+  **cross-scope**: a scratch item resolves against scratch + the loaded
+  phase; a phase item resolves against the phase only. [ADR-026, B10h-1a]
+
+Not yet built (Block 10 remainder, **B10g**): direct **manual-add** of a
+produced artifact into a *phase* by pointing at its file, and **Remove**
+(unindex) for any tree entry. The scan-and-validate hook into
+`validate_manifest.py` after each write is also still deferred.
 
 ## Test strategy [ADR-013]
 

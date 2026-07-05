@@ -670,6 +670,15 @@ Wires up egm-studio as the canonical manifest curator (ADR-021).
 Block 6 set up the read-only Phase tree; this block adds the write
 path.
 
+**✓ Shipped 2026-07-05** (save flow + scratch curation; the
+add/remove-in-tree sub-block **B10g is still open** — see below). The
+scope below is retained as written; the **Shipped (by sub-block)**
+notes after it record what actually shipped and where it deviated.
+The largest deviation is the scratch area, which grew from a single
+folder into a full **scratch mini-phase** with its own manifest,
+cross-scope dependency resolution, and auto-add — captured in the new
+**ADR-026**.
+
 **Scope:**
 
 - `save/observation.py` — observation writer
@@ -719,6 +728,87 @@ path.
 - Any tree artifact can be removed (authored files deleted, producer
   files left in place); a produced bank / noise bank / training run /
   model can be added to the phase by pointing at its file.
+
+**Shipped (by sub-block):**
+
+- **B10a — save/ core.** **✓ Shipped** — `save/observation.py`,
+  `save/manifest.py`, and `save/ids.py`. Stable IDs per ADR-022; files
+  are **JSON**, not YAML (matching the shipped `observation` /
+  `figure_spec` contracts).
+- **B10b — view_state capture.** **✓ Shipped** — the current banks,
+  filter (with match type), and selection are captured into an
+  observation's `view_state` so **Open observation** can reload the view.
+- **B10c — Save Observation GUI + shell wiring.** **✓ Shipped**, then
+  extended by revisions r1–r8: parent-observation links (r1),
+  figure→observation `illustrates_observations` (r2), **Edit
+  observation** with dialog prefill + `update_observation` (r3), **Open
+  observation = reload the captured view** (banks + guarded filter +
+  selection, r4), filter match type saved in the filter string (r6),
+  validation indicators preserved across observation writes (r7), and a
+  tracked deferred egm-contracts todo for an active-view/tab field in
+  `view_state` (r8).
+- **B10d — figure spec save into the phase.** **✓ Shipped** —
+  `save/figure.py` + Flow C wiring; a spec written into the phase is
+  indexed with its consumed banks / models / observations.
+- **B10e — scratch mode + Settings + New phase.** **✓ Shipped** —
+  saving with no phase open lands in a **scratch folder**; a Settings
+  dialog exposes the (editable) scratch folder; **File ▸ New phase**
+  writes an empty manifest; the scratch list sits under the Phase tree.
+- **B10h — dependency-aware verification + scratch mini-phase (beyond
+  the original plan).** **✓ Shipped** — the arc that reshaped the
+  scratch area (ADR-026):
+  - **1a — dependency-aware verification.** An observation that is
+    well-formed but whose referenced banks aren't in the phase now reads
+    **amber "unresolved"** (not green), with a tooltip naming the
+    missing id.
+  - **2a — scratch is a real mini-phase.** The scratch area has its own
+    `manifest.json`, is rendered by the same Phase-tree widget, and
+    carries **Promote to phase** / **Delete** plus its own validation.
+  - **2b — Load producers into scratch or the phase.** **File ▸ Open
+    bank / Open training run** open submenus (Load to scratch / Load to
+    phase); the loaded artifact is indexed as a path-pointer entry.
+    Producer entries carry a sentinel provenance
+    (`produced_by_package="unknown"`, `version="0"`) pending the
+    deferred contracts change below.
+  - **2c — cross-scope resolution.** A scratch item resolves its
+    dependencies against **scratch + the loaded phase**; a phase item
+    sees the **phase only**. Scratch items get the viewer actions, and
+    Flow C previews figures from scratch **or** phase banks.
+  - **2d — save-target choice.** **Save observation** and Flow C's
+    **Save into…** offer **Add to scratch / Add to phase**; the
+    to-phase target enables only while a phase is open.
+  - **1b — auto-add dependencies.** Promoting, or saving / loading into
+    a phase, also pulls the artifact's scratch-resident dependency
+    closure into the phase (transitive, cycle-safe). A Settings toggle
+    (**Automatically add dependencies**, default on) disables it.
+
+**Corrections to the scope above (as built):**
+
+- **Scratch is a per-user app-data folder, not
+  `intracardiac-platform/project/scratch/`.** It defaults to
+  `<app-data>/scratch`, is overridable in Settings, and holds its own
+  `manifest.json` (ADR-026). Promote and auto-add move authored files
+  (observations / figure specs) into the phase folder and re-index
+  producer pointers in place.
+- **The scan-and-validate hook is not yet wired.** Writes do not yet
+  call `intracardiac-platform/scripts/validate_manifest.py`; that gate
+  stays a manual / end-of-phase step for now.
+
+**Still open:**
+
+- **B10g — artifact add/remove in the Phase tree.** Direct manual-add of
+  a produced bank / noise bank / training run / model into a *phase* by
+  pointing at its file, and **Remove** (unindex; delete authored files,
+  leave producer files in place) for any tree entry, are **not yet
+  built**. (Load-into-scratch/phase from B10h covers the add path for
+  scratch; the phase-side manual-add + remove-from-tree UI remains.)
+
+**Deferred egm-contracts changes (batched for refactor-cleanup):**
+
+- Make `produced_by_package` / `produced_by_version` **optional** on
+  manifest entries, so indexed producers need no sentinel values.
+- Add an **active view / tab** field to observation `view_state`, so
+  Open observation can also restore the active flow + sub-tab.
 
 **Estimated effort:** ~2-2.5 days.
 
