@@ -133,6 +133,19 @@ def menu_label(action: ArtifactAction, *, add_mode: bool) -> str:
     return _ADD_LABELS.get(action.id, action.label) if add_mode else action.label
 
 
+#: The scratch-area actions, shown above the info group when the tree is a scratch tree
+#: (Block 10h-2a): move the staged artifact into the loaded phase, or drop it from scratch.
+_SCRATCH_ACTIONS: tuple[ArtifactAction, ...] = (
+    ArtifactAction("promote_scratch", "Promote to phase"),
+    ArtifactAction("delete_scratch", "Delete from scratch"),
+)
+
+
+def scratch_actions() -> tuple[ArtifactAction, ...]:
+    """Promote to phase / Delete from scratch — the scratch tree's own actions."""
+    return _SCRATCH_ACTIONS
+
+
 def type_actions(role: Role) -> tuple[ArtifactAction, ...]:
     """The role-specific viewer actions (may be empty); shown before the divider."""
     return _VIEWERS_BY_ROLE.get(role, ())

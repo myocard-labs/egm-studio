@@ -57,9 +57,10 @@ class PhaseTree(QtWidgets.QTreeWidget):
     # (action_id, artifact_id) from the right-click menu; the shell executes it.
     actionRequested = QtCore.Signal(str, str)
 
-    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+    def __init__(self, parent: QtWidgets.QWidget | None = None, *, scratch: bool = False) -> None:
         super().__init__(parent)
-        self.setObjectName("phaseTree")
+        self._scratch = scratch  # a scratch tree leads its menu with Promote/Delete
+        self.setObjectName("scratchTree" if scratch else "phaseTree")
         self.setHeaderHidden(True)
         self.setColumnCount(1)
         self.setIconSize(QtCore.QSize(_ICON_PX, _ICON_PX))
@@ -126,6 +127,10 @@ class PhaseTree(QtWidgets.QTreeWidget):
         menu = QtWidgets.QMenu(self)
         menu.setToolTipsVisible(True)
         role = role_of(artifact_id)
+        if self._scratch:  # a scratch item leads with Promote / Delete, then the shared menu
+            for action in phase_actions.scratch_actions():
+                self._add_action(menu, action, artifact_id)
+            menu.addSeparator()
         if role is Role.figure:  # figures are dynamic: View / Generate / Regenerate per state
             specific = phase_actions.figure_actions(
                 output_exists=self._figure_outputs.get(artifact_id, False)

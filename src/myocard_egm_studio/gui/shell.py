@@ -13,10 +13,10 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 
 import pandas as pd
-from myocard_egm_contracts import role_of
+from myocard_egm_contracts import Role, role_of
 from myocard_egm_data.phases import (
     MANIFEST_FILENAME,
     FigureSpec,
@@ -59,28 +59,31 @@ from myocard_egm_studio.gui.widgets import (
     FilterPanel,
     LoadedBanksList,
     PhaseTree,
-    ScratchList,
     TraceData,
 )
 from myocard_egm_studio.loaders import (
-    bank_paths_from_phase,
+    bank_paths_from_manifest,
     resolve_bank_paths,
     training_curve_from_run,
 )
 from myocard_egm_studio.save import (
-    ScratchArtifact,
+    SCRATCH_PHASE,
+    bank_entry,
     build_observation,
     capture_view_state,
     describe_filter,
     empty_manifest,
     figure_entry,
+    load_scratch,
+    manifest_section,
     observation_entry,
     parse_filter,
     references_from,
+    remove_entry,
+    run_entry,
     save_figure_spec,
     save_manifest,
     save_observation,
-    scratch_artifacts,
     update_observation,
     with_entry,
 )
@@ -93,6 +96,7 @@ from myocard_egm_studio.view_model import (
 )
 from myocard_egm_studio.view_model.artifact_metadata import artifact_metadata_text
 from myocard_egm_studio.view_model.combine import ROW_ID
+from myocard_egm_studio.view_model.dependencies import manifest_ids
 from myocard_egm_studio.view_model.figure_output import figure_output_exists_map, figure_output_path
 from myocard_egm_studio.view_model.filtering import FilterSpec
 from myocard_egm_studio.view_model.phase_actions import reveal_target
@@ -121,6 +125,17 @@ _MODES = ("Signal exploration", "ML diagnostics", "Paper figures")
 _RECALC_DIALOG_DELAY_MS = 300
 
 _Side = Literal["left", "right"]
+#: Where a loaded producer artifact (or an authored save) is indexed.
+_Target = Literal["scratch", "phase"]
+
+
+class _ArtifactEntry(Protocol):
+    """The pointer fields a tree action needs off any manifest entry."""
+
+    id: str
+    path: str
+
+
 # Chevrons: the panel's collapse button points at the edge it hides toward; the
 # strip's expand button points back toward the centre.
 _COLLAPSE_GLYPH: dict[_Side, str] = {"left": "◂", "right": "▸"}
@@ -244,6 +259,20 @@ def _run_label(path: str) -> str:
     return p.parent.name if p.stem == "run" else p.stem
 
 
+def _status_summary(report: dict[str, StatusReport]) -> str:
+    """A short "N ok, M unresolved, …" line from a status report (for the status bar)."""
+    counts = Counter(r.status for r in report.values())
+    parts = [f"{counts[ArtifactStatus.OK]} ok"]
+    for status, label in (
+        (ArtifactStatus.UNRESOLVED, "unresolved"),
+        (ArtifactStatus.INVALID, "invalid"),
+        (ArtifactStatus.MISSING, "missing"),
+    ):
+        if counts[status]:
+            parts.append(f"{counts[status]} {label}")
+    return ", ".join(parts)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     """Top-level shell: menu bar + header (mode switch) + collapsible column work area."""
 
@@ -254,6 +283,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._phase_dir = Path()
         self._phase_validated = False  # has Validate phase run on the current phase?
         self._scratch_dir = load_scratch_dir()  # where no-phase saves land (Settings-editable)
+        self._scratch_manifest = empty_manifest(
+            SCRATCH_PHASE
+        )  # _refresh_scratch loads the real one
+        self._scratch_validated = False  # has Validate run over the scratch area?
         self._last_metadata_text = ""  # last "Show metadata" text (for tests)
         self._metadata_dialog: QtWidgets.QDialog | None = None
         self._loaded_banks: list[_LoadedBank] = []  # banks open in Flow A (B7.8)
@@ -272,12 +305,17 @@ class MainWindow(QtWidgets.QMainWindow):
         menubar = self.menuBar()
 
         file_menu = menubar.addMenu("&File")
-        self._open_action = file_menu.addAction("&Open bank…")
-        self._open_action.setObjectName("openBank")
-        self._open_action.triggered.connect(self._open_bank)
-        run_action = file_menu.addAction("Open &training run…")
-        run_action.setObjectName("openTrainingRun")
-        run_action.triggered.connect(self._open_training_run)
+        self._phase_target_actions: list[QtGui.QAction] = []  # "…to phase", enabled with a phase
+        file_menu.aboutToShow.connect(self._sync_phase_targets)
+        # Loading a producer opens it for viewing AND indexes it into the chosen area — a
+        # submenu picks scratch vs the loaded phase (B10h-2b). The bank submenu relabels to
+        # "Add bank" once banks are loaded (the openers are additive, B7.8b-fix).
+        self._bank_menu = file_menu.addMenu("&Open bank")
+        self._bank_menu.setObjectName("openBank")
+        self._add_load_targets(self._bank_menu, "openBank", self._load_banks)
+        run_menu = file_menu.addMenu("Open &training run")
+        run_menu.setObjectName("openTrainingRun")
+        self._add_load_targets(run_menu, "openTrainingRun", self._load_runs)
         new_phase_action = file_menu.addAction("&New phase…")
         new_phase_action.setObjectName("newPhase")
         new_phase_action.triggered.connect(self._new_phase)
@@ -309,6 +347,24 @@ class MainWindow(QtWidgets.QMainWindow):
 
         help_menu = menubar.addMenu("&Help")
         help_menu.addAction("&About egm-studio")
+
+    def _add_load_targets(
+        self, menu: QtWidgets.QMenu, key: str, handler: Callable[[_Target], None]
+    ) -> None:
+        """Give a load submenu its two targets: Load to scratch / Load to phase."""
+        to_scratch = menu.addAction("Load to &scratch…")
+        to_scratch.setObjectName(f"{key}ToScratch")
+        to_scratch.triggered.connect(lambda: handler("scratch"))
+        to_phase = menu.addAction("Load to &phase…")
+        to_phase.setObjectName(f"{key}ToPhase")
+        to_phase.triggered.connect(lambda: handler("phase"))
+        self._phase_target_actions.append(to_phase)
+
+    def _sync_phase_targets(self) -> None:
+        """Enable the "…to phase" actions only while a phase is loaded (menu aboutToShow)."""
+        has_phase = self._phase_manifest is not None
+        for action in self._phase_target_actions:
+            action.setEnabled(has_phase)
 
     def _sidebar_action(
         self, menu: QtWidgets.QMenu, text: str, object_name: str, side: _Side
@@ -470,20 +526,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self._right_sidebar.toggleRequested.connect(lambda: self._toggle_sidebar("right"))
         self._phase_tree = PhaseTree()
         self._phase_tree.actionRequested.connect(self._on_phase_action)
-        # Scratch is a staging area for the phase, so it sits under the phase tree; it stays
-        # hidden until it holds something, leaving the sidebar unchanged for an empty scratch.
-        self._scratch_list = ScratchList()
-        self._scratch_list.promoteRequested.connect(self._promote_scratch)
-        self._scratch_list.deleteRequested.connect(self._delete_scratch)
-        self._scratch_list.setVisible(False)
-        right_body = QtWidgets.QWidget()
-        right_layout = QtWidgets.QVBoxLayout(right_body)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(10)
-        right_layout.addWidget(self._phase_tree, 1)
-        right_layout.addWidget(self._scratch_list)
-        self._right_sidebar.set_body(right_body)
-        self._refresh_scratch()  # show the scratch list if the folder already has items
+        # Scratch is a staging area rendered as its own phase tree (same organization +
+        # actions, plus Promote/Delete). It sits under the phase tree and stays hidden until
+        # it holds something, leaving the sidebar unchanged for an empty scratch.
+        self._scratch_tree = PhaseTree(scratch=True)
+        self._scratch_tree.actionRequested.connect(self._on_scratch_action)
+        self._scratch_pane = QtWidgets.QWidget()
+        scratch_layout = QtWidgets.QVBoxLayout(self._scratch_pane)
+        scratch_layout.setContentsMargins(0, 0, 0, 0)
+        scratch_title = QtWidgets.QLabel("Scratch")
+        scratch_title.setObjectName("sidebarTitle")
+        scratch_layout.addWidget(scratch_title)
+        scratch_layout.addWidget(self._scratch_tree, 1)
+        self._scratch_pane.setVisible(False)
+        right_split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        right_split.setObjectName("rightSplit")
+        right_split.addWidget(self._phase_tree)
+        right_split.addWidget(self._scratch_pane)
+        right_split.setStretchFactor(0, 3)  # the phase tree dominates; scratch takes the rest
+        right_split.setStretchFactor(1, 1)
+        self._right_sidebar.set_body(right_split)
+        self._refresh_scratch()  # show the scratch tree if the folder already has items
 
         splitter.addWidget(self._left_sidebar)
         splitter.addWidget(self._modes_stack)
@@ -523,17 +586,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # -- open / add banks (direct load; File > Open bank) ----------------------
 
-    def _open_bank(self) -> None:
-        """File > Open bank…: load bank file(s) — replace when nothing is loaded,
-        append when one or more banks already are (the menu label reflects which).
-
-        Starting fresh once banks are loaded is done by removing them in the
-        loaded-banks roster, so this single action covers open + add.
-        """
+    def _load_banks(self, target: _Target) -> None:
+        """File > Open bank ▸ Load to scratch / phase: view the bank(s) in Flow A and index
+        each into ``target``. Replaces the loaded set when nothing is loaded, else appends
+        (the submenu title reflects which; starting fresh is done via the roster remove)."""
         replace_first = not self._loaded_banks
         title = "Add bank(s)" if self._loaded_banks else "Open bank(s)"
         for index, path in enumerate(self._pick_banks(title)):
             self._open_bank_explore(path, replace=replace_first and index == 0)
+            self._index_producer(path, kind="bank", target=target)
 
     def _pick_banks(self, title: str) -> list[str]:
         paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
@@ -665,13 +726,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # -- open training run (File > Open training run) --------------------------
 
-    def _open_training_run(self) -> None:
-        """File > Open training run…: load run.json record(s) into the Flow B Training tab.
+    def _load_runs(self, target: _Target) -> None:
+        """File > Open training run ▸ Load to scratch / phase: overlay run.json record(s) in
+        the Flow B Training tab and index each into ``target``.
 
-        Additive like Add bank — each run overlays as another coloured line. A run.json is
-        not a ClassifierBank, so runs load independently of the evaluated-bank path: this
-        feeds the diagnostics view's Training tab directly, then switches to ML-diagnostics
-        mode. A run already loaded (same label) is skipped; a read error is reported.
+        Additive like Add bank — each run overlays as another coloured line. A run already
+        loaded (same label) is skipped for the overlay; a read error is reported.
         """
         paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
             self, "Open training run", "", "Run records (*.json);;All files (*)"
@@ -679,6 +739,27 @@ class MainWindow(QtWidgets.QMainWindow):
         added = [self._load_training_run(path, _run_label(path)) for path in paths]
         if any(added):
             self._show_training_runs()
+        for path in paths:
+            self._index_producer(path, kind="run", target=target)
+
+    def _index_producer(self, path: str, *, kind: Literal["bank", "run"], target: _Target) -> None:
+        """Index a loaded producer artifact (a path pointer) into scratch or the loaded phase."""
+        try:
+            entry = bank_entry(path) if kind == "bank" else run_entry(path)
+        except Exception as exc:  # unreadable / id-less file -> viewed, but not indexed
+            self.statusBar().showMessage(f"Loaded, but could not index {Path(path).name}: {exc}")
+            return
+        section = manifest_section(entry.id)
+        if target == "phase" and self._phase_manifest is not None:
+            save_manifest(with_entry(self._phase_manifest, section, entry), self._phase_dir)
+            self._reindex_phase_after_write()
+            self.statusBar().showMessage(f"Loaded {entry.id} into the phase")
+        else:
+            save_manifest(
+                with_entry(load_scratch(self._scratch_dir), section, entry), self._scratch_dir
+            )
+            self._refresh_scratch()
+            self.statusBar().showMessage(f"Loaded {entry.id} into scratch")
 
     def _load_training_run(self, path: str, label: str) -> bool:
         """Add one run.json to the Flow B run set; return whether it was newly added.
@@ -733,7 +814,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         # Once a bank is loaded, the bank openers become "Add …" (B7.8b-fix).
         loaded = bool(self._loaded_banks)
-        self._open_action.setText("&Add bank…" if loaded else "&Open bank…")
+        self._bank_menu.setTitle("&Add bank" if loaded else "&Open bank")
         self._phase_tree.set_add_mode(loaded)
         self._explore_view.set_traces(traces)
         # A fresh load shows the full frame; set_columns resets the filter to empty
@@ -830,9 +911,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._phase_manifest = manifest
         self._phase_dir = Path(folder)
         self._phase_validated = False  # a freshly-loaded phase is existence-checked only
-        # Flow C resolves a figure spec's bank ids against this phase's manifest, and
-        # offers the phase's observations as illustrate-able links.
-        self._figure_view.set_bank_paths(bank_paths_from_phase(self._phase_dir))
+        # Flow C resolves a figure spec's bank ids against scratch + this phase, and offers
+        # the phase's observations as illustrate-able links.
+        self._figure_view.set_bank_paths(self._all_bank_paths())
         self._figure_view.set_observations(self._existing_observation_ids())
         self._refresh_figure_outputs()  # tune the figure menus to which images exist
         report = self._mark_statuses(manifest, validate=False)
@@ -844,22 +925,18 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def _validate_phase(self) -> None:
-        """File > Validate phase: run the full per-type format validation + re-mark."""
-        if self._phase_manifest is None:
-            self.statusBar().showMessage("Open a phase first.")
-            return
-        report = self._mark_statuses(self._phase_manifest, validate=True)
-        self._phase_validated = True  # indicators now reflect a full validation
-        counts = Counter(r.status for r in report.values())
-        parts = [f"{counts[ArtifactStatus.OK]} ok"]
-        if counts[ArtifactStatus.UNRESOLVED]:
-            parts.append(f"{counts[ArtifactStatus.UNRESOLVED]} unresolved")
-        if counts[ArtifactStatus.INVALID]:
-            parts.append(f"{counts[ArtifactStatus.INVALID]} invalid")
-        if counts[ArtifactStatus.MISSING]:
-            parts.append(f"{counts[ArtifactStatus.MISSING]} missing")
+        """File > Validate phase: fully validate the loaded phase *and* the scratch area."""
+        messages: list[str] = []
+        if self._phase_manifest is not None:
+            report = self._mark_statuses(self._phase_manifest, validate=True)
+            self._phase_validated = True  # indicators now reflect a full validation
+            messages.append(f"phase {self._phase_manifest.phase} — {_status_summary(report)}")
+        if manifest_ids(self._scratch_manifest):
+            self._scratch_validated = True
+            scratch_report = self._paint_scratch(validate=True)
+            messages.append(f"scratch — {_status_summary(scratch_report)}")
         self.statusBar().showMessage(
-            f"Validated phase {self._phase_manifest.phase} — {', '.join(parts)}"
+            f"Validated {'; '.join(messages)}" if messages else "Nothing to validate."
         )
 
     def _mark_statuses(self, manifest: PhaseManifest, *, validate: bool) -> dict[str, StatusReport]:
@@ -871,67 +948,71 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         return report
 
+    def _all_bank_paths(self) -> dict[str, Path]:
+        """Every artifact id -> path across scratch + the loaded phase, so Flow C previews a
+        figure whether its banks are staged in scratch or indexed in the phase (2c / item 3)."""
+        paths = bank_paths_from_manifest(self._scratch_manifest, self._scratch_dir)
+        if self._phase_manifest is not None:
+            paths |= bank_paths_from_manifest(self._phase_manifest, self._phase_dir)
+        return paths
+
     # -- phase-tree right-click actions ---------------------------------------
 
     def _on_phase_action(self, action_id: str, artifact_id: str) -> None:
-        """Execute a Phase-tree right-click action against one artifact."""
+        """Execute a Phase-tree right-click action against one artifact (phase scope)."""
         if self._phase_manifest is None:
             return
         entry = entries_by_id(self._phase_manifest).get(artifact_id)
-        if entry is None:
-            return
+        if entry is not None:
+            self._run_artifact_action(
+                action_id, entry, base_dir=self._phase_dir, scope_dirs=[self._phase_dir]
+            )
+
+    def _run_artifact_action(
+        self,
+        action_id: str,
+        entry: _ArtifactEntry,
+        *,
+        base_dir: Path,
+        scope_dirs: Sequence[Path],
+    ) -> None:
+        """Run a tree action against ``entry`` under ``base_dir``. Shared by the phase tree
+        and the scratch tree; ``scope_dirs`` is where an observation's banks resolve — the
+        phase alone, or [scratch, phase] for a scratch item (2c)."""
+        resolved = base_dir / entry.path
         if action_id == "copy_id":
             self._copy_to_clipboard(entry.id)
         elif action_id == "show_metadata":
-            resolved = self._phase_dir / entry.path
             try:
                 text = artifact_metadata_text(role_of(entry.id), resolved)
             except Exception as exc:  # missing / malformed file -> friendly text, no crash
                 text = f"Could not read metadata for {entry.id}:\n{exc}"
             self._show_metadata(entry.id, text)
         elif action_id == "reveal_file":
-            self._reveal(reveal_target(self._phase_dir, entry.path))
+            self._reveal(reveal_target(base_dir, entry.path))
         elif action_id == "explore_signal":
-            # Explore signal always replaces the loaded set (B7.8b-fix).
-            self._open_bank_explore(str(self._phase_dir / entry.path), focus="explore")
+            self._open_bank_explore(str(resolved), focus="explore")  # replaces (B7.8b-fix)
         elif action_id == "view_feature_distributions":
-            # Additive when a bank is already loaded — builds the summary overlay.
-            self._open_bank_explore(
-                str(self._phase_dir / entry.path),
-                focus="summary",
-                replace=not self._loaded_banks,
-            )
+            self._open_bank_explore(str(resolved), focus="summary", replace=not self._loaded_banks)
         elif action_id == "view_ml_diagnostics":
-            # Load the predictions bank (additive) then land on Flow B — the single
-            # Open-bank path already populates ML diagnostics when a bank has predictions.
-            self._open_bank_explore(
-                str(self._phase_dir / entry.path),
-                focus=None,
-                replace=not self._loaded_banks,
-            )
+            self._open_bank_explore(str(resolved), focus=None, replace=not self._loaded_banks)
             self._show_mode(1)  # ML-diagnostics mode
         elif action_id == "view_curves":
-            # Load the run.json into Flow B's Training tab (same path as File ▸ Open
-            # training run, but with the artifact resolved from the manifest).
-            self._load_training_run(str(self._phase_dir / entry.path), entry.id)
+            self._load_training_run(str(resolved), entry.id)
             if any(name == entry.id for name, _ in self._loaded_runs):
                 self._show_training_runs()
         elif action_id == "edit_spec":
-            # Open the figure spec in Flow C. The phase's bank_paths are already set
-            # (from the Open-phase load), so the spec's bank ids resolve + preview.
-            self._figure_view.load_spec(str(self._phase_dir / entry.path))
+            self._figure_view.load_spec(str(resolved))  # bank_paths are cross-scope (2c)
             self._show_mode(2)  # paper-figure-prep mode
         elif action_id == "view_figure":
-            self._view_figure(self._phase_dir / entry.path)
+            self._view_figure(resolved)
         elif action_id == "generate_figure":
-            # Render the spec to its output in Flow C (async, confirms an overwrite);
-            # figureGenerated -> _refresh_figure_outputs updates the menu afterwards.
-            self._figure_view.generate_to_file(str(self._phase_dir / entry.path))
+            self._figure_view.generate_to_file(str(resolved))
             self._show_mode(2)
         elif action_id == "open_observation":
-            self._open_observation(entry.id, self._phase_dir / entry.path)
+            self._open_observation(entry.id, resolved, scope_dirs=scope_dirs)
         elif action_id == "edit_observation":
-            self._edit_observation(entry.id, self._phase_dir / entry.path)
+            self._edit_observation(entry.id, resolved)
 
     def _refresh_figure_outputs(self) -> None:
         """Retune the figure menus to which images exist (on phase load + after a render)."""
@@ -999,15 +1080,24 @@ class MainWindow(QtWidgets.QMainWindow):
             self._reindex_phase_after_write()  # tree shows it; validation preserved
             self.statusBar().showMessage(f"Saved observation {observation.id}")
         else:
-            save_observation(observation, self._scratch_dir)  # scratch — no manifest
+            save_observation(observation, self._scratch_dir)  # into the scratch area...
+            save_manifest(  # ...and index it in the scratch manifest
+                with_entry(
+                    load_scratch(self._scratch_dir), "observations", observation_entry(observation)
+                ),
+                self._scratch_dir,
+            )
             self._refresh_scratch()
             self.statusBar().showMessage(f"Saved observation {observation.id} to scratch")
 
     def _existing_observation_ids(self) -> list[str]:
         """Observation ids to offer as parent links — the loaded phase's, else scratch's."""
-        if self._phase_manifest is not None:
-            return [entry.id for entry in (self._phase_manifest.observations or ())]
-        return [a.id for a in scratch_artifacts(self._scratch_dir) if a.kind == "observation"]
+        source = (
+            self._phase_manifest
+            if self._phase_manifest is not None
+            else load_scratch(self._scratch_dir)
+        )
+        return [entry.id for entry in (source.observations or ())]
 
     def _reindex_phase_after_write(self) -> None:
         """Reload the phase tree after a manifest write, re-running validation only if the
@@ -1019,8 +1109,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if was_validated:
             self._validate_phase()  # re-marks indicators + re-sets the flag
 
-    def _open_observation(self, observation_id: str, path: Path) -> None:
-        """Reload the view a saved observation captured — its banks, filter, and selection."""
+    def _open_observation(
+        self, observation_id: str, path: Path, *, scope_dirs: Sequence[Path]
+    ) -> None:
+        """Reload the view a saved observation captured — its banks, filter, and selection.
+        Banks resolve across ``scope_dirs`` (the phase, or scratch + phase for a scratch obs)."""
         try:
             observation = load_observation(path)
         except Exception as exc:  # missing / malformed file -> friendly text, no crash
@@ -1031,10 +1124,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.statusBar().showMessage(f"Observation {observation_id} saved no view to reload.")
             return
         bank_ids = [b.root for b in (view.banks_loaded or ())]
-        loaded, missing = self._reload_banks(bank_ids)
+        loaded, missing = self._reload_banks(bank_ids, scope_dirs)
         if loaded == 0:
             self.statusBar().showMessage(
-                f"Observation {observation_id}: none of its {len(bank_ids)} bank(s) are in this phase."
+                f"Observation {observation_id}: none of its {len(bank_ids)} bank(s) are available."
             )
             return
         filter_note = self._restore_filter(view.filter)
@@ -1046,13 +1139,14 @@ class MainWindow(QtWidgets.QMainWindow):
             f"Reloaded {observation_id}: {banks}, {filter_note}, {selected} trace(s) selected"
         )
 
-    def _reload_banks(self, bank_ids: Sequence[str]) -> tuple[int, int]:
-        """Load the phase banks named by ``bank_ids`` into Flow A (first replaces, rest add).
+    def _reload_banks(self, bank_ids: Sequence[str], scope_dirs: Sequence[Path]) -> tuple[int, int]:
+        """Load the banks named by ``bank_ids`` into Flow A (first replaces, rest add),
+        searching ``scope_dirs`` in order (a phase, or scratch + phase for a scratch obs).
 
         Resolution tolerates a bank whose stamped id has drifted from its manifest entry
         id (:func:`resolve_bank_paths`). Returns ``(loaded, missing)``.
         """
-        paths, missing = resolve_bank_paths(self._phase_dir, bank_ids)
+        paths, missing = resolve_bank_paths(scope_dirs, bank_ids)
         for i, bank_path in enumerate(paths):
             self._open_bank_explore(str(bank_path), focus=None, replace=(i == 0))
         return len(paths), len(missing)
@@ -1141,48 +1235,107 @@ class MainWindow(QtWidgets.QMainWindow):
             self._reindex_phase_after_write()  # tree shows the figure; validation preserved
             self.statusBar().showMessage(f"Saved figure {spec.id} into the phase")
         else:
-            save_figure_spec(spec, self._scratch_dir)  # scratch — no manifest
+            save_figure_spec(spec, self._scratch_dir)  # into the scratch area...
+            save_manifest(  # ...and index it in the scratch manifest
+                with_entry(load_scratch(self._scratch_dir), "figures", figure_entry(spec)),
+                self._scratch_dir,
+            )
             self._refresh_scratch()
             self.statusBar().showMessage(f"Saved figure {spec.id} to scratch")
 
-    # -- scratch (save-with-no-phase holding area, B10e) -----------------------
+    # -- scratch (save-with-no-phase staging area, B10e / B10h-2a) --------------
 
     def _refresh_scratch(self) -> None:
-        """Reload the scratch list from the scratch folder; hide it entirely when empty."""
-        artifacts = scratch_artifacts(self._scratch_dir)
-        self._scratch_list.set_artifacts(artifacts)
-        self._scratch_list.setVisible(bool(artifacts))
+        """Reload the scratch manifest and paint the scratch tree; hide it when empty."""
+        self._scratch_manifest = load_scratch(self._scratch_dir)
+        groups = [g for g in phase_artifact_groups(self._scratch_manifest) if g.rows]  # compact
+        self._scratch_tree.set_groups(groups)
+        self._paint_scratch(validate=self._scratch_validated)  # keep a prior validation
+        self._scratch_pane.setVisible(bool(groups))
+        self._figure_view.set_bank_paths(self._all_bank_paths())  # scratch banks feed Flow C
 
-    def _promote_scratch(self, artifact: ScratchArtifact) -> None:
-        """Move a scratch artifact into the loaded phase + index it (Promote to phase)."""
+    def _paint_scratch(self, *, validate: bool) -> dict[str, StatusReport]:
+        """Paint the scratch tree. A scratch item resolves its dependencies cross-scope —
+        against scratch plus the loaded phase's ids (2c-A) — so a staged observation whose
+        banks sit in scratch or the phase reads OK, and one whose banks are nowhere is
+        flagged unresolved."""
+        phase_ids = manifest_ids(self._phase_manifest) if self._phase_manifest is not None else None
+        report = phase_status_report(
+            self._scratch_manifest, self._scratch_dir, validate=validate, extra_ids=phase_ids
+        )
+        self._scratch_tree.set_statuses(
+            {i: r.status for i, r in report.items()},
+            {i: r.detail for i, r in report.items()},
+        )
+        return report
+
+    def _on_scratch_action(self, action_id: str, artifact_id: str) -> None:
+        """Run a scratch-tree action: Promote / Delete, else the shared artifact actions
+        (viewers + info) resolved cross-scope against scratch + the loaded phase (2c)."""
+        entry = entries_by_id(self._scratch_manifest).get(artifact_id)
+        if entry is None:
+            return
+        if action_id == "promote_scratch":
+            self._promote_scratch(artifact_id)
+            return
+        if action_id == "delete_scratch":
+            self._delete_scratch(artifact_id)
+            return
+        scratch = Path(self._scratch_dir)
+        scope = [scratch, self._phase_dir] if self._phase_manifest is not None else [scratch]
+        self._run_artifact_action(action_id, entry, base_dir=scratch, scope_dirs=scope)
+
+    def _promote_scratch(self, artifact_id: str) -> None:
+        """Move a scratch artifact into the loaded phase (Promote to phase).
+
+        An authored artifact (observation / figure) has its file re-written into the phase
+        folder; a producer artifact is a path pointer, so it is simply re-indexed (its file
+        stays put). Either way the entry leaves the scratch manifest.
+        """
         if self._phase_manifest is None:
             self.statusBar().showMessage("Open a phase (File ▸ Open phase) to promote into it.")
             return
-        try:
-            if artifact.kind == "observation":
-                observation = load_observation(artifact.path)
-                save_observation(observation, self._phase_dir)
-                manifest = with_entry(
-                    self._phase_manifest, "observations", observation_entry(observation)
-                )
-            else:
-                spec = load_figure_spec(artifact.path)
-                save_figure_spec(spec, self._phase_dir)
-                manifest = with_entry(self._phase_manifest, "figures", figure_entry(spec))
-        except Exception as exc:  # unreadable / invalid scratch file -> status, keep it in scratch
-            self.statusBar().showMessage(f"Could not promote {artifact.id}: {exc}")
+        entry = entries_by_id(self._scratch_manifest).get(artifact_id)
+        if entry is None:
             return
-        save_manifest(manifest, self._phase_dir)
-        artifact.path.unlink(missing_ok=True)  # moved into the phase — drop the scratch copy
+        role = role_of(artifact_id)
+        section = manifest_section(artifact_id)
+        authored_file: Path | None = None  # set for authored artifacts (their file moves)
+        try:
+            if role is Role.observation:
+                authored_file = Path(self._scratch_dir) / entry.path
+                observation = load_observation(authored_file)
+                save_observation(observation, self._phase_dir)
+                phase = with_entry(self._phase_manifest, section, observation_entry(observation))
+            elif role is Role.figure:
+                authored_file = Path(self._scratch_dir) / entry.path
+                spec = load_figure_spec(authored_file)
+                save_figure_spec(spec, self._phase_dir)
+                phase = with_entry(self._phase_manifest, section, figure_entry(spec))
+            else:  # a producer pointer — re-index the same entry, no file move
+                phase = with_entry(self._phase_manifest, section, entry)
+        except Exception as exc:  # unreadable / invalid scratch file -> status, keep it in scratch
+            self.statusBar().showMessage(f"Could not promote {artifact_id}: {exc}")
+            return
+        save_manifest(phase, self._phase_dir)
+        save_manifest(remove_entry(self._scratch_manifest, section, artifact_id), self._scratch_dir)
+        if authored_file is not None:
+            authored_file.unlink(missing_ok=True)  # the authored copy moved into the phase
         self._reindex_phase_after_write()
         self._refresh_scratch()
-        self.statusBar().showMessage(f"Promoted {artifact.id} into the phase")
+        self.statusBar().showMessage(f"Promoted {artifact_id} into the phase")
 
-    def _delete_scratch(self, artifact: ScratchArtifact) -> None:
-        """Delete a scratch artifact file (Delete from scratch)."""
-        artifact.path.unlink(missing_ok=True)
+    def _delete_scratch(self, artifact_id: str) -> None:
+        """Remove a scratch artifact — its entry, plus its file for authored artifacts."""
+        entry = entries_by_id(self._scratch_manifest).get(artifact_id)
+        if entry is None:
+            return
+        if role_of(artifact_id) in (Role.observation, Role.figure):
+            (Path(self._scratch_dir) / entry.path).unlink(missing_ok=True)  # authored file
+        section = manifest_section(artifact_id)
+        save_manifest(remove_entry(self._scratch_manifest, section, artifact_id), self._scratch_dir)
         self._refresh_scratch()
-        self.statusBar().showMessage(f"Deleted {artifact.id} from scratch")
+        self.statusBar().showMessage(f"Deleted {artifact_id} from scratch")
 
     def _current_selection(self) -> list[int]:
         """The selected trace row_ids in the active flow (empty for Flow C / figure prep)."""

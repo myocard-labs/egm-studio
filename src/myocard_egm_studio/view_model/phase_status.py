@@ -111,7 +111,7 @@ def _all_entries(manifest: PhaseManifest) -> Iterator[_Entry]:
 
 def artifact_status(base_dir: Path | str, entry: _Entry, *, validate: bool) -> ArtifactStatus:
     """One artifact's status (ignoring dependencies — see :func:`artifact_report`)."""
-    return artifact_report(base_dir, entry, validate=validate, manifest=None).status
+    return artifact_report(base_dir, entry, validate=validate, present_ids=None).status
 
 
 def artifact_report(
@@ -119,12 +119,13 @@ def artifact_report(
     entry: _Entry,
     *,
     validate: bool,
-    manifest: PhaseManifest | None,
+    present_ids: set[str] | None,
 ) -> StatusReport:
     """One artifact's status + "why". Absent file -> MISSING; present-but-unchecked ->
-    PRESENT. When ``validate`` is set, a present file resolves to INVALID (fails its
-    schema) or, if it passes, to UNRESOLVED when ``manifest`` is given and one of its
-    dependency ids isn't indexed there — otherwise OK."""
+    PRESENT. When ``validate`` is set, a present file resolves to INVALID (fails its schema)
+    or, if it passes, to UNRESOLVED when ``present_ids`` is given and one of its dependency
+    ids isn't in it — otherwise OK. ``present_ids`` is the set of ids the entry may resolve
+    against (a phase's own ids; for a scratch item, scratch ids plus the loaded phase's)."""
     resolved = resolve_path(base_dir, entry.path)
     if not resolved.exists():
         return StatusReport(ArtifactStatus.MISSING, f"File not found: {entry.path}")
@@ -135,20 +136,17 @@ def artifact_report(
         result = validator(resolved)
         if not result.ok:
             return StatusReport(ArtifactStatus.INVALID, _issues_detail(result.issues))
-    if manifest is not None:
-        missing = _missing_dependencies(entry, resolved, manifest)
+    if present_ids is not None:
+        missing = _missing_dependencies(entry, resolved, present_ids)
         if missing:
-            return StatusReport(
-                ArtifactStatus.UNRESOLVED, "Not in this phase: " + ", ".join(missing)
-            )
+            return StatusReport(ArtifactStatus.UNRESOLVED, "Not indexed: " + ", ".join(missing))
     return StatusReport(ArtifactStatus.OK)
 
 
-def _missing_dependencies(entry: _Entry, resolved: Path, manifest: PhaseManifest) -> list[str]:
-    """The entry's dependency ids that aren't indexed in ``manifest`` (order preserved)."""
+def _missing_dependencies(entry: _Entry, resolved: Path, present_ids: set[str]) -> list[str]:
+    """The entry's dependency ids that aren't in ``present_ids`` (order preserved)."""
     observation = load_observation(resolved) if isinstance(entry, ObservationEntry) else None
-    present = manifest_ids(manifest)
-    return [dep for dep in dependency_ids(entry, observation=observation) if dep not in present]
+    return [dep for dep in dependency_ids(entry, observation=observation) if dep not in present_ids]
 
 
 def _issues_detail(issues: tuple[str, ...]) -> str:
@@ -159,13 +157,20 @@ def _issues_detail(issues: tuple[str, ...]) -> str:
 
 
 def phase_status_report(
-    manifest: PhaseManifest, base_dir: Path | str, *, validate: bool = False
+    manifest: PhaseManifest,
+    base_dir: Path | str,
+    *,
+    validate: bool = False,
+    extra_ids: set[str] | None = None,
 ) -> dict[str, StatusReport]:
-    """Every artifact id -> its :class:`StatusReport` (status + "why"). ``validate=False``
-    is the cheap on-load existence pass; ``validate=True`` runs per-type format validation
-    *and* the dependency check (referenced ids must be indexed in ``manifest``)."""
+    """Every artifact id -> its :class:`StatusReport` (status + "why"). ``validate=False`` is
+    the cheap on-load existence pass; ``validate=True`` runs per-type format validation *and*
+    the dependency check — each entry's referenced ids must resolve within ``manifest``'s own
+    ids plus ``extra_ids``. A phase passes no ``extra_ids`` (it resolves against itself); the
+    scratch area passes the loaded phase's ids, so scratch resolves against scratch + phase."""
+    present_ids = (manifest_ids(manifest) | (extra_ids or set())) if validate else None
     return {
-        e.id: artifact_report(base_dir, e, validate=validate, manifest=manifest)
+        e.id: artifact_report(base_dir, e, validate=validate, present_ids=present_ids)
         for e in _all_entries(manifest)
     }
 

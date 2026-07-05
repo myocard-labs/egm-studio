@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from myocard_egm_contracts import Role, role_of
 from myocard_egm_data.phases import MANIFEST_FILENAME, PhaseManifest, write_phase_manifest
 
 if TYPE_CHECKING:
@@ -42,7 +43,26 @@ _Section = Literal[
     "egm_banks", "noise_banks", "training_runs", "models", "observations", "figures", "papers"
 ]
 
-__all__ = ["empty_manifest", "remove_entry", "save_manifest", "with_entry"]
+#: Which manifest section an artifact's role lands in (the four egm-bank roles share one).
+_SECTION_BY_ROLE: dict[Role, _Section] = {
+    Role.training_bank: "egm_banks",
+    Role.pretraining_bank: "egm_banks",
+    Role.labeled_prediction_bank: "egm_banks",
+    Role.unlabeled_prediction_bank: "egm_banks",
+    Role.noise_bank: "noise_banks",
+    Role.training_run: "training_runs",
+    Role.model: "models",
+    Role.observation: "observations",
+    Role.figure: "figures",
+    Role.paper: "papers",
+}
+
+__all__ = ["empty_manifest", "manifest_section", "remove_entry", "save_manifest", "with_entry"]
+
+
+def manifest_section(artifact_id: str) -> _Section:
+    """The manifest list-section an artifact id belongs to, by its role."""
+    return _SECTION_BY_ROLE[role_of(artifact_id)]
 
 
 def empty_manifest(phase: float) -> PhaseManifest:

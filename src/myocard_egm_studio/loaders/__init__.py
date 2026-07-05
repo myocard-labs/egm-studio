@@ -45,7 +45,11 @@ from myocard_egm_studio.loaders.figure_inputs import (
     resolve_recipe_data,
     training_curve_from_run,
 )
-from myocard_egm_studio.loaders.manifest import bank_paths_from_phase, resolve_bank_paths
+from myocard_egm_studio.loaders.manifest import (
+    bank_paths_from_manifest,
+    bank_paths_from_phase,
+    resolve_bank_paths,
+)
 
 __all__ = [
     "LOADERS",
@@ -53,6 +57,7 @@ __all__ = [
     "LoaderNotRegisteredError",
     "RecipeLoaderFn",
     "UnmappedBankIdError",
+    "bank_paths_from_manifest",
     "bank_paths_from_phase",
     "confusion_by_source",
     "confusion_from_frame",
