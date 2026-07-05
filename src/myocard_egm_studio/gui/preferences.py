@@ -9,6 +9,8 @@ collapse, ...) join here as ADR-017 is implemented.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6 import QtCore
 
 from myocard_egm_studio.gui.theme import THEME_NAMES, ThemeName
@@ -23,6 +25,7 @@ _SCATTER_X_KEY = "signal/scatter_x"
 _SCATTER_Y_KEY = "signal/scatter_y"
 _CONFUSION_NORM_KEY = "ml/confusion_norm"
 _CONFUSION_NORMS = ("row", "col", "overall", "count")
+_SCRATCH_DIR_KEY = "save/scratch_dir"
 
 
 def _settings() -> QtCore.QSettings:
@@ -103,3 +106,27 @@ def save_scatter_axes(x: str, y: str) -> None:
     settings = _settings()
     settings.setValue(_SCATTER_X_KEY, x)
     settings.setValue(_SCATTER_Y_KEY, y)
+
+
+def default_scratch_dir() -> str:
+    """The per-user default scratch folder — ``<app-data>/scratch`` (created lazily).
+
+    Where observations / figure specs saved with no phase loaded land (ADR-017 scratch
+    mode) until promoted into a phase. Overridable in Settings; the app-data root follows
+    the org/app identity, so it is stable per user without any setup.
+    """
+    root = QtCore.QStandardPaths.writableLocation(
+        QtCore.QStandardPaths.StandardLocation.AppDataLocation
+    )
+    return str(Path(root) / "scratch")
+
+
+def load_scratch_dir() -> str:
+    """Return the persisted scratch folder, or :func:`default_scratch_dir` if unset."""
+    raw = _settings().value(_SCRATCH_DIR_KEY, "")
+    return str(raw) if raw else default_scratch_dir()
+
+
+def save_scratch_dir(path: str) -> None:
+    """Persist the scratch folder (Settings ▸ Scratch folder) to restore on next launch."""
+    _settings().setValue(_SCRATCH_DIR_KEY, path)

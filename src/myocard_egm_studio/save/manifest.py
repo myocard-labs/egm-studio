@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from myocard_egm_data.phases import MANIFEST_FILENAME, write_phase_manifest
+from myocard_egm_data.phases import MANIFEST_FILENAME, PhaseManifest, write_phase_manifest
 
 if TYPE_CHECKING:
     from myocard_egm_data.phases import (
@@ -23,7 +23,6 @@ if TYPE_CHECKING:
         NoiseBankEntry,
         ObservationEntry,
         PaperEntry,
-        PhaseManifest,
         TrainingRunEntry,
     )
 
@@ -43,7 +42,14 @@ _Section = Literal[
     "egm_banks", "noise_banks", "training_runs", "models", "observations", "figures", "papers"
 ]
 
-__all__ = ["remove_entry", "save_manifest", "with_entry"]
+__all__ = ["empty_manifest", "remove_entry", "save_manifest", "with_entry"]
+
+
+def empty_manifest(phase: float) -> PhaseManifest:
+    """A fresh, entry-less ``in_progress`` phase manifest (File ▸ New phase creates one)."""
+    return PhaseManifest.model_validate(
+        {"schema_version": "1", "phase": phase, "status": "in_progress"}
+    )
 
 
 def with_entry(manifest: PhaseManifest, section: _Section, entry: _Entry) -> PhaseManifest:

@@ -17,6 +17,7 @@ from myocard_egm_studio.gui.widgets.output_distribution import OutputDistributio
 from myocard_egm_studio.gui.widgets.phase_tree import PhaseTree
 from myocard_egm_studio.gui.widgets.result_list import ResultList
 from myocard_egm_studio.gui.widgets.run_list import LoadedRunsList
+from myocard_egm_studio.gui.widgets.scratch_list import ScratchList
 from myocard_egm_studio.gui.widgets.time_scale import TimeScaleWidget
 from myocard_egm_studio.gui.widgets.trace import TraceContainer, TraceData, TraceWidget
 from myocard_egm_studio.gui.widgets.trace_view import TraceView
@@ -36,6 +37,7 @@ __all__ = [
     "OutputDistributionView",
     "PhaseTree",
     "ResultList",
+    "ScratchList",
     "TimeScaleWidget",
     "TraceContainer",
     "TraceData",

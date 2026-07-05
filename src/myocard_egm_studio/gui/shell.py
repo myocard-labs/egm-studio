@@ -18,6 +18,7 @@ from typing import Literal
 import pandas as pd
 from myocard_egm_contracts import role_of
 from myocard_egm_data.phases import (
+    MANIFEST_FILENAME,
     FigureSpec,
     Observation,
     ObservationEntry,
@@ -31,12 +32,20 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from myocard_egm_studio.charts.inputs import TrainingCurve
 from myocard_egm_studio.charts.palette import color_for
-from myocard_egm_studio.gui.preferences import load_theme, save_theme
+from myocard_egm_studio.gui.new_phase_dialog import NewPhaseDialog
+from myocard_egm_studio.gui.preferences import (
+    load_scratch_dir,
+    load_theme,
+    save_scratch_dir,
+    save_theme,
+)
 from myocard_egm_studio.gui.save_observation_dialog import SaveObservationDialog
+from myocard_egm_studio.gui.settings_dialog import SettingsDialog
 from myocard_egm_studio.gui.sources import frame_eval_mode, load_exploration
 from myocard_egm_studio.gui.theme import (
     DEFAULT_THEME,
     THEME_NAMES,
+    ThemeName,
     apply_theme,
     chart_style,
     plot_palette,
@@ -46,16 +55,24 @@ from myocard_egm_studio.gui.views import (
     PaperFigurePrepView,
     SignalExplorationView,
 )
-from myocard_egm_studio.gui.widgets import FilterPanel, LoadedBanksList, PhaseTree, TraceData
+from myocard_egm_studio.gui.widgets import (
+    FilterPanel,
+    LoadedBanksList,
+    PhaseTree,
+    ScratchList,
+    TraceData,
+)
 from myocard_egm_studio.loaders import (
     bank_paths_from_phase,
     resolve_bank_paths,
     training_curve_from_run,
 )
 from myocard_egm_studio.save import (
+    ScratchArtifact,
     build_observation,
     capture_view_state,
     describe_filter,
+    empty_manifest,
     figure_entry,
     observation_entry,
     parse_filter,
@@ -63,6 +80,7 @@ from myocard_egm_studio.save import (
     save_figure_spec,
     save_manifest,
     save_observation,
+    scratch_artifacts,
     update_observation,
     with_entry,
 )
@@ -78,7 +96,11 @@ from myocard_egm_studio.view_model.combine import ROW_ID
 from myocard_egm_studio.view_model.figure_output import figure_output_exists_map, figure_output_path
 from myocard_egm_studio.view_model.filtering import FilterSpec
 from myocard_egm_studio.view_model.phase_actions import reveal_target
-from myocard_egm_studio.view_model.phase_status import ArtifactStatus, phase_statuses
+from myocard_egm_studio.view_model.phase_status import (
+    ArtifactStatus,
+    StatusReport,
+    phase_status_report,
+)
 
 _WINDOW_TITLE = "egm-studio"
 _MIN_WIDTH = 1100
@@ -210,6 +232,7 @@ class CollapsibleSidebar(QtWidgets.QWidget):
     def set_body(self, widget: QtWidgets.QWidget) -> None:
         """Replace the sidebar panel's body (the placeholder subtitle) with ``widget``."""
         self._panel_layout.removeWidget(self._body)
+        self._body.hide()  # drop it from view now; deleteLater alone lingers off the event loop
         self._body.deleteLater()
         self._body = widget
         self._panel_layout.addWidget(widget, 1)
@@ -230,6 +253,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._phase_manifest: PhaseManifest | None = None
         self._phase_dir = Path()
         self._phase_validated = False  # has Validate phase run on the current phase?
+        self._scratch_dir = load_scratch_dir()  # where no-phase saves land (Settings-editable)
         self._last_metadata_text = ""  # last "Show metadata" text (for tests)
         self._metadata_dialog: QtWidgets.QDialog | None = None
         self._loaded_banks: list[_LoadedBank] = []  # banks open in Flow A (B7.8)
@@ -254,6 +278,9 @@ class MainWindow(QtWidgets.QMainWindow):
         run_action = file_menu.addAction("Open &training run…")
         run_action.setObjectName("openTrainingRun")
         run_action.triggered.connect(self._open_training_run)
+        new_phase_action = file_menu.addAction("&New phase…")
+        new_phase_action.setObjectName("newPhase")
+        new_phase_action.triggered.connect(self._new_phase)
         open_phase_action = file_menu.addAction("Open &phase…")
         open_phase_action.setObjectName("openPhase")
         open_phase_action.triggered.connect(self._open_phase)
@@ -264,6 +291,10 @@ class MainWindow(QtWidgets.QMainWindow):
         save_obs_action = file_menu.addAction("&Save observation…")
         save_obs_action.setObjectName("saveObservation")
         save_obs_action.triggered.connect(self._save_observation)
+        file_menu.addSeparator()
+        settings_action = file_menu.addAction("Se&ttings…")
+        settings_action.setObjectName("openSettings")
+        settings_action.triggered.connect(self._open_settings)
         file_menu.addSeparator()
         file_menu.addAction("&Quit").triggered.connect(self.close)
 
@@ -307,15 +338,44 @@ class MainWindow(QtWidgets.QMainWindow):
         self._theme_group.triggered.connect(self._on_theme_selected)
 
     def _on_theme_selected(self, action: QtGui.QAction) -> None:
-        """Apply the chosen theme to the running app and persist it for next launch."""
-        name = action.data()
+        """Apply the theme chosen from the View ▸ Theme menu."""
+        self._set_theme(action.data())
+
+    def _set_theme(self, name: str) -> None:
+        """Apply ``name`` to the running app, persist it, restyle, and tick the menu.
+
+        Shared by the View ▸ Theme menu and the Settings dialog, so both entry points
+        stay in sync (the menu's checkmark follows a change made in Settings). An
+        unrecognised name falls back to the default.
+        """
+        theme = self._as_theme(name)
         app = QtWidgets.QApplication.instance()
         if isinstance(app, QtWidgets.QApplication):
-            apply_theme(app, name)
-        save_theme(name)
-        self._current_theme = name
-        self._explore_view.restyle(plot_palette(name), chart_style(name))
-        self._diagnostics_view.restyle(plot_palette(name), chart_style(name))
+            apply_theme(app, theme)
+        save_theme(theme)
+        self._current_theme = theme
+        self._explore_view.restyle(plot_palette(theme), chart_style(theme))
+        self._diagnostics_view.restyle(plot_palette(theme), chart_style(theme))
+        for action in self._theme_group.actions():
+            action.setChecked(action.data() == theme)
+
+    @staticmethod
+    def _as_theme(name: str) -> ThemeName:
+        """Narrow an arbitrary string to a known ``ThemeName`` (default if unrecognised)."""
+        for candidate in THEME_NAMES:
+            if candidate == name:
+                return candidate
+        return DEFAULT_THEME
+
+    def _open_settings(self) -> None:
+        """File ▸ Settings…: edit the scratch folder + theme; apply the choices on accept."""
+        dialog = SettingsDialog(
+            self, scratch_dir=self._scratch_dir, theme=self._current_theme, themes=THEME_NAMES
+        )
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted.value:
+            self._scratch_dir = dialog.scratch_dir()
+            save_scratch_dir(self._scratch_dir)
+            self._set_theme(dialog.theme())
 
     # -- body -----------------------------------------------------------------
 
@@ -410,7 +470,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self._right_sidebar.toggleRequested.connect(lambda: self._toggle_sidebar("right"))
         self._phase_tree = PhaseTree()
         self._phase_tree.actionRequested.connect(self._on_phase_action)
-        self._right_sidebar.set_body(self._phase_tree)
+        # Scratch is a staging area for the phase, so it sits under the phase tree; it stays
+        # hidden until it holds something, leaving the sidebar unchanged for an empty scratch.
+        self._scratch_list = ScratchList()
+        self._scratch_list.promoteRequested.connect(self._promote_scratch)
+        self._scratch_list.deleteRequested.connect(self._delete_scratch)
+        self._scratch_list.setVisible(False)
+        right_body = QtWidgets.QWidget()
+        right_layout = QtWidgets.QVBoxLayout(right_body)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(10)
+        right_layout.addWidget(self._phase_tree, 1)
+        right_layout.addWidget(self._scratch_list)
+        self._right_sidebar.set_body(right_body)
+        self._refresh_scratch()  # show the scratch list if the folder already has items
 
         splitter.addWidget(self._left_sidebar)
         splitter.addWidget(self._modes_stack)
@@ -723,7 +796,21 @@ class MainWindow(QtWidgets.QMainWindow):
         if button is not None:
             button.setChecked(True)
 
-    # -- open phase (File > Open phase) ---------------------------------------
+    # -- new / open phase (File > New phase, File > Open phase) ----------------
+
+    def _new_phase(self) -> None:
+        """File > New phase…: write an empty in-progress phase into a folder and open it."""
+        dialog = NewPhaseDialog(self)
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+        folder = Path(dialog.folder())
+        if (folder / MANIFEST_FILENAME).exists():
+            self.statusBar().showMessage(f"{folder} already holds a phase manifest — not created.")
+            return
+        phase = dialog.phase()
+        save_manifest(empty_manifest(phase), folder)
+        self._load_phase_into_tree(str(folder))  # opens the freshly-created empty phase
+        self.statusBar().showMessage(f"Created phase {phase:g} in {folder}")
 
     def _open_phase(self) -> None:
         """File > Open phase…: pick a phase folder and list its artifacts in the tree."""
@@ -748,10 +835,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._figure_view.set_bank_paths(bank_paths_from_phase(self._phase_dir))
         self._figure_view.set_observations(self._existing_observation_ids())
         self._refresh_figure_outputs()  # tune the figure menus to which images exist
-        statuses = phase_statuses(manifest, self._phase_dir)
-        self._phase_tree.set_statuses(statuses)
-        total = len(statuses)
-        missing = sum(1 for status in statuses.values() if status is ArtifactStatus.MISSING)
+        report = self._mark_statuses(manifest, validate=False)
+        total = len(report)
+        missing = sum(1 for r in report.values() if r.status is ArtifactStatus.MISSING)
         note = f"{missing} missing" if missing else "all present"
         self.statusBar().showMessage(
             f"Loaded phase {manifest.phase} — {total} artifact(s), {note}; not yet validated"
@@ -762,11 +848,12 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._phase_manifest is None:
             self.statusBar().showMessage("Open a phase first.")
             return
-        statuses = phase_statuses(self._phase_manifest, self._phase_dir, validate=True)
-        self._phase_tree.set_statuses(statuses)
+        report = self._mark_statuses(self._phase_manifest, validate=True)
         self._phase_validated = True  # indicators now reflect a full validation
-        counts = Counter(statuses.values())
+        counts = Counter(r.status for r in report.values())
         parts = [f"{counts[ArtifactStatus.OK]} ok"]
+        if counts[ArtifactStatus.UNRESOLVED]:
+            parts.append(f"{counts[ArtifactStatus.UNRESOLVED]} unresolved")
         if counts[ArtifactStatus.INVALID]:
             parts.append(f"{counts[ArtifactStatus.INVALID]} invalid")
         if counts[ArtifactStatus.MISSING]:
@@ -774,6 +861,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage(
             f"Validated phase {self._phase_manifest.phase} — {', '.join(parts)}"
         )
+
+    def _mark_statuses(self, manifest: PhaseManifest, *, validate: bool) -> dict[str, StatusReport]:
+        """Compute the phase's status report and paint the tree (dots + 'why' tooltips)."""
+        report = phase_status_report(manifest, self._phase_dir, validate=validate)
+        self._phase_tree.set_statuses(
+            {i: r.status for i, r in report.items()},
+            {i: r.detail for i, r in report.items()},
+        )
+        return report
 
     # -- phase-tree right-click actions ---------------------------------------
 
@@ -861,12 +957,8 @@ class MainWindow(QtWidgets.QMainWindow):
     # -- save observation (File > Save observation, ADR-017 / B10) -------------
 
     def _save_observation(self) -> None:
-        """Gather a title + description, then write an observation into the loaded phase."""
-        if self._phase_manifest is None:
-            self.statusBar().showMessage(
-                "Open a phase (File ▸ Open phase) to save an observation into it."
-            )
-            return
+        """Gather a title + description, then write an observation — into the loaded phase,
+        or to the scratch folder when no phase is open (ADR-017 scratch mode)."""
         if self._explore_df is None or not len(self._explore_df.index):
             self.statusBar().showMessage("Load a bank before saving an observation.")
             return
@@ -879,8 +971,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._write_observation(dialog.title(), dialog.description(), dialog.parents())
 
     def _write_observation(self, title: str, description: str, parents: Sequence[str] = ()) -> None:
-        """Capture the current state into an observation + index it (the testable core)."""
-        assert self._explore_df is not None and self._phase_manifest is not None
+        """Capture the current state into an observation; save into the phase (indexed) or,
+        with no phase open, to the scratch folder (the testable core)."""
+        assert self._explore_df is not None
         spec = self._applied_spec
         shown = (
             self._explore_df[apply_filter(self._explore_df, spec)]
@@ -897,19 +990,24 @@ class MainWindow(QtWidgets.QMainWindow):
             traces=traces,
             references=references_from(observations=parents),
         )
-        save_observation(observation, self._phase_dir)
-        save_manifest(
-            with_entry(self._phase_manifest, "observations", observation_entry(observation)),
-            self._phase_dir,
-        )
-        self._reindex_phase_after_write()  # tree shows the new observation; validation preserved
-        self.statusBar().showMessage(f"Saved observation {observation.id}")
+        if self._phase_manifest is not None:
+            save_observation(observation, self._phase_dir)
+            save_manifest(
+                with_entry(self._phase_manifest, "observations", observation_entry(observation)),
+                self._phase_dir,
+            )
+            self._reindex_phase_after_write()  # tree shows it; validation preserved
+            self.statusBar().showMessage(f"Saved observation {observation.id}")
+        else:
+            save_observation(observation, self._scratch_dir)  # scratch — no manifest
+            self._refresh_scratch()
+            self.statusBar().showMessage(f"Saved observation {observation.id} to scratch")
 
     def _existing_observation_ids(self) -> list[str]:
-        """Observation ids already in the loaded phase — candidate parents to link to."""
-        if self._phase_manifest is None:
-            return []
-        return [entry.id for entry in (self._phase_manifest.observations or ())]
+        """Observation ids to offer as parent links — the loaded phase's, else scratch's."""
+        if self._phase_manifest is not None:
+            return [entry.id for entry in (self._phase_manifest.observations or ())]
+        return [a.id for a in scratch_artifacts(self._scratch_dir) if a.kind == "observation"]
 
     def _reindex_phase_after_write(self) -> None:
         """Reload the phase tree after a manifest write, re-running validation only if the
@@ -1033,18 +1131,58 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage(f"Updated observation {updated.id}")
 
     def _save_figure_into_phase(self, spec: FigureSpec) -> None:
-        """Write a Flow C figure spec into the loaded phase + index it (add/update FigureEntry)."""
-        if self._phase_manifest is None:
-            self.statusBar().showMessage(
-                "Open a phase (File ▸ Open phase) to save a figure into it."
+        """Write a Flow C figure spec into the loaded phase (indexed), or to the scratch
+        folder when no phase is open (ADR-017 scratch mode)."""
+        if self._phase_manifest is not None:
+            save_figure_spec(spec, self._phase_dir)
+            save_manifest(
+                with_entry(self._phase_manifest, "figures", figure_entry(spec)), self._phase_dir
             )
+            self._reindex_phase_after_write()  # tree shows the figure; validation preserved
+            self.statusBar().showMessage(f"Saved figure {spec.id} into the phase")
+        else:
+            save_figure_spec(spec, self._scratch_dir)  # scratch — no manifest
+            self._refresh_scratch()
+            self.statusBar().showMessage(f"Saved figure {spec.id} to scratch")
+
+    # -- scratch (save-with-no-phase holding area, B10e) -----------------------
+
+    def _refresh_scratch(self) -> None:
+        """Reload the scratch list from the scratch folder; hide it entirely when empty."""
+        artifacts = scratch_artifacts(self._scratch_dir)
+        self._scratch_list.set_artifacts(artifacts)
+        self._scratch_list.setVisible(bool(artifacts))
+
+    def _promote_scratch(self, artifact: ScratchArtifact) -> None:
+        """Move a scratch artifact into the loaded phase + index it (Promote to phase)."""
+        if self._phase_manifest is None:
+            self.statusBar().showMessage("Open a phase (File ▸ Open phase) to promote into it.")
             return
-        save_figure_spec(spec, self._phase_dir)
-        save_manifest(
-            with_entry(self._phase_manifest, "figures", figure_entry(spec)), self._phase_dir
-        )
-        self._reindex_phase_after_write()  # tree shows the figure; validation preserved
-        self.statusBar().showMessage(f"Saved figure {spec.id} into the phase")
+        try:
+            if artifact.kind == "observation":
+                observation = load_observation(artifact.path)
+                save_observation(observation, self._phase_dir)
+                manifest = with_entry(
+                    self._phase_manifest, "observations", observation_entry(observation)
+                )
+            else:
+                spec = load_figure_spec(artifact.path)
+                save_figure_spec(spec, self._phase_dir)
+                manifest = with_entry(self._phase_manifest, "figures", figure_entry(spec))
+        except Exception as exc:  # unreadable / invalid scratch file -> status, keep it in scratch
+            self.statusBar().showMessage(f"Could not promote {artifact.id}: {exc}")
+            return
+        save_manifest(manifest, self._phase_dir)
+        artifact.path.unlink(missing_ok=True)  # moved into the phase — drop the scratch copy
+        self._reindex_phase_after_write()
+        self._refresh_scratch()
+        self.statusBar().showMessage(f"Promoted {artifact.id} into the phase")
+
+    def _delete_scratch(self, artifact: ScratchArtifact) -> None:
+        """Delete a scratch artifact file (Delete from scratch)."""
+        artifact.path.unlink(missing_ok=True)
+        self._refresh_scratch()
+        self.statusBar().showMessage(f"Deleted {artifact.id} from scratch")
 
     def _current_selection(self) -> list[int]:
         """The selected trace row_ids in the active flow (empty for Flow C / figure prep)."""
