@@ -23,7 +23,7 @@ from myocard_egm_data.phases import (
     load_figure_spec,
     load_observation,
 )
-from PySide6 import QtGui
+from PySide6 import QtGui, QtWidgets
 from pytestqt.qtbot import QtBot
 
 from myocard_egm_studio.gui.shell import MainWindow
@@ -60,10 +60,12 @@ def _phase_copy(tmp_path: Path) -> Path:
     return phase
 
 
-def test_save_observation_action_exists(qtbot: QtBot) -> None:
+def test_save_observation_menu_offers_both_targets(qtbot: QtBot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
-    assert window.findChild(QtGui.QAction, "saveObservation") is not None
+    assert window.findChild(QtWidgets.QMenu, "saveObservation") is not None  # a submenu now (2d)
+    assert window.findChild(QtGui.QAction, "saveObservationToScratch") is not None
+    assert window.findChild(QtGui.QAction, "saveObservationToPhase") is not None
 
 
 def test_save_observation_with_nothing_loaded_asks_for_a_bank(qtbot: QtBot) -> None:
@@ -356,7 +358,7 @@ def test_save_figure_into_phase_writes_the_spec_and_indexes_it(
     qtbot.addWidget(window)
     window._load_phase_into_tree(str(phase))
 
-    window._save_figure_into_phase(_figure_spec(illustrates_observations=[_FIXTURE_PARENT]))
+    window._save_figure(_figure_spec(illustrates_observations=[_FIXTURE_PARENT]))
 
     written = phase / "figures" / "fig_demo.json"
     assert written.exists()

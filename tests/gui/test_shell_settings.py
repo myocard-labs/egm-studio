@@ -39,8 +39,12 @@ def test_open_settings_persists_scratch_and_theme(qtbot: QtBot, monkeypatch: obj
         def theme(self) -> str:
             return "vibrant"
 
+        def auto_add_deps(self) -> bool:
+            return False
+
     monkeypatch.setattr(shell_mod, "SettingsDialog", _FakeDialog)  # type: ignore[attr-defined]
     window._open_settings()
 
     assert window._scratch_dir == "/tmp/new-scratch"
     assert window._current_theme == "vibrant"  # applied via the shared _set_theme
+    assert window._auto_add_deps is False  # the toggle is read back + applied (B10h-1b)

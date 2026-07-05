@@ -15,6 +15,7 @@ from myocard_egm_data.phases import (
 )
 
 from myocard_egm_studio.view_model.dependencies import (
+    dependency_closure,
     dependency_ids,
     entry_dependency_ids,
     manifest_ids,
@@ -128,6 +129,32 @@ def test_dependency_ids_dispatches_on_entry_kind() -> None:
     # without the file it can't know; with it, it reads the observation's deps
     assert dependency_ids(obs_entry) == []
     assert dependency_ids(obs_entry, observation=_observation())[0] == "lpred_a_2026-06-27"
+
+
+def test_dependency_closure_gathers_present_transitive_deps() -> None:
+    graph = {"fig_a": ["lpred_b_2026-06-27"], "lpred_b_2026-06-27": ["lbank_c_2026-06-01"]}
+    result = dependency_closure(
+        graph["fig_a"],
+        direct_deps=lambda i: graph.get(i, []),
+        present={"lpred_b_2026-06-27", "lbank_c_2026-06-01"},
+    )
+    assert result == ["lpred_b_2026-06-27", "lbank_c_2026-06-01"]  # the derived bank + its source
+
+
+def test_dependency_closure_keeps_only_present_ids() -> None:
+    # a figure's two banks: one staged in scratch, one nowhere -> only the present one is pulled
+    result = dependency_closure(
+        ["lpred_here_2026-06-27", "lpred_ghost_2026-06-27"],
+        direct_deps=lambda _i: [],
+        present={"lpred_here_2026-06-27"},
+    )
+    assert result == ["lpred_here_2026-06-27"]
+
+
+def test_dependency_closure_is_cycle_safe() -> None:
+    graph = {"a": ["b"], "b": ["a"]}  # a pathological cycle must not loop forever
+    result = dependency_closure(["a"], direct_deps=lambda i: graph.get(i, []), present={"a", "b"})
+    assert sorted(result) == ["a", "b"]
 
 
 def test_manifest_ids_gathers_every_section() -> None:

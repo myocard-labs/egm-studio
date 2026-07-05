@@ -111,10 +111,54 @@ def test_scratch_observation_parents_come_from_scratch(qtbot: QtBot, tmp_path: P
 
 def test_save_figure_with_no_phase_goes_to_scratch(qtbot: QtBot, tmp_path: Path) -> None:
     window = _window(qtbot, tmp_path)
-    window._save_figure_into_phase(_figure_spec())
+    window._save_figure(_figure_spec())
     assert (Path(window._scratch_dir) / "figures" / "fig_demo.json").exists()
     assert "fig_demo" in _scratch_ids(window)  # indexed in the scratch manifest
     assert "to scratch" in window.statusBar().currentMessage()
+
+
+def test_save_figure_to_scratch_even_with_a_phase_open(qtbot: QtBot, tmp_path: Path) -> None:
+    """The gap 2d closes: an explicit "Add to scratch" writes to scratch, phase or not."""
+    window = _window(qtbot, tmp_path)
+    _open_phase(window, tmp_path)
+    window._save_figure(_figure_spec(), "scratch")
+    assert "fig_demo" in _scratch_ids(window)  # in scratch...
+    assert window._phase_manifest is not None
+    assert "fig_demo" not in entries_by_id(window._phase_manifest)  # ...not swept into the phase
+
+
+def test_save_observation_to_scratch_even_with_a_phase_open(qtbot: QtBot, tmp_path: Path) -> None:
+    window = _window(qtbot, tmp_path)
+    _open_phase(window, tmp_path)
+    window._explore_df = _explore_frame()
+    window._write_observation("Scratch note", "prose", target="scratch")
+    obs_id = observation_id("Scratch note")
+    assert obs_id in _scratch_ids(window)  # into scratch...
+    assert window._phase_manifest is not None
+    assert obs_id not in entries_by_id(window._phase_manifest)  # ...not the loaded phase
+
+
+def test_save_observation_to_phase_target_lands_in_the_phase(qtbot: QtBot, tmp_path: Path) -> None:
+    window = _window(qtbot, tmp_path)
+    _open_phase(window, tmp_path)
+    window._explore_df = _explore_frame()
+    window._write_observation("Phase note", "prose", target="phase")
+    obs_id = observation_id("Phase note")
+    assert window._phase_manifest is not None
+    assert obs_id in entries_by_id(window._phase_manifest)  # into the phase...
+    assert obs_id not in _scratch_ids(window)  # ...not scratch
+
+
+def test_phase_save_targets_track_whether_a_phase_is_open(qtbot: QtBot, tmp_path: Path) -> None:
+    """Every "…to phase" target (Load bank/run, Save observation/figure) enables only with a
+    phase — the shared aboutToShow sync over ``_phase_target_actions`` (2b/2d)."""
+    window = _window(qtbot, tmp_path)
+    window._sync_phase_targets()
+    assert window._phase_target_actions  # bank + run + observation + figure targets
+    assert all(not action.isEnabled() for action in window._phase_target_actions)  # no phase
+    _open_phase(window, tmp_path)
+    window._sync_phase_targets()
+    assert all(action.isEnabled() for action in window._phase_target_actions)  # now a phase
 
 
 def test_promote_moves_an_observation_into_the_phase(qtbot: QtBot, tmp_path: Path) -> None:
@@ -136,7 +180,7 @@ def test_promote_moves_an_observation_into_the_phase(qtbot: QtBot, tmp_path: Pat
 
 def test_promote_a_figure_derives_its_entry(qtbot: QtBot, tmp_path: Path) -> None:
     window = _window(qtbot, tmp_path)
-    window._save_figure_into_phase(_figure_spec())
+    window._save_figure(_figure_spec())
     phase = _open_phase(window, tmp_path)
 
     window._promote_scratch("fig_demo")
@@ -382,3 +426,53 @@ def test_delete_removes_the_scratch_artifact(qtbot: QtBot, tmp_path: Path) -> No
     assert _scratch_ids(window) == []
     assert window._scratch_pane.isHidden()
     assert "Deleted" in window.statusBar().currentMessage()
+
+
+# -- auto-add dependencies (B10h-1b) ---------------------------------------------------
+
+
+def test_promote_a_figure_pulls_its_scratch_bank(qtbot: QtBot, tmp_path: Path) -> None:
+    """The message-13 gap: promoting a figure also moves the scratch bank it consumes."""
+    window = _window(qtbot, tmp_path)
+    _stage_scratch_bank(window, "lpred_a_2026-06-27")  # the bank fig_demo consumes
+    window._save_figure(_figure_spec())  # fig_demo -> scratch, consumes lpred_a
+    _open_phase(window, tmp_path)
+
+    window._promote_scratch("fig_demo")
+
+    assert window._phase_manifest is not None
+    phase = entries_by_id(window._phase_manifest)
+    assert "fig_demo" in phase  # the figure...
+    assert "lpred_a_2026-06-27" in phase  # ...and its bank, pulled along (auto-add)
+    assert _scratch_ids(window) == []  # both left scratch
+    assert "+1 dependency" in window.statusBar().currentMessage()
+
+
+def test_auto_add_off_leaves_the_dependency_in_scratch(qtbot: QtBot, tmp_path: Path) -> None:
+    window = _window(qtbot, tmp_path)
+    window._auto_add_deps = False  # Settings toggle off
+    _stage_scratch_bank(window, "lpred_a_2026-06-27")
+    window._save_figure(_figure_spec())
+    _open_phase(window, tmp_path)
+
+    window._promote_scratch("fig_demo")
+
+    assert window._phase_manifest is not None
+    assert "fig_demo" in entries_by_id(window._phase_manifest)  # only the figure moves
+    assert "lpred_a_2026-06-27" not in entries_by_id(window._phase_manifest)
+    assert _scratch_ids(window) == ["lpred_a_2026-06-27"]  # its bank stays in scratch
+
+
+def test_save_observation_to_phase_pulls_a_scratch_bank(qtbot: QtBot, tmp_path: Path) -> None:
+    window = _window(qtbot, tmp_path)
+    _stage_scratch_bank(window, "lpred_a_2026-06-27")
+    _open_phase(window, tmp_path)
+    window._explore_df = _explore_frame()  # captured banks_loaded == [lpred_a_2026-06-27]
+
+    window._write_observation("Note", "prose", target="phase")
+
+    assert window._phase_manifest is not None
+    phase = entries_by_id(window._phase_manifest)
+    assert observation_id("Note") in phase  # the observation...
+    assert "lpred_a_2026-06-27" in phase  # ...and the bank it references, pulled from scratch
+    assert "lpred_a_2026-06-27" not in _scratch_ids(window)

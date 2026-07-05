@@ -30,6 +30,22 @@ def test_edits_are_read_back(qtbot: QtBot) -> None:
     assert dialog.theme() == "vibrant"
 
 
+def test_auto_add_deps_defaults_checked_and_reads_back(qtbot: QtBot) -> None:
+    dialog = SettingsDialog(scratch_dir="/tmp/a", theme="dark", themes=_THEMES)
+    qtbot.addWidget(dialog)
+    check = dialog.findChild(QtWidgets.QCheckBox, "autoAddDeps")
+    assert isinstance(check, QtWidgets.QCheckBox)
+    assert dialog.auto_add_deps() is True  # default on
+    check.setChecked(False)
+    assert dialog.auto_add_deps() is False
+
+
+def test_auto_add_deps_reflects_the_passed_state(qtbot: QtBot) -> None:
+    dialog = SettingsDialog(scratch_dir="/tmp/a", theme="dark", themes=_THEMES, auto_add_deps=False)
+    qtbot.addWidget(dialog)
+    assert dialog.auto_add_deps() is False
+
+
 def test_browse_sets_the_scratch_field(qtbot: QtBot, monkeypatch: pytest.MonkeyPatch) -> None:
     dialog = SettingsDialog(scratch_dir="/tmp/a", theme="dark", themes=_THEMES)
     qtbot.addWidget(dialog)

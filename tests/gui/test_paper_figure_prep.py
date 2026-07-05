@@ -272,20 +272,24 @@ def test_overlapping_preview_requests_coalesce(
     qtbot.waitUntil(lambda: view._preview.has_image and not view._rendering)
 
 
-def test_save_into_phase_button_emits_the_current_spec(qtbot: QtBot) -> None:
+def test_save_menu_emits_the_current_spec_with_its_target(qtbot: QtBot) -> None:
     view = PaperFigurePrepView()
     qtbot.addWidget(view)
     view.new_spec()  # a template spec is loaded
     assert view.findChild(QtWidgets.QPushButton, "saveFigureIntoPhase") is not None
-    with qtbot.waitSignal(view.saveIntoPhaseRequested) as blocker:
-        view._save_into_phase_button.click()
-    assert isinstance(blocker.args[0], FigureSpec)  # the shell receives the spec to index
+    with qtbot.waitSignal(view.saveRequested) as blocker:
+        view._save_to_scratch_action.trigger()
+    assert isinstance(blocker.args[0], FigureSpec)  # the shell receives the spec...
+    assert blocker.args[1] == "scratch"  # ...and the chosen target
+    with qtbot.waitSignal(view.saveRequested) as blocker:
+        view._save_to_phase_action.trigger()
+    assert blocker.args[1] == "phase"
 
 
-def test_save_into_phase_needs_a_spec_first(qtbot: QtBot) -> None:
+def test_save_menu_needs_a_spec_first(qtbot: QtBot) -> None:
     view = PaperFigurePrepView()
     qtbot.addWidget(view)
     seen: list[str] = []
     view.statusMessage.connect(seen.append)
-    view._save_into_phase_button.click()  # nothing loaded yet -> no emit, just a nudge
+    view._save_to_scratch_action.trigger()  # nothing loaded yet -> no emit, just a nudge
     assert seen and "figure spec first" in seen[-1]

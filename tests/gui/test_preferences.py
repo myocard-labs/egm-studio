@@ -91,3 +91,19 @@ def test_scratch_dir_defaults_to_app_data_scratch() -> None:
 def test_scratch_dir_roundtrips() -> None:
     preferences.save_scratch_dir("/tmp/my-scratch")
     assert preferences.load_scratch_dir() == "/tmp/my-scratch"
+
+
+def test_auto_add_deps_defaults_then_roundtrips() -> None:
+    assert preferences.load_auto_add_deps(True) is True  # unset -> default
+    preferences.save_auto_add_deps(False)
+    assert preferences.load_auto_add_deps(True) is False
+
+
+def test_auto_add_deps_parses_a_stringified_bool() -> None:
+    QtCore.QSettings(
+        QtCore.QSettings.Format.IniFormat,
+        QtCore.QSettings.Scope.UserScope,
+        preferences.ORG_NAME,
+        preferences.APP_NAME,
+    ).setValue("save/auto_add_dependencies", "false")  # IniFormat round-trips bools as strings
+    assert preferences.load_auto_add_deps(True) is False
