@@ -14,9 +14,11 @@ folder; an absolute path in the manifest wins (pathlib join semantics).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from myocard_egm_data.banks import load_classifier_bank
 from myocard_egm_data.phases import PhaseManifest, load_phase_dir
 
 
@@ -24,6 +26,48 @@ def bank_paths_from_phase(phase_dir: Path | str) -> dict[str, Path]:
     """Every artifact id in the phase's manifest -> its resolved on-disk path."""
     base = Path(phase_dir)
     return {entry.id: base / entry.path for entry in _entries(load_phase_dir(base))}
+
+
+def resolve_bank_paths(
+    phase_dir: Path | str, source_ids: Sequence[str]
+) -> tuple[list[Path], list[str]]:
+    """Resolve loaded-bank ``source_ids`` (from an observation) to phase bank files.
+
+    A bank's view-model ``source`` id is its stamped ``bank.id`` (else its file stem).
+    Normally that equals its manifest *entry* id (the stable-id invariant), so the
+    entry-id map resolves it directly and no bank is read. When the two have drifted
+    apart, we fall back to reading each egm bank's own id — so a saved observation still
+    reopens. Returns ``(paths in request order, unresolved ids)``.
+    """
+    base = Path(phase_dir)
+    by_entry = bank_paths_from_phase(base)
+    resolved: dict[str, Path] = {sid: by_entry[sid] for sid in source_ids if sid in by_entry}
+    unresolved = {sid for sid in source_ids if sid not in resolved}
+    if unresolved:
+        by_source = _egm_bank_paths_by_source_id(base, unresolved)
+        resolved.update((sid, by_source[sid]) for sid in unresolved if sid in by_source)
+    paths = [resolved[sid] for sid in source_ids if sid in resolved]
+    missing = [sid for sid in source_ids if sid not in resolved]
+    return paths, missing
+
+
+def _egm_bank_paths_by_source_id(base: Path, wanted: set[str]) -> dict[str, Path]:
+    """Map each egm bank's loaded ``source`` id (``bank.id`` or file stem) -> path, for
+    ids in ``wanted`` — reading banks, stopping once all are found, skipping unreadable
+    files. Only reached when an id doesn't match a manifest entry id (the drift case).
+    """
+    found: dict[str, Path] = {}
+    for entry in load_phase_dir(base).egm_banks or ():
+        if len(found) == len(wanted):
+            break
+        path = base / entry.path
+        try:
+            source_id = load_classifier_bank(path).id or path.stem
+        except Exception:  # unreadable / missing file — skip, it just stays unresolved
+            continue
+        if source_id in wanted:
+            found[source_id] = path
+    return found
 
 
 def _entries(manifest: PhaseManifest) -> list[Any]:

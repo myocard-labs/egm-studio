@@ -16,6 +16,7 @@ spec rather than reconstructing it from scratch, so nothing is silently dropped.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,6 +28,11 @@ from myocard_egm_studio.charts.matplotlib import RECIPES
 _FORMATS = ("pdf", "png", "svg")
 
 __all__ = ["RECIPE_FIELDS", "FieldSpec", "FigureForm"]
+
+
+def _observation_ids(values: Iterable[object]) -> list[str]:
+    """Coerce observation ids (plain str or ArtifactId RootModel) to plain strings."""
+    return [v if isinstance(v, str) else str(getattr(v, "root", v)) for v in values]
 
 
 @dataclass(frozen=True)
@@ -95,6 +101,8 @@ class FigureForm(QtWidgets.QWidget):
         self._path_edit = QtWidgets.QLineEdit()
 
         self._groups = _GroupsTable()
+        self._illustrates = _ObservationLinks()
+        self._observation_candidates: list[str] = []  # phase observation ids offered to link
         self._styling_box = QtWidgets.QGroupBox("Styling")
         self._styling_form = QtWidgets.QFormLayout(self._styling_box)
 
@@ -119,6 +127,8 @@ class FigureForm(QtWidgets.QWidget):
         layout.addLayout(form)
         layout.addWidget(QtWidgets.QLabel("Groups"))
         layout.addWidget(self._groups)
+        layout.addWidget(QtWidgets.QLabel("Illustrates observations"))
+        layout.addWidget(self._illustrates)
         layout.addWidget(self._styling_box)
         layout.addStretch(1)
 
@@ -129,8 +139,22 @@ class FigureForm(QtWidgets.QWidget):
         self._format_combo.currentTextChanged.connect(self._emit)
         self._recipe_combo.currentTextChanged.connect(self._on_recipe_changed)
         self._groups.changed.connect(self._emit)
+        self._illustrates.changed.connect(self._emit)
 
     # ---- public API ------------------------------------------------------ #
+
+    def set_observations(self, observation_ids: Sequence[str]) -> None:
+        """Offer ``observation_ids`` (the loaded phase's) as illustrate-able links.
+
+        The shell calls this on phase load. Any ids the current spec already illustrates
+        are kept (and stay checked) even if absent from the phase, so nothing is dropped.
+        """
+        self._observation_candidates = list(observation_ids)
+        self._loading = True
+        try:
+            self._refresh_illustrates(self._current_illustrates())
+        finally:
+            self._loading = False
 
     def set_spec(self, spec: FigureSpec) -> None:
         """Populate every field from ``spec`` (without emitting :attr:`specChanged`)."""
@@ -144,9 +168,19 @@ class FigureForm(QtWidgets.QWidget):
             self._path_edit.setText(spec.output.path)
             groups = (spec.inputs.groups if spec.inputs else None) or []
             self._groups.set_rows([(g.name, g.bank_id) for g in groups])
+            self._refresh_illustrates(_observation_ids(spec.illustrates_observations or []))
             self._rebuild_fields(spec)
         finally:
             self._loading = False
+
+    def _current_illustrates(self) -> list[str]:
+        """The spec's illustrated observation ids (empty before the first spec loads)."""
+        return _observation_ids(self._spec.illustrates_observations or []) if self._spec else []
+
+    def _refresh_illustrates(self, checked: Sequence[str]) -> None:
+        """Rebuild the checklist = phase candidates plus ``checked`` (preserving that order)."""
+        candidates = list(dict.fromkeys([*self._observation_candidates, *checked]))
+        self._illustrates.set_candidates(candidates, checked)
 
     def spec(self) -> FigureSpec:
         """The current spec — the loaded one with the form's edits overlaid.
@@ -208,6 +242,7 @@ class FigureForm(QtWidgets.QWidget):
             target[spec_field.key] = _read_widget(spec_field, widget)
         raw["inputs"] = inputs
         raw["styling"] = styling or None
+        raw["illustrates_observations"] = self._illustrates.checked() or None
 
         return FigureSpec.model_validate(raw)
 
@@ -298,6 +333,49 @@ class _GroupsTable(QtWidgets.QWidget):
         for row in rows:
             self._table.removeRow(row)
         self.changed.emit()
+
+
+class _ObservationLinks(QtWidgets.QListWidget):
+    """A checkable list of observation ids the figure illustrates, emitting :attr:`changed`."""
+
+    changed = QtCore.Signal()
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("figSpecIllustrates")
+        self.setMaximumHeight(96)
+        self.itemChanged.connect(lambda _item: self.changed.emit())
+
+    def set_candidates(self, candidates: Sequence[str], checked: Sequence[str]) -> None:
+        """Rebuild the list to ``candidates``, checking those in ``checked`` (bulk, silent)."""
+        chosen = set(checked)
+        blocked = self.blockSignals(True)  # bulk populate without per-item changed spam
+        try:
+            self.clear()
+            for obs_id in candidates:
+                item = QtWidgets.QListWidgetItem(obs_id)
+                item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(
+                    QtCore.Qt.CheckState.Checked
+                    if obs_id in chosen
+                    else QtCore.Qt.CheckState.Unchecked
+                )
+                self.addItem(item)
+            if not candidates:
+                placeholder = QtWidgets.QListWidgetItem("No observations in this phase")
+                placeholder.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
+                self.addItem(placeholder)
+        finally:
+            self.blockSignals(blocked)
+
+    def checked(self) -> list[str]:
+        """Checked observation ids, in list order."""
+        return [
+            item.text()
+            for i in range(self.count())
+            if (item := self.item(i)) is not None
+            and item.checkState() == QtCore.Qt.CheckState.Checked
+        ]
 
 
 # --------------------------------------------------------------------------- #

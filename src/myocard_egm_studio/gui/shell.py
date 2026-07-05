@@ -10,19 +10,28 @@ header carries the three-mode segmented control. The theme (ADR-012) persists vi
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 import pandas as pd
 from myocard_egm_contracts import role_of
-from myocard_egm_data.phases import PhaseManifest, load_figure_spec, load_phase_dir
+from myocard_egm_data.phases import (
+    Observation,
+    ObservationEntry,
+    PhaseManifest,
+    TraceRef,
+    load_figure_spec,
+    load_observation,
+    load_phase_dir,
+)
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from myocard_egm_studio.charts.inputs import TrainingCurve
 from myocard_egm_studio.charts.palette import color_for
 from myocard_egm_studio.gui.preferences import load_theme, save_theme
+from myocard_egm_studio.gui.save_observation_dialog import SaveObservationDialog
 from myocard_egm_studio.gui.sources import frame_eval_mode, load_exploration
 from myocard_egm_studio.gui.theme import (
     DEFAULT_THEME,
@@ -37,7 +46,23 @@ from myocard_egm_studio.gui.views import (
     SignalExplorationView,
 )
 from myocard_egm_studio.gui.widgets import FilterPanel, LoadedBanksList, PhaseTree, TraceData
-from myocard_egm_studio.loaders import bank_paths_from_phase, training_curve_from_run
+from myocard_egm_studio.loaders import (
+    bank_paths_from_phase,
+    resolve_bank_paths,
+    training_curve_from_run,
+)
+from myocard_egm_studio.save import (
+    build_observation,
+    capture_view_state,
+    describe_filter,
+    observation_entry,
+    parse_filter,
+    references_from,
+    save_manifest,
+    save_observation,
+    update_observation,
+    with_observation,
+)
 from myocard_egm_studio.view_model import (
     apply_filter,
     combine_view_models,
@@ -46,6 +71,7 @@ from myocard_egm_studio.view_model import (
     phase_artifact_groups,
 )
 from myocard_egm_studio.view_model.artifact_metadata import artifact_metadata_text
+from myocard_egm_studio.view_model.combine import ROW_ID
 from myocard_egm_studio.view_model.figure_output import figure_output_exists_map, figure_output_path
 from myocard_egm_studio.view_model.filtering import FilterSpec
 from myocard_egm_studio.view_model.phase_actions import reveal_target
@@ -200,10 +226,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._bank_name = ""
         self._phase_manifest: PhaseManifest | None = None
         self._phase_dir = Path()
+        self._phase_validated = False  # has Validate phase run on the current phase?
         self._last_metadata_text = ""  # last "Show metadata" text (for tests)
         self._metadata_dialog: QtWidgets.QDialog | None = None
         self._loaded_banks: list[_LoadedBank] = []  # banks open in Flow A (B7.8)
         self._explore_df: pd.DataFrame | None = None  # the combined view-model table
+        self._applied_spec: FilterSpec = FilterSpec(())  # last-applied filter (B10 capture)
         self._loaded_runs: list[tuple[str, TrainingCurve]] = []  # training runs in Flow B (B8f)
         self.setWindowTitle(_WINDOW_TITLE)
         self.setMinimumSize(_MIN_WIDTH, _MIN_HEIGHT)
@@ -229,6 +257,10 @@ class MainWindow(QtWidgets.QMainWindow):
         validate_action = file_menu.addAction("&Validate phase")
         validate_action.setObjectName("validatePhase")
         validate_action.triggered.connect(self._validate_phase)
+        file_menu.addSeparator()
+        save_obs_action = file_menu.addAction("&Save observation…")
+        save_obs_action.setObjectName("saveObservation")
+        save_obs_action.triggered.connect(self._save_observation)
         file_menu.addSeparator()
         file_menu.addAction("&Quit").triggered.connect(self.close)
 
@@ -665,6 +697,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         if self._explore_df is None:
             return
+        self._applied_spec = spec  # remembered for observation capture (B10)
         filtered = self._explore_df[apply_filter(self._explore_df, spec)]
         dialog = self._recalc_dialog()
         try:
@@ -705,8 +738,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._phase_tree.set_groups(groups)
         self._phase_manifest = manifest
         self._phase_dir = Path(folder)
-        # Flow C resolves a figure spec's bank ids against this phase's manifest.
+        self._phase_validated = False  # a freshly-loaded phase is existence-checked only
+        # Flow C resolves a figure spec's bank ids against this phase's manifest, and
+        # offers the phase's observations as illustrate-able links.
         self._figure_view.set_bank_paths(bank_paths_from_phase(self._phase_dir))
+        self._figure_view.set_observations(self._existing_observation_ids())
         self._refresh_figure_outputs()  # tune the figure menus to which images exist
         statuses = phase_statuses(manifest, self._phase_dir)
         self._phase_tree.set_statuses(statuses)
@@ -724,6 +760,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         statuses = phase_statuses(self._phase_manifest, self._phase_dir, validate=True)
         self._phase_tree.set_statuses(statuses)
+        self._phase_validated = True  # indicators now reflect a full validation
         counts = Counter(statuses.values())
         parts = [f"{counts[ArtifactStatus.OK]} ok"]
         if counts[ArtifactStatus.INVALID]:
@@ -791,6 +828,10 @@ class MainWindow(QtWidgets.QMainWindow):
             # figureGenerated -> _refresh_figure_outputs updates the menu afterwards.
             self._figure_view.generate_to_file(str(self._phase_dir / entry.path))
             self._show_mode(2)
+        elif action_id == "open_observation":
+            self._open_observation(entry.id, self._phase_dir / entry.path)
+        elif action_id == "edit_observation":
+            self._edit_observation(entry.id, self._phase_dir / entry.path)
 
     def _refresh_figure_outputs(self) -> None:
         """Retune the figure menus to which images exist (on phase load + after a render)."""
@@ -812,6 +853,195 @@ class MainWindow(QtWidgets.QMainWindow):
             self.statusBar().showMessage(f"Figure not generated yet: {out}")
             return
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(out)))
+
+    # -- save observation (File > Save observation, ADR-017 / B10) -------------
+
+    def _save_observation(self) -> None:
+        """Gather a title + description, then write an observation into the loaded phase."""
+        if self._phase_manifest is None:
+            self.statusBar().showMessage(
+                "Open a phase (File ▸ Open phase) to save an observation into it."
+            )
+            return
+        if self._explore_df is None or not len(self._explore_df.index):
+            self.statusBar().showMessage("Load a bank before saving an observation.")
+            return
+        dialog = SaveObservationDialog(
+            self,
+            summary=self._observation_summary(),
+            parent_observations=self._existing_observation_ids(),
+        )
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted.value:
+            self._write_observation(dialog.title(), dialog.description(), dialog.parents())
+
+    def _write_observation(self, title: str, description: str, parents: Sequence[str] = ()) -> None:
+        """Capture the current state into an observation + index it (the testable core)."""
+        assert self._explore_df is not None and self._phase_manifest is not None
+        spec = self._applied_spec
+        shown = (
+            self._explore_df[apply_filter(self._explore_df, spec)]
+            if spec.conditions
+            else self._explore_df
+        )
+        view_state, traces = capture_view_state(
+            shown, filter_spec=spec, selected_row_ids=self._current_selection()
+        )
+        observation = build_observation(
+            title=title,
+            description=description,
+            view_state=view_state,
+            traces=traces,
+            references=references_from(observations=parents),
+        )
+        save_observation(observation, self._phase_dir)
+        save_manifest(
+            with_observation(self._phase_manifest, observation_entry(observation)), self._phase_dir
+        )
+        self._reindex_phase_after_write()  # tree shows the new observation; validation preserved
+        self.statusBar().showMessage(f"Saved observation {observation.id}")
+
+    def _existing_observation_ids(self) -> list[str]:
+        """Observation ids already in the loaded phase — candidate parents to link to."""
+        if self._phase_manifest is None:
+            return []
+        return [entry.id for entry in (self._phase_manifest.observations or ())]
+
+    def _reindex_phase_after_write(self) -> None:
+        """Reload the phase tree after a manifest write, re-running validation only if the
+        phase had already been validated — so saving an observation restores (never wipes)
+        the validation indicators, but doesn't fabricate them for an unvalidated phase.
+        """
+        was_validated = self._phase_validated
+        self._load_phase_into_tree(str(self._phase_dir))  # rebuilds tree; resets the flag
+        if was_validated:
+            self._validate_phase()  # re-marks indicators + re-sets the flag
+
+    def _open_observation(self, observation_id: str, path: Path) -> None:
+        """Reload the view a saved observation captured — its banks, filter, and selection."""
+        try:
+            observation = load_observation(path)
+        except Exception as exc:  # missing / malformed file -> friendly text, no crash
+            self.statusBar().showMessage(f"Could not open observation {observation_id}: {exc}")
+            return
+        view = observation.view_state
+        if view is None:
+            self.statusBar().showMessage(f"Observation {observation_id} saved no view to reload.")
+            return
+        bank_ids = [b.root for b in (view.banks_loaded or ())]
+        loaded, missing = self._reload_banks(bank_ids)
+        if loaded == 0:
+            self.statusBar().showMessage(
+                f"Observation {observation_id}: none of its {len(bank_ids)} bank(s) are in this phase."
+            )
+            return
+        filter_note = self._restore_filter(view.filter)
+        selected = self._restore_selection(list(observation.traces or []))
+        self._show_mode(0)
+        self._explore_view.show_explore()
+        banks = f"{loaded} bank(s)" + (f" ({missing} missing)" if missing else "")
+        self.statusBar().showMessage(
+            f"Reloaded {observation_id}: {banks}, {filter_note}, {selected} trace(s) selected"
+        )
+
+    def _reload_banks(self, bank_ids: Sequence[str]) -> tuple[int, int]:
+        """Load the phase banks named by ``bank_ids`` into Flow A (first replaces, rest add).
+
+        Resolution tolerates a bank whose stamped id has drifted from its manifest entry
+        id (:func:`resolve_bank_paths`). Returns ``(loaded, missing)``.
+        """
+        paths, missing = resolve_bank_paths(self._phase_dir, bank_ids)
+        for i, bank_path in enumerate(paths):
+            self._open_bank_explore(str(bank_path), focus=None, replace=(i == 0))
+        return len(paths), len(missing)
+
+    def _restore_filter(self, text: str | None) -> str:
+        """Re-apply a saved filter string if it round-trips; else surface it for manual re-entry."""
+        if not text:
+            return "no filter"
+        spec = parse_filter(text)
+        if spec is None:  # a free-text filter this GUI can't reconstruct exactly
+            return f"filter '{text}' not auto-applied"
+        self._filter_panel.set_spec(spec)
+        self._on_recalculate(spec)
+        return f"filter: {text}"
+
+    def _restore_selection(self, traces: Sequence[TraceRef]) -> int:
+        """Select the observation's pinned traces (matched by bank id + index) in Flow A."""
+        df = self._explore_df
+        if df is None or not traces or "source" not in df.columns:
+            return 0
+        row_ids: list[int] = []
+        for trace in traces:
+            match = df[(df["source"] == trace.bank) & (df["trace_idx"] == trace.index)]
+            row_ids.extend(int(row_id) for row_id in match[ROW_ID])
+        if row_ids:
+            self._explore_view.result_list.select_row_ids(row_ids)
+        return len(row_ids)
+
+    def _edit_observation(self, observation_id: str, path: Path) -> None:
+        """Open an existing observation's prose + parent links for editing, then re-save it."""
+        try:
+            existing = load_observation(path)
+        except Exception as exc:  # missing / malformed file -> friendly text, no crash
+            self.statusBar().showMessage(f"Could not open observation {observation_id}: {exc}")
+            return
+        refs = existing.references
+        selected = [o.root for o in (refs.observations or ())] if refs else []
+        candidates = [obs for obs in self._existing_observation_ids() if obs != observation_id]
+        dialog = SaveObservationDialog(
+            self,
+            observation_id=observation_id,
+            title=existing.title,
+            description=existing.description,
+            parent_observations=candidates,
+            selected_parents=selected,
+        )
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted.value:
+            self._apply_observation_edit(
+                existing, dialog.title(), dialog.description(), dialog.parents()
+            )
+
+    def _apply_observation_edit(
+        self, existing: Observation, title: str, description: str, parents: Sequence[str]
+    ) -> None:
+        """Write the edited observation back (same id/path/usage) + refresh the tree."""
+        assert self._phase_manifest is not None
+        entry = entries_by_id(self._phase_manifest)[existing.id]
+        assert isinstance(entry, ObservationEntry)  # editing an observation -> ObservationEntry
+        usage = entry.usage_tag.value if entry.usage_tag is not None else "exploratory"
+        updated = update_observation(
+            existing,
+            title=title,
+            description=description,
+            references=references_from(observations=parents),
+        )
+        save_observation(updated, self._phase_dir)
+        save_manifest(
+            with_observation(
+                self._phase_manifest,
+                observation_entry(updated, usage_tag=usage, usage_notes=entry.usage_notes),
+            ),
+            self._phase_dir,
+        )
+        self._reindex_phase_after_write()  # validation indicators preserved across the edit
+        self.statusBar().showMessage(f"Updated observation {updated.id}")
+
+    def _current_selection(self) -> list[int]:
+        """The selected trace row_ids in the active flow (empty for Flow C / figure prep)."""
+        mode = self._modes_stack.currentIndex()
+        if mode == 0:
+            return self._explore_view.result_list.selected_row_ids()
+        if mode == 1:
+            return self._diagnostics_view.result_list.selected_row_ids()
+        return []
+
+    def _observation_summary(self) -> str:
+        assert self._explore_df is not None
+        banks = self._explore_df["source"].nunique() if "source" in self._explore_df.columns else 0
+        return (
+            f"Will capture: {banks} bank(s), {describe_filter(self._applied_spec) or 'no filter'}, "
+            f"{len(self._current_selection())} trace(s) selected."
+        )
 
     def _copy_to_clipboard(self, text: str) -> None:
         app = QtWidgets.QApplication.instance()

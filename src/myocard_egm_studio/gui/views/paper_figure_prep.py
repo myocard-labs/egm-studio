@@ -21,7 +21,7 @@ on the main thread. Debouncing the eager form signal is B9d.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from myocard_egm_data.phases import FigureSpec, load_figure_spec, write_figure_spec
@@ -188,6 +188,10 @@ class PaperFigurePrepView(QtWidgets.QWidget):
         """
         self._bank_paths = dict(bank_paths)
         self._render_current()
+
+    def set_observations(self, observation_ids: Sequence[str]) -> None:
+        """Offer the loaded phase's observation ids to the form's Illustrates picker."""
+        self._form.set_observations(observation_ids)
 
     def new_spec(self) -> None:
         """Start a blank spec from a template (the New spec button).

@@ -19,13 +19,17 @@ from collections.abc import Sequence
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from myocard_egm_studio.view_model.filtering import Condition, FilterColumn, FilterSpec
+from myocard_egm_studio.view_model.filtering import (
+    COMBINE_LABELS,
+    Condition,
+    FilterColumn,
+    FilterSpec,
+)
 
-#: Combine dropdown entries; the parallel ``_COMBINE_VALUES`` are the FilterSpec codes.
-#: "Match all that exist" (and_present) skips a condition for rows whose bank lacks that
-#: field, so filtering a single-bank field keeps the other banks' rows (cross-bank compare).
-_COMBINE_LABELS = ("Match all", "Match any", "Match all that exist")
-_COMBINE_VALUES = ("and", "or", "and_present")
+#: Combine dropdown entries + the parallel FilterSpec codes, derived from the single-source
+#: :data:`COMBINE_LABELS` (dict insertion order = dropdown order).
+_COMBINE_VALUES = tuple(COMBINE_LABELS)
+_COMBINE_LABEL_TEXT = tuple(COMBINE_LABELS.values())
 
 
 def _is_number(text: str) -> bool:
@@ -112,6 +116,22 @@ class _ConditionRow(QtWidgets.QWidget):
                 return None
         return Condition(column=column.name, op=self._op.currentText(), value=value)
 
+    def set_condition(self, condition: Condition) -> None:
+        """Populate the row from ``condition`` (best-effort — ignores an unknown column)."""
+        column = self._by_name.get(condition.column)
+        if column is None:
+            return
+        self._column.setCurrentText(condition.column)  # fires _on_column -> op list + value page
+        op_index = self._op.findText(condition.op)
+        if op_index >= 0:
+            self._op.setCurrentIndex(op_index)
+        if column.numeric:
+            self._line.setText(condition.value)
+        else:
+            choice_index = self._choice.findText(condition.value)
+            if choice_index >= 0:
+                self._choice.setCurrentIndex(choice_index)
+
 
 class FilterPanel(QtWidgets.QWidget):
     """Edits a FilterSpec over the view-model; applies it on an explicit Recalculate.
@@ -134,7 +154,7 @@ class FilterPanel(QtWidgets.QWidget):
 
         self._combine = QtWidgets.QComboBox()
         self._combine.setObjectName("filterCombine")
-        self._combine.addItems(_COMBINE_LABELS)
+        self._combine.addItems(_COMBINE_LABEL_TEXT)
         self._combine.currentIndexChanged.connect(self._sync_recalc)
 
         self._rows_box = QtWidgets.QVBoxLayout()
@@ -182,14 +202,35 @@ class FilterPanel(QtWidgets.QWidget):
             conditions=conditions, combine=_COMBINE_VALUES[self._combine.currentIndex()]
         )
 
-    def _add_row(self) -> None:
-        if not self._columns:
-            return
+    def set_spec(self, spec: FilterSpec) -> None:
+        """Restore the panel to ``spec`` (combine + condition rows) — used to reload a
+        saved observation's view (B10). Columns must already be set (:meth:`set_columns`);
+        a condition naming an unknown column is skipped. The restored spec is marked as
+        applied, so Recalculate stays disabled until the user changes something.
+        """
+        if spec.combine in _COMBINE_VALUES:
+            self._combine.setCurrentIndex(_COMBINE_VALUES.index(spec.combine))
+        self._clear_rows()
+        known = {column.name for column in self._columns}
+        for condition in spec.conditions:
+            if condition.column in known:
+                self._new_row().set_condition(condition)
+        self._applied = self.spec()
+        self._sync_recalc()
+
+    def _new_row(self) -> _ConditionRow:
+        """Create, wire, and mount a fresh condition row (shared by add + restore)."""
         row = _ConditionRow(self._columns)
         row.changed.connect(self._sync_recalc)
         row.removed.connect(lambda: self._remove_row(row))
         self._rows.append(row)
         self._rows_box.addWidget(row)
+        return row
+
+    def _add_row(self) -> None:
+        if not self._columns:
+            return
+        self._new_row()
         self._sync_recalc()
 
     def _remove_row(self, row: _ConditionRow) -> None:

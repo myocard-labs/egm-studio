@@ -24,6 +24,16 @@ from pandas.api.types import is_numeric_dtype
 NUMERIC_OPS: tuple[str, ...] = (">", ">=", "<", "<=", "==", "!=")
 CATEGORICAL_OPS: tuple[str, ...] = ("==", "!=")
 
+#: The combine modes and their human labels — single-sourced here (Qt-free) so the filter
+#: panel's dropdown and the saved-observation filter string agree. Insertion order is the
+#: dropdown order. "and_present" ("Match all that exist") skips a condition for rows whose
+#: bank lacks that field, keeping other banks' rows for a cross-bank comparison.
+COMBINE_LABELS: dict[str, str] = {
+    "and": "Match all",
+    "or": "Match any",
+    "and_present": "Match all that exist",
+}
+
 #: View-model plumbing columns the filter never offers (identity wiring, not
 #: analysis axes). label_name / source / split + the features + metadata remain.
 _HIDDEN_COLUMNS = frozenset(

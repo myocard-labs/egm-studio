@@ -45,7 +45,7 @@ from myocard_egm_studio.loaders.figure_inputs import (
     resolve_recipe_data,
     training_curve_from_run,
 )
-from myocard_egm_studio.loaders.manifest import bank_paths_from_phase
+from myocard_egm_studio.loaders.manifest import bank_paths_from_phase, resolve_bank_paths
 
 __all__ = [
     "LOADERS",
@@ -69,6 +69,7 @@ __all__ = [
     "prediction_group_from_frame",
     "prediction_groups_by_source",
     "register_loader",
+    "resolve_bank_paths",
     "resolve_recipe_data",
     "scatter_series_by_source",
     "scatter_series_from_frame",

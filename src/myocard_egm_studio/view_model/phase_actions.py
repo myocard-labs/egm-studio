@@ -35,7 +35,6 @@ class ArtifactAction:
 # Where the not-yet-built viewers land (egm-studio roadmap blocks).
 _B7 = "Arrives with Signal exploration (Block 7)"
 _B8 = "Arrives with ML diagnostics (Block 8)"
-_B10 = "Arrives with the Save flow (Block 10)"
 
 # Info actions every artifact ends with (Show metadata is added per-role below).
 SHOW_METADATA = ArtifactAction("show_metadata", "Show metadata")
@@ -109,7 +108,8 @@ _VIEWERS_BY_ROLE: dict[Role, tuple[ArtifactAction, ...]] = {
         ArtifactAction("view_architecture", "View architecture", available=False, note=_B8),
     ),
     Role.observation: (
-        ArtifactAction("open_observation", "Open observation", available=False, note=_B10),
+        ArtifactAction("open_observation", "Open observation"),  # reloads the captured view
+        ArtifactAction("edit_observation", "Edit observation"),
     ),
     # Figures are dynamic: the tree calls figure_actions(output_exists=...) per artifact.
     # This default (image not generated yet) is the fallback for non-dynamic callers.
