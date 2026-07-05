@@ -92,6 +92,19 @@ def test_present_status_is_grey_and_dotted(qtbot: QtBot) -> None:
     assert _top(tree, 0).foreground(0).color().name() == "#8b949e"  # group grey while unverified
 
 
+def test_unresolved_status_is_amber_with_a_why_tooltip(qtbot: QtBot) -> None:
+    tree = _populated(qtbot)
+    statuses = dict.fromkeys(_populated_ids(tree), ArtifactStatus.OK)
+    flagged = _child(_top(tree, 0), 0).text(0)
+    statuses[flagged] = ArtifactStatus.UNRESOLVED
+    tree.set_statuses(statuses, {flagged: "Not in this phase: lpred_x_2026-06-27"})
+
+    item = _child(_top(tree, 0), 0)
+    assert item.data(0, STATUS_ROLE) is ArtifactStatus.UNRESOLVED
+    assert item.toolTip(0) == "Not in this phase: lpred_x_2026-06-27"  # the "why" rides along
+    assert _top(tree, 0).foreground(0).color().name() == "#d29922"  # rolls up amber, like invalid
+
+
 def _menu_labels(menu: QtWidgets.QMenu) -> list[str]:
     return [action.text() for action in menu.actions() if not action.isSeparator()]
 

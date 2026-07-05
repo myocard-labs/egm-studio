@@ -81,3 +81,13 @@ def test_scatter_axes_default_then_roundtrips() -> None:
     )  # unset -> default pair
     preferences.save_scatter_axes("dominant_frequency", "fractal_dimension")
     assert preferences.load_scatter_axes(("a", "b")) == ("dominant_frequency", "fractal_dimension")
+
+
+def test_scratch_dir_defaults_to_app_data_scratch() -> None:
+    assert preferences.default_scratch_dir().endswith("scratch")
+    assert preferences.load_scratch_dir().endswith("scratch")  # unset -> default
+
+
+def test_scratch_dir_roundtrips() -> None:
+    preferences.save_scratch_dir("/tmp/my-scratch")
+    assert preferences.load_scratch_dir() == "/tmp/my-scratch"

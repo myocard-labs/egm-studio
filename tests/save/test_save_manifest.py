@@ -6,7 +6,12 @@ from pathlib import Path
 
 from myocard_egm_data.phases import FigureEntry, ObservationEntry, PhaseManifest, load_phase_dir
 
-from myocard_egm_studio.save.manifest import remove_entry, save_manifest, with_entry
+from myocard_egm_studio.save.manifest import (
+    empty_manifest,
+    remove_entry,
+    save_manifest,
+    with_entry,
+)
 from myocard_egm_studio.save.observation import build_observation, observation_entry
 
 
@@ -36,6 +41,15 @@ def _fig_entry(fig_id: str) -> FigureEntry:
             "usage_tag": "exploratory",
         }
     )
+
+
+def test_empty_manifest_is_entry_less_in_progress(tmp_path: Path) -> None:
+    manifest = empty_manifest(1.5)
+    assert manifest.phase == 1.5
+    assert manifest.status.value == "in_progress"
+    assert manifest.observations is None and manifest.figures is None and manifest.egm_banks is None
+    reloaded = load_phase_dir(save_manifest(manifest, tmp_path).parent)
+    assert reloaded.phase == 1.5  # round-trips through the writer
 
 
 def test_with_entry_appends() -> None:

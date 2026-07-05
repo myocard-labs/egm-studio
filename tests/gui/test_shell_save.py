@@ -66,11 +66,11 @@ def test_save_observation_action_exists(qtbot: QtBot) -> None:
     assert window.findChild(QtGui.QAction, "saveObservation") is not None
 
 
-def test_save_observation_needs_a_phase(qtbot: QtBot) -> None:
+def test_save_observation_with_nothing_loaded_asks_for_a_bank(qtbot: QtBot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
-    window._save_observation()  # nothing loaded -> guarded, no dialog
-    assert "Open a phase" in window.statusBar().currentMessage()
+    window._save_observation()  # no bank -> guarded, no dialog (no phase is fine: scratch mode)
+    assert "Load a bank" in window.statusBar().currentMessage()
 
 
 def test_save_observation_needs_a_bank(qtbot: QtBot, tmp_path: Path) -> None:
@@ -367,13 +367,6 @@ def test_save_figure_into_phase_writes_the_spec_and_indexes_it(
     assert [b.root for b in entry.consumes_banks or []] == ["lpred_a_2026-06-27"]
     assert [o.root for o in entry.consumes_observations or []] == [_FIXTURE_PARENT]
     assert "Saved figure fig_demo into the phase" in window.statusBar().currentMessage()
-
-
-def test_save_figure_into_phase_needs_a_phase(qtbot: QtBot) -> None:
-    window = MainWindow()
-    qtbot.addWidget(window)
-    window._save_figure_into_phase(_figure_spec())  # no phase loaded
-    assert "Open a phase" in window.statusBar().currentMessage()
 
 
 def test_current_selection_dispatches_by_active_flow(
