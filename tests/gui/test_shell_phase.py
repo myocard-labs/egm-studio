@@ -60,12 +60,14 @@ def test_open_phase_marks_missing_files_red(qtbot: QtBot) -> None:
     assert not child.icon(0).isNull()  # per-item status dot is set
 
 
-def test_validate_phase_action(qtbot: QtBot) -> None:
+def test_validate_phase_action(qtbot: QtBot, tmp_path: Path) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
+    window._scratch_dir = str(tmp_path / "scratch")  # empty -> deterministic "nothing"
+    window._refresh_scratch()
     assert window.findChild(QtGui.QAction, "validatePhase") is not None
-    window._validate_phase()  # nothing loaded yet
-    assert "Open a phase first" in window.statusBar().currentMessage()
+    window._validate_phase()  # nothing loaded, empty scratch
+    assert "Nothing to validate" in window.statusBar().currentMessage()
     window._load_phase_into_tree(str(_FIXTURE_DIR))
     window._validate_phase()
     message = window.statusBar().currentMessage()

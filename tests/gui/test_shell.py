@@ -158,16 +158,16 @@ def test_add_bank_combines_then_remove(
 def test_open_action_relabels_to_add_when_loaded(
     qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
 ) -> None:
-    """The Open-bank menu action toggles Open ↔ Add on the loaded state (B7.8b-fix)."""
+    """The Open-bank submenu title toggles Open ↔ Add on the loaded state (B7.8b-fix)."""
     path = tmp_path / "bank.h5"
     write_classifier_bank(tiny_classifier_bank, path)
     window = MainWindow()
     qtbot.addWidget(window)
-    assert window._open_action.text() == "&Open bank…"  # nothing loaded
+    assert window._bank_menu.title() == "&Open bank"  # nothing loaded
     window._open_bank_explore(str(path))
-    assert window._open_action.text() == "&Add bank…"  # a bank is loaded
+    assert window._bank_menu.title() == "&Add bank"  # a bank is loaded
     window._remove_bank(str(path))
-    assert window._open_action.text() == "&Open bank…"  # back to empty
+    assert window._bank_menu.title() == "&Open bank"  # back to empty
 
 
 def test_selecting_a_trace_shows_the_detail(
@@ -279,7 +279,7 @@ def test_open_training_run_populates_flow_b_training(
     monkeypatch.setattr(
         QtWidgets.QFileDialog, "getOpenFileNames", lambda *a, **k: ([str(path)], "")
     )
-    window._open_training_run()
+    window._load_runs("scratch")
     assert window._modes_stack.currentIndex() == 1  # switched to ML diagnostics
     assert window._diagnostics_view._tabs.currentIndex() == 2  # Training tab
     assert window._diagnostics_view._training_view.overlay is not None

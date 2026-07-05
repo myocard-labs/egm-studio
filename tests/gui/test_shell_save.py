@@ -252,7 +252,7 @@ def test_open_observation_without_a_view_state_reports(qtbot: QtBot, tmp_path: P
     qtbot.addWidget(window)
     window._load_phase_into_tree(str(phase))
     path = _saved_observation(phase)  # no view_state captured
-    window._open_observation("obs_reload_me_x", path)
+    window._open_observation("obs_reload_me_x", path, scope_dirs=[window._phase_dir])
     assert "saved no view" in window.statusBar().currentMessage()
 
 
@@ -306,14 +306,14 @@ def test_open_observation_reloads_banks_filter_and_selection(
     )
 
     # Bank loading needs real files; stub it to report one loaded + populate the frame.
-    def fake_reload(bank_ids: object) -> tuple[int, int]:
+    def fake_reload(bank_ids: object, scope_dirs: object) -> tuple[int, int]:
         window._explore_df = _explore_frame()
         return 1, 0
 
     monkeypatch.setattr(window, "_reload_banks", fake_reload)
     monkeypatch.setattr(window._explore_view.result_list, "select_row_ids", lambda _ids: None)
 
-    window._open_observation("obs_reload_me_x", path)
+    window._open_observation("obs_reload_me_x", path, scope_dirs=[window._phase_dir])
 
     assert window._modes_stack.currentIndex() == 0  # landed on Signal exploration
     message = window.statusBar().currentMessage()
@@ -330,8 +330,8 @@ def test_open_observation_when_no_banks_resolve_reports(
     path = _saved_observation(
         phase, view_state=ViewState.model_validate({"banks_loaded": ["lpred_absent_2026-06-27"]})
     )
-    monkeypatch.setattr(window, "_reload_banks", lambda ids: (0, 1))
-    window._open_observation("obs_reload_me_x", path)
+    monkeypatch.setattr(window, "_reload_banks", lambda ids, scope_dirs: (0, 1))
+    window._open_observation("obs_reload_me_x", path, scope_dirs=[window._phase_dir])
     assert "none of its 1 bank(s)" in window.statusBar().currentMessage()
 
 

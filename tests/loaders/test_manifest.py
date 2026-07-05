@@ -27,6 +27,31 @@ def test_maps_every_artifact_relative_to_the_phase() -> None:
     assert paths[sample_id] == _FIXTURE_DIR / entries[sample_id].path
 
 
+def test_resolve_bank_paths_searches_multiple_dirs(tmp_path: Path) -> None:
+    """A scratch observation resolves its banks across [scratch, phase] (cross-scope, 2c)."""
+    from myocard_egm_data.phases import EgmBankEntry
+
+    from myocard_egm_studio.save import empty_manifest, save_manifest, with_entry
+
+    scratch, phase = tmp_path / "scratch", tmp_path / "phase"
+    scratch.mkdir()
+    phase.mkdir()
+    entry = EgmBankEntry.model_validate(
+        {
+            "id": "lpred_x_2026-06-27",
+            "path": "bank.h5",
+            "produced_by_package": "p",
+            "produced_by_version": "v",
+        }
+    )
+    save_manifest(with_entry(empty_manifest(1.0), "egm_banks", entry), phase)  # bank only in phase
+
+    paths, missing = resolve_bank_paths([scratch, phase], ["lpred_x_2026-06-27"])
+
+    assert missing == []
+    assert paths == [phase / "bank.h5"]  # found by falling through to the second dir
+
+
 def test_absolute_path_in_manifest_wins(tmp_path: Path) -> None:
     absolute = tmp_path / "elsewhere" / "b.classifier.h5"
     manifest = PhaseManifest.model_validate(

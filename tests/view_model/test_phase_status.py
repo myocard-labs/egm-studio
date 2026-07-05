@@ -139,6 +139,20 @@ def test_observation_unresolved_when_its_bank_is_not_in_the_phase(tmp_path: Path
     assert "lpred_x_2026-06-27" in report.detail  # the "why" names the missing id
 
 
+def test_extra_ids_resolve_dependencies_cross_scope(tmp_path: Path) -> None:
+    obs = _observation_over("lpred_x_2026-06-27")
+    save_observation(obs, tmp_path)
+    manifest = with_entry(empty_manifest(1.0), "observations", observation_entry(obs))
+    # the bank isn't in this manifest, but supplying it via extra_ids (a loaded phase) resolves it
+    resolved = phase_status_report(
+        manifest, tmp_path, validate=True, extra_ids={"lpred_x_2026-06-27"}
+    )
+    assert resolved[obs.id].status is ArtifactStatus.OK
+    # without extra_ids the same observation is unresolved (its bank is nowhere)
+    alone = phase_status_report(manifest, tmp_path, validate=True)
+    assert alone[obs.id].status is ArtifactStatus.UNRESOLVED
+
+
 def test_observation_ok_once_its_bank_is_indexed(tmp_path: Path) -> None:
     obs = _observation_over("lpred_x_2026-06-27")
     save_observation(obs, tmp_path)

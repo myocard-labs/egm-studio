@@ -8,6 +8,7 @@ from myocard_egm_data.phases import FigureEntry, ObservationEntry, PhaseManifest
 
 from myocard_egm_studio.save.manifest import (
     empty_manifest,
+    manifest_section,
     remove_entry,
     save_manifest,
     with_entry,
@@ -41,6 +42,17 @@ def _fig_entry(fig_id: str) -> FigureEntry:
             "usage_tag": "exploratory",
         }
     )
+
+
+def test_manifest_section_maps_each_role() -> None:
+    assert manifest_section("tbank_x_2026-06-27") == "egm_banks"
+    assert manifest_section("lpred_x_2026-06-27") == "egm_banks"  # prediction banks share egm_banks
+    assert manifest_section("nbank_x_2026-06-15") == "noise_banks"
+    assert manifest_section("run_x_2026-06-25") == "training_runs"
+    assert manifest_section("model_x_2026-06-26") == "models"
+    assert manifest_section("obs_x_2026-07-05") == "observations"
+    assert manifest_section("fig_x_2026-07-05") == "figures"
+    assert manifest_section("paper_x_v1") == "papers"
 
 
 def test_empty_manifest_is_entry_less_in_progress(tmp_path: Path) -> None:
