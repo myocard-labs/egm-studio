@@ -25,11 +25,12 @@ class SettingsDialog(QtWidgets.QDialog):
         scratch_dir: str = "",
         theme: str = "",
         themes: Sequence[str] = (),
+        auto_add_deps: bool = True,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("settingsDialog")
         self.setWindowTitle("Settings")
-        self.resize(520, 160)
+        self.resize(520, 190)
 
         self._scratch_edit = QtWidgets.QLineEdit(scratch_dir)
         self._scratch_edit.setObjectName("scratchDir")
@@ -39,6 +40,12 @@ class SettingsDialog(QtWidgets.QDialog):
         scratch_row = QtWidgets.QHBoxLayout()
         scratch_row.addWidget(self._scratch_edit, 1)
         scratch_row.addWidget(browse)
+
+        self._auto_add_check = QtWidgets.QCheckBox(
+            "Automatically add dependencies when saving or promoting into a phase"
+        )
+        self._auto_add_check.setObjectName("autoAddDeps")
+        self._auto_add_check.setChecked(auto_add_deps)
 
         self._theme_combo = QtWidgets.QComboBox()
         self._theme_combo.setObjectName("themeCombo")
@@ -57,6 +64,7 @@ class SettingsDialog(QtWidgets.QDialog):
         form = QtWidgets.QFormLayout()
         form.addRow("Scratch folder", scratch_row)
         form.addRow("Theme", self._theme_combo)
+        form.addRow("Dependencies", self._auto_add_check)
         hint = QtWidgets.QLabel(
             "Observations and figures saved with no phase open go to the scratch folder,"
             " then Promote them into a phase."
@@ -82,3 +90,6 @@ class SettingsDialog(QtWidgets.QDialog):
     def theme(self) -> str:
         index = self._theme_combo.currentIndex()
         return self._themes[index] if 0 <= index < len(self._themes) else ""
+
+    def auto_add_deps(self) -> bool:
+        return self._auto_add_check.isChecked()

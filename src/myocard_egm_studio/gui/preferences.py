@@ -26,6 +26,7 @@ _SCATTER_Y_KEY = "signal/scatter_y"
 _CONFUSION_NORM_KEY = "ml/confusion_norm"
 _CONFUSION_NORMS = ("row", "col", "overall", "count")
 _SCRATCH_DIR_KEY = "save/scratch_dir"
+_AUTO_ADD_DEPS_KEY = "save/auto_add_dependencies"
 
 
 def _settings() -> QtCore.QSettings:
@@ -130,3 +131,19 @@ def load_scratch_dir() -> str:
 def save_scratch_dir(path: str) -> None:
     """Persist the scratch folder (Settings ▸ Scratch folder) to restore on next launch."""
     _settings().setValue(_SCRATCH_DIR_KEY, path)
+
+
+def load_auto_add_deps(default: bool) -> bool:
+    """Whether saving / promoting an artifact into a phase also pulls its dependencies (B10h-1b).
+
+    Persisted as a bool, but IniFormat round-trips it as a string, so parse defensively.
+    """
+    raw = _settings().value(_AUTO_ADD_DEPS_KEY, default)
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+
+
+def save_auto_add_deps(value: bool) -> None:
+    """Persist the auto-add-dependencies toggle (Settings) to restore on next launch."""
+    _settings().setValue(_AUTO_ADD_DEPS_KEY, value)

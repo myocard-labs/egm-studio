@@ -16,7 +16,8 @@ models plus the banks in its ``view_state`` / ``traces``), so those take the loa
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections import deque
+from collections.abc import Callable, Container, Iterable
 from typing import Protocol
 
 from myocard_egm_data.phases import (
@@ -32,6 +33,7 @@ from myocard_egm_data.phases import (
 )
 
 __all__ = [
+    "dependency_closure",
     "dependency_ids",
     "entry_dependency_ids",
     "manifest_ids",
@@ -111,6 +113,32 @@ def dependency_ids(entry: _Entry, *, observation: Observation | None = None) -> 
     if isinstance(entry, ObservationEntry):
         return observation_dependency_ids(observation) if observation is not None else []
     return entry_dependency_ids(entry)
+
+
+def dependency_closure(
+    seed_ids: Iterable[str],
+    *,
+    direct_deps: Callable[[str], Iterable[str]],
+    present: Container[str],
+) -> list[str]:
+    """Transitive closure over ``seed_ids``, keeping only ids in ``present`` (B10h-1b auto-add).
+
+    Breadth-first from the seeds, following each id's ``direct_deps``; an id is collected only
+    if it is in ``present`` (the scope we can actually pull from — e.g. scratch minus what the
+    phase already has). Order-preserving and cycle-safe. Seeds that aren't present are skipped
+    but their descendants are not explored (an unreachable dependency stops the walk there).
+    """
+    order: list[str] = []
+    seen: set[str] = set()
+    queue: deque[str] = deque(seed_ids)
+    while queue:
+        current = queue.popleft()
+        if current in seen or current not in present:
+            continue
+        seen.add(current)
+        order.append(current)
+        queue.extend(direct_deps(current))
+    return order
 
 
 def manifest_ids(manifest: PhaseManifest) -> set[str]:

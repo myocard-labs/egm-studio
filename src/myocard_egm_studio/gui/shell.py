@@ -34,8 +34,10 @@ from myocard_egm_studio.charts.inputs import TrainingCurve
 from myocard_egm_studio.charts.palette import color_for
 from myocard_egm_studio.gui.new_phase_dialog import NewPhaseDialog
 from myocard_egm_studio.gui.preferences import (
+    load_auto_add_deps,
     load_scratch_dir,
     load_theme,
+    save_auto_add_deps,
     save_scratch_dir,
     save_theme,
 )
@@ -96,7 +98,12 @@ from myocard_egm_studio.view_model import (
 )
 from myocard_egm_studio.view_model.artifact_metadata import artifact_metadata_text
 from myocard_egm_studio.view_model.combine import ROW_ID
-from myocard_egm_studio.view_model.dependencies import manifest_ids
+from myocard_egm_studio.view_model.dependencies import (
+    dependency_closure,
+    entry_dependency_ids,
+    manifest_ids,
+    observation_dependency_ids,
+)
 from myocard_egm_studio.view_model.figure_output import figure_output_exists_map, figure_output_path
 from myocard_egm_studio.view_model.filtering import FilterSpec
 from myocard_egm_studio.view_model.phase_actions import reveal_target
@@ -283,6 +290,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._phase_dir = Path()
         self._phase_validated = False  # has Validate phase run on the current phase?
         self._scratch_dir = load_scratch_dir()  # where no-phase saves land (Settings-editable)
+        self._auto_add_deps = load_auto_add_deps(True)  # pull deps on save/promote (B10h-1b)
         self._scratch_manifest = empty_manifest(
             SCRATCH_PHASE
         )  # _refresh_scratch loads the real one
@@ -312,10 +320,22 @@ class MainWindow(QtWidgets.QMainWindow):
         # "Add bank" once banks are loaded (the openers are additive, B7.8b-fix).
         self._bank_menu = file_menu.addMenu("&Open bank")
         self._bank_menu.setObjectName("openBank")
-        self._add_load_targets(self._bank_menu, "openBank", self._load_banks)
+        self._add_target_actions(
+            self._bank_menu,
+            "openBank",
+            self._load_banks,
+            scratch_text="Load to &scratch…",
+            phase_text="Load to &phase…",
+        )
         run_menu = file_menu.addMenu("Open &training run")
         run_menu.setObjectName("openTrainingRun")
-        self._add_load_targets(run_menu, "openTrainingRun", self._load_runs)
+        self._add_target_actions(
+            run_menu,
+            "openTrainingRun",
+            self._load_runs,
+            scratch_text="Load to &scratch…",
+            phase_text="Load to &phase…",
+        )
         new_phase_action = file_menu.addAction("&New phase…")
         new_phase_action.setObjectName("newPhase")
         new_phase_action.triggered.connect(self._new_phase)
@@ -326,9 +346,17 @@ class MainWindow(QtWidgets.QMainWindow):
         validate_action.setObjectName("validatePhase")
         validate_action.triggered.connect(self._validate_phase)
         file_menu.addSeparator()
-        save_obs_action = file_menu.addAction("&Save observation…")
-        save_obs_action.setObjectName("saveObservation")
-        save_obs_action.triggered.connect(self._save_observation)
+        # Save observation into scratch or the loaded phase — the save-side mirror of the
+        # Load submenus (B10h-2d); "Add to phase" is enabled only while a phase is open.
+        save_obs_menu = file_menu.addMenu("&Save observation")
+        save_obs_menu.setObjectName("saveObservation")
+        self._add_target_actions(
+            save_obs_menu,
+            "saveObservation",
+            self._save_observation,
+            scratch_text="Add to &scratch…",
+            phase_text="Add to &phase…",
+        )
         file_menu.addSeparator()
         settings_action = file_menu.addAction("Se&ttings…")
         settings_action.setObjectName("openSettings")
@@ -348,14 +376,21 @@ class MainWindow(QtWidgets.QMainWindow):
         help_menu = menubar.addMenu("&Help")
         help_menu.addAction("&About egm-studio")
 
-    def _add_load_targets(
-        self, menu: QtWidgets.QMenu, key: str, handler: Callable[[_Target], None]
+    def _add_target_actions(
+        self,
+        menu: QtWidgets.QMenu,
+        key: str,
+        handler: Callable[[_Target], None],
+        *,
+        scratch_text: str,
+        phase_text: str,
     ) -> None:
-        """Give a load submenu its two targets: Load to scratch / Load to phase."""
-        to_scratch = menu.addAction("Load to &scratch…")
+        """Give a submenu its two scratch/phase targets (Load… for producers, Add… for saves,
+        B10h-2b/2d). The "…to phase" action is registered for aboutToShow enable-syncing."""
+        to_scratch = menu.addAction(scratch_text)
         to_scratch.setObjectName(f"{key}ToScratch")
         to_scratch.triggered.connect(lambda: handler("scratch"))
-        to_phase = menu.addAction("Load to &phase…")
+        to_phase = menu.addAction(phase_text)
         to_phase.setObjectName(f"{key}ToPhase")
         to_phase.triggered.connect(lambda: handler("phase"))
         self._phase_target_actions.append(to_phase)
@@ -426,11 +461,17 @@ class MainWindow(QtWidgets.QMainWindow):
     def _open_settings(self) -> None:
         """File ▸ Settings…: edit the scratch folder + theme; apply the choices on accept."""
         dialog = SettingsDialog(
-            self, scratch_dir=self._scratch_dir, theme=self._current_theme, themes=THEME_NAMES
+            self,
+            scratch_dir=self._scratch_dir,
+            theme=self._current_theme,
+            themes=THEME_NAMES,
+            auto_add_deps=self._auto_add_deps,
         )
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted.value:
             self._scratch_dir = dialog.scratch_dir()
             save_scratch_dir(self._scratch_dir)
+            self._auto_add_deps = dialog.auto_add_deps()
+            save_auto_add_deps(self._auto_add_deps)
             self._set_theme(dialog.theme())
 
     # -- body -----------------------------------------------------------------
@@ -510,7 +551,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._figure_view = PaperFigurePrepView()
         self._figure_view.statusMessage.connect(self.statusBar().showMessage)
         self._figure_view.figureGenerated.connect(self._refresh_figure_outputs)
-        self._figure_view.saveIntoPhaseRequested.connect(self._save_figure_into_phase)
+        self._figure_view.saveRequested.connect(self._save_figure)  # (spec, target) — B10h-2d
+        # The figure "Save into…" menu joins the phase-target enable-syncing (its "Add to phase"
+        # follows the same aboutToShow rule as the File-menu targets).
+        self._figure_view.save_menu().aboutToShow.connect(self._sync_phase_targets)
+        self._phase_target_actions.append(self._figure_view.phase_save_action())
         self._modes_stack = QtWidgets.QStackedWidget()
         self._modes_stack.setMinimumWidth(_MAIN_MIN_W)
         self._modes_stack.addWidget(self._explore_view)  # 0 — signal exploration
@@ -753,7 +798,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if target == "phase" and self._phase_manifest is not None:
             save_manifest(with_entry(self._phase_manifest, section, entry), self._phase_dir)
             self._reindex_phase_after_write()
-            self.statusBar().showMessage(f"Loaded {entry.id} into the phase")
+            added = self._auto_add_into_phase(entry_dependency_ids(entry))
+            self.statusBar().showMessage(
+                f"Loaded {entry.id} into the phase{self._dep_suffix(added)}"
+            )
         else:
             save_manifest(
                 with_entry(load_scratch(self._scratch_dir), section, entry), self._scratch_dir
@@ -1037,23 +1085,42 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # -- save observation (File > Save observation, ADR-017 / B10) -------------
 
-    def _save_observation(self) -> None:
-        """Gather a title + description, then write an observation — into the loaded phase,
-        or to the scratch folder when no phase is open (ADR-017 scratch mode)."""
+    def _resolve_save_target(self, target: _Target | None) -> _Target:
+        """Where an authored artifact is written. ``None`` auto-routes (the loaded phase, else
+        scratch); an explicit "phase" with no phase open falls back to scratch (defensive — the
+        UI disables that action anyway)."""
+        if target is None:
+            return "phase" if self._phase_manifest is not None else "scratch"
+        if target == "phase" and self._phase_manifest is None:
+            return "scratch"
+        return target
+
+    def _save_observation(self, target: _Target | None = None) -> None:
+        """Gather a title + description, then write an observation into ``target`` — the loaded
+        phase or the scratch area (File ▸ Save observation ▸ Add to scratch | Add to phase, B10h-2d)."""
         if self._explore_df is None or not len(self._explore_df.index):
             self.statusBar().showMessage("Load a bank before saving an observation.")
             return
         dialog = SaveObservationDialog(
             self,
             summary=self._observation_summary(),
-            parent_observations=self._existing_observation_ids(),
+            parent_observations=self._existing_observation_ids(target),
         )
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted.value:
-            self._write_observation(dialog.title(), dialog.description(), dialog.parents())
+            self._write_observation(
+                dialog.title(), dialog.description(), dialog.parents(), target=target
+            )
 
-    def _write_observation(self, title: str, description: str, parents: Sequence[str] = ()) -> None:
-        """Capture the current state into an observation; save into the phase (indexed) or,
-        with no phase open, to the scratch folder (the testable core)."""
+    def _write_observation(
+        self,
+        title: str,
+        description: str,
+        parents: Sequence[str] = (),
+        *,
+        target: _Target | None = None,
+    ) -> None:
+        """Capture the current state into an observation and write it to ``target`` — the loaded
+        phase (indexed) or the scratch manifest (the testable core)."""
         assert self._explore_df is not None
         spec = self._applied_spec
         shown = (
@@ -1071,14 +1138,18 @@ class MainWindow(QtWidgets.QMainWindow):
             traces=traces,
             references=references_from(observations=parents),
         )
-        if self._phase_manifest is not None:
+        if self._resolve_save_target(target) == "phase":
+            assert self._phase_manifest is not None  # resolver returns "phase" only with one open
             save_observation(observation, self._phase_dir)
             save_manifest(
                 with_entry(self._phase_manifest, "observations", observation_entry(observation)),
                 self._phase_dir,
             )
             self._reindex_phase_after_write()  # tree shows it; validation preserved
-            self.statusBar().showMessage(f"Saved observation {observation.id}")
+            added = self._auto_add_into_phase(observation_dependency_ids(observation))
+            self.statusBar().showMessage(
+                f"Saved observation {observation.id}{self._dep_suffix(added)}"
+            )
         else:
             save_observation(observation, self._scratch_dir)  # into the scratch area...
             save_manifest(  # ...and index it in the scratch manifest
@@ -1090,14 +1161,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self._refresh_scratch()
             self.statusBar().showMessage(f"Saved observation {observation.id} to scratch")
 
-    def _existing_observation_ids(self) -> list[str]:
-        """Observation ids to offer as parent links — the loaded phase's, else scratch's."""
-        source = (
-            self._phase_manifest
-            if self._phase_manifest is not None
-            else load_scratch(self._scratch_dir)
-        )
-        return [entry.id for entry in (source.observations or ())]
+    def _existing_observation_ids(self, target: _Target | None = None) -> list[str]:
+        """Observation ids offered as parent links. A phase-bound save sees the phase's; a
+        scratch save sees scratch plus the loaded phase (cross-scope references, like 2c)."""
+        ids: list[str] = []
+        if self._resolve_save_target(target) == "scratch":
+            ids += [entry.id for entry in (load_scratch(self._scratch_dir).observations or ())]
+        if self._phase_manifest is not None:
+            ids += [entry.id for entry in (self._phase_manifest.observations or ())]
+        return ids
 
     def _reindex_phase_after_write(self) -> None:
         """Reload the phase tree after a manifest write, re-running validation only if the
@@ -1224,16 +1296,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self._reindex_phase_after_write()  # validation indicators preserved across the edit
         self.statusBar().showMessage(f"Updated observation {updated.id}")
 
-    def _save_figure_into_phase(self, spec: FigureSpec) -> None:
-        """Write a Flow C figure spec into the loaded phase (indexed), or to the scratch
-        folder when no phase is open (ADR-017 scratch mode)."""
-        if self._phase_manifest is not None:
+    def _save_figure(self, spec: FigureSpec, target: _Target | None = None) -> None:
+        """Write a Flow C figure spec to ``target`` — the loaded phase (indexed) or the scratch
+        manifest (Flow C ▸ Save into… ▸ Add to scratch | Add to phase, B10h-2d)."""
+        if self._resolve_save_target(target) == "phase":
+            assert self._phase_manifest is not None  # resolver returns "phase" only with one open
             save_figure_spec(spec, self._phase_dir)
             save_manifest(
                 with_entry(self._phase_manifest, "figures", figure_entry(spec)), self._phase_dir
             )
             self._reindex_phase_after_write()  # tree shows the figure; validation preserved
-            self.statusBar().showMessage(f"Saved figure {spec.id} into the phase")
+            added = self._auto_add_into_phase(entry_dependency_ids(figure_entry(spec)))
+            self.statusBar().showMessage(
+                f"Saved figure {spec.id} into the phase{self._dep_suffix(added)}"
+            )
         else:
             save_figure_spec(spec, self._scratch_dir)  # into the scratch area...
             save_manifest(  # ...and index it in the scratch manifest
@@ -1286,7 +1362,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._run_artifact_action(action_id, entry, base_dir=scratch, scope_dirs=scope)
 
     def _promote_scratch(self, artifact_id: str) -> None:
-        """Move a scratch artifact into the loaded phase (Promote to phase).
+        """Move a scratch artifact into the loaded phase (Promote to phase), and — when auto-add
+        is on (B10h-1b) — its scratch-resident dependency closure with it, so promoting a figure
+        pulls the banks it consumes into the phase too.
 
         An authored artifact (observation / figure) has its file re-written into the phase
         folder; a producer artifact is a path pointer, so it is simply re-indexed (its file
@@ -1295,35 +1373,97 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._phase_manifest is None:
             self.statusBar().showMessage("Open a phase (File ▸ Open phase) to promote into it.")
             return
-        entry = entries_by_id(self._scratch_manifest).get(artifact_id)
-        if entry is None:
+        if entries_by_id(self._scratch_manifest).get(artifact_id) is None:
             return
-        role = role_of(artifact_id)
-        section = manifest_section(artifact_id)
-        authored_file: Path | None = None  # set for authored artifacts (their file moves)
-        try:
-            if role is Role.observation:
-                authored_file = Path(self._scratch_dir) / entry.path
-                observation = load_observation(authored_file)
-                save_observation(observation, self._phase_dir)
-                phase = with_entry(self._phase_manifest, section, observation_entry(observation))
-            elif role is Role.figure:
-                authored_file = Path(self._scratch_dir) / entry.path
-                spec = load_figure_spec(authored_file)
-                save_figure_spec(spec, self._phase_dir)
-                phase = with_entry(self._phase_manifest, section, figure_entry(spec))
-            else:  # a producer pointer — re-index the same entry, no file move
-                phase = with_entry(self._phase_manifest, section, entry)
-        except Exception as exc:  # unreadable / invalid scratch file -> status, keep it in scratch
-            self.statusBar().showMessage(f"Could not promote {artifact_id}: {exc}")
-            return
+        seeds = self._scratch_direct_deps(artifact_id)  # read deps before the file moves
+        if not self._promote_entries([artifact_id]):
+            return  # unreadable file — error already surfaced, left in scratch
+        added = self._auto_add_into_phase(seeds)
+        self.statusBar().showMessage(
+            f"Promoted {artifact_id} into the phase{self._dep_suffix(added)}"
+        )
+
+    @staticmethod
+    def _dep_suffix(added: int) -> str:
+        """A " (+N dependency/dependencies)" status tail, or "" when nothing was pulled."""
+        if not added:
+            return ""
+        return f" (+{added} dependency)" if added == 1 else f" (+{added} dependencies)"
+
+    def _promote_entries(self, ids: list[str]) -> list[str]:
+        """Move each scratch artifact in ``ids`` into the loaded phase (batch Promote core).
+
+        Producers are re-indexed pointers (no file move); authored artifacts have their file
+        rewritten into the phase folder and the scratch copy removed. Manifests are saved once
+        at the end, then the phase tree + scratch pane refresh. Returns the ids promoted.
+        """
+        assert self._phase_manifest is not None
+        by_id = entries_by_id(self._scratch_manifest)
+        phase = self._phase_manifest
+        scratch = self._scratch_manifest
+        authored_files: list[Path] = []  # scratch copies to remove once the phase copy is written
+        promoted: list[str] = []
+        for artifact_id in ids:
+            entry = by_id.get(artifact_id)
+            if entry is None:
+                continue
+            role = role_of(artifact_id)
+            section = manifest_section(artifact_id)
+            try:
+                if role is Role.observation:
+                    src = Path(self._scratch_dir) / entry.path
+                    observation = load_observation(src)
+                    save_observation(observation, self._phase_dir)
+                    phase = with_entry(phase, section, observation_entry(observation))
+                    authored_files.append(src)
+                elif role is Role.figure:
+                    src = Path(self._scratch_dir) / entry.path
+                    spec = load_figure_spec(src)
+                    save_figure_spec(spec, self._phase_dir)
+                    phase = with_entry(phase, section, figure_entry(spec))
+                    authored_files.append(src)
+                else:  # a producer pointer — re-index the same entry, no file move
+                    phase = with_entry(phase, section, entry)
+            except Exception as exc:  # unreadable / invalid file -> status, keep it in scratch
+                self.statusBar().showMessage(f"Could not promote {artifact_id}: {exc}")
+                continue
+            scratch = remove_entry(scratch, section, artifact_id)
+            promoted.append(artifact_id)
+        if not promoted:
+            return []
         save_manifest(phase, self._phase_dir)
-        save_manifest(remove_entry(self._scratch_manifest, section, artifact_id), self._scratch_dir)
-        if authored_file is not None:
-            authored_file.unlink(missing_ok=True)  # the authored copy moved into the phase
+        save_manifest(scratch, self._scratch_dir)
+        for authored in authored_files:
+            authored.unlink(missing_ok=True)  # the authored copy moved into the phase
         self._reindex_phase_after_write()
         self._refresh_scratch()
-        self.statusBar().showMessage(f"Promoted {artifact_id} into the phase")
+        return promoted
+
+    def _scratch_direct_deps(self, artifact_id: str) -> list[str]:
+        """The ids ``artifact_id`` (a scratch entry) directly depends on — from its manifest
+        entry, or, for an observation, from its file (banks + referenced models / parents)."""
+        entry = entries_by_id(self._scratch_manifest).get(artifact_id)
+        if entry is None:
+            return []
+        if isinstance(entry, ObservationEntry):
+            try:
+                observation = load_observation(Path(self._scratch_dir) / entry.path)
+            except Exception:  # unreadable -> no resolvable deps
+                return []
+            return observation_dependency_ids(observation)
+        return entry_dependency_ids(entry)
+
+    def _auto_add_into_phase(self, seed_ids: Sequence[str]) -> int:
+        """Pull ``seed_ids`` and their transitive scratch dependencies into the loaded phase,
+        when auto-add is enabled (B10h-1b). Only ids that live in scratch and aren't already in
+        the phase are moved. Returns how many were promoted."""
+        if not self._auto_add_deps or self._phase_manifest is None:
+            return 0
+        present = set(entries_by_id(self._scratch_manifest)) - manifest_ids(self._phase_manifest)
+        dep_ids = dependency_closure(
+            seed_ids, direct_deps=self._scratch_direct_deps, present=present
+        )
+        return len(self._promote_entries(dep_ids)) if dep_ids else 0
 
     def _delete_scratch(self, artifact_id: str) -> None:
         """Remove a scratch artifact — its entry, plus its file for authored artifacts."""
