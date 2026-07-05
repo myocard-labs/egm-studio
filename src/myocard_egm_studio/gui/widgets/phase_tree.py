@@ -7,9 +7,9 @@ its pointer (path, producer, and the relationship / usage fields).
 
 Existence / validity shows as a status **dot** beside each artifact (:meth:`set_groups`
 populates, :meth:`set_statuses` marks): a hollow grey ring = present but not yet
-validated, filled green = OK, amber = invalid, red = missing. Each group header rolls
-its children up to the worst status (dot + coloured text). Read-only — the curator
-write path lands in Block 10. [ADR-021, ADR-025]
+validated, filled green = OK, amber = a problem (schema-invalid *or* a dependency not in
+the phase), red = missing. The specific "why" rides along as the row's tooltip. Each group
+header rolls its children up to the worst status (dot + coloured text). [ADR-021, ADR-025]
 """
 
 from __future__ import annotations
@@ -39,11 +39,13 @@ _AMBER = QtGui.QColor("#d29922")
 _DEFAULT_BRUSH = QtGui.QBrush()  # empty brush -> inherit the theme's text colour
 
 # status -> (dot colour, filled?). PRESENT is a hollow ring: "there, unverified".
+# INVALID + UNRESOLVED share amber (both "present but not right"); the tooltip disambiguates.
 _ICON_SPECS: dict[ArtifactStatus, tuple[QtGui.QColor, bool]] = {
     ArtifactStatus.OK: (_GREEN, True),
     ArtifactStatus.PRESENT: (_GREY, False),
     ArtifactStatus.MISSING: (_RED, True),
     ArtifactStatus.INVALID: (_AMBER, True),
+    ArtifactStatus.UNRESOLVED: (_AMBER, True),
 }
 _STATUS_COLOR = {status: colour for status, (colour, _) in _ICON_SPECS.items()}
 _ICON_CACHE: dict[ArtifactStatus, QtGui.QIcon] = {}
@@ -94,11 +96,17 @@ class PhaseTree(QtWidgets.QTreeWidget):
                 self._items_by_id[row.id] = item
                 group_item.addChild(item)
 
-    def set_statuses(self, statuses: Mapping[str, ArtifactStatus]) -> None:
-        """Mark each artifact with a status dot and roll each group header up to the
-        worst of its children (dot + coloured text)."""
+    def set_statuses(
+        self,
+        statuses: Mapping[str, ArtifactStatus],
+        details: Mapping[str, str] | None = None,
+    ) -> None:
+        """Mark each artifact with a status dot (+ optional ``details`` as its "why" tooltip)
+        and roll each group header up to the worst of its children (dot + coloured text)."""
+        details = details or {}
         for artifact_id, item in self._items_by_id.items():
             _apply_status(item, statuses.get(artifact_id), colour_text=False)
+            item.setToolTip(0, details.get(artifact_id, ""))
         for group_item, child_ids in self._groups:
             rollup = _group_status([statuses.get(cid) for cid in child_ids])
             _apply_status(group_item, rollup, colour_text=True)
@@ -164,7 +172,13 @@ def _group_status(child_statuses: list[ArtifactStatus | None]) -> ArtifactStatus
     known = [status for status in child_statuses if status is not None]
     if not known:
         return None
-    for worst in (ArtifactStatus.MISSING, ArtifactStatus.INVALID, ArtifactStatus.PRESENT):
+    severity = (
+        ArtifactStatus.MISSING,
+        ArtifactStatus.INVALID,
+        ArtifactStatus.UNRESOLVED,
+        ArtifactStatus.PRESENT,
+    )
+    for worst in severity:
         if any(status is worst for status in known):
             return worst
     return ArtifactStatus.OK

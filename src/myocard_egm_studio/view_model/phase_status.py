@@ -6,20 +6,26 @@ an absolute path wins) and reports a status the tree colours:
 - ``MISSING`` — the file is not there.
 - ``PRESENT`` — the file exists but has not been format-validated yet; this is
   the state after the cheap on-load existence pass.
-- ``OK`` — validated: it passed its egm-contracts schema, or its type has no
-  file validator so existence is all there is to check.
+- ``OK`` — validated: it passed its egm-contracts schema (or its type has no
+  file validator) *and* every id it references is indexed in this phase.
 - ``INVALID`` — present but fails its egm-contracts schema validator.
+- ``UNRESOLVED`` — present + schema-valid, but a dependency id it references is not
+  in the phase (e.g. an observation whose banks were never added). The tree paints
+  this the same amber as INVALID; the two are told apart by the row's "why" tooltip.
 
 Existence is cheap, so it runs eagerly when a phase loads (PRESENT / MISSING);
 format validation opens the file and only runs when the user triggers it, turning
-PRESENT into OK or INVALID. Only the JSON-schema artifact types (runs, figures,
-observations) have a file validator here; banks, models, and papers fall back to
-an existence check.
+PRESENT into OK / INVALID / UNRESOLVED. The dependency check (:mod:`.dependencies`)
+piggybacks on that validate pass — it too reads the observation file — so it only
+runs on demand. Only the JSON-schema artifact types (runs, figures, observations)
+have a file validator here; banks, models, and papers fall back to an existence
+check (and a dependency check for derived banks / models).
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
@@ -39,7 +45,10 @@ from myocard_egm_data.phases import (
     PaperEntry,
     PhaseManifest,
     TrainingRunEntry,
+    load_observation,
 )
+
+from myocard_egm_studio.view_model.dependencies import dependency_ids, manifest_ids
 
 _Entry = (
     EgmBankEntry
@@ -51,6 +60,9 @@ _Entry = (
     | PaperEntry
 )
 
+#: How many schema issues to name in an INVALID row's "why" before trailing off.
+_MAX_ISSUES = 3
+
 
 class ArtifactStatus(Enum):
     """Existence / format state of one manifest artifact."""
@@ -59,6 +71,15 @@ class ArtifactStatus(Enum):
     PRESENT = "present"
     MISSING = "missing"
     INVALID = "invalid"
+    UNRESOLVED = "unresolved"  # present + schema-valid, but a referenced id isn't in the phase
+
+
+@dataclass(frozen=True)
+class StatusReport:
+    """An artifact's status plus a human "why" for the problem rows (empty when OK)."""
+
+    status: ArtifactStatus
+    detail: str = ""
 
 
 # Roles whose file has an egm-contracts schema validator (path -> ValidationResult).
@@ -89,24 +110,73 @@ def _all_entries(manifest: PhaseManifest) -> Iterator[_Entry]:
 
 
 def artifact_status(base_dir: Path | str, entry: _Entry, *, validate: bool) -> ArtifactStatus:
-    """One artifact's status. Absent file -> MISSING. Present but not yet validated
-    -> PRESENT. When ``validate`` is set, a present file resolves to OK (it passed,
-    or its type has no validator) or INVALID (it failed its schema)."""
+    """One artifact's status (ignoring dependencies — see :func:`artifact_report`)."""
+    return artifact_report(base_dir, entry, validate=validate, manifest=None).status
+
+
+def artifact_report(
+    base_dir: Path | str,
+    entry: _Entry,
+    *,
+    validate: bool,
+    manifest: PhaseManifest | None,
+) -> StatusReport:
+    """One artifact's status + "why". Absent file -> MISSING; present-but-unchecked ->
+    PRESENT. When ``validate`` is set, a present file resolves to INVALID (fails its
+    schema) or, if it passes, to UNRESOLVED when ``manifest`` is given and one of its
+    dependency ids isn't indexed there — otherwise OK."""
     resolved = resolve_path(base_dir, entry.path)
     if not resolved.exists():
-        return ArtifactStatus.MISSING
+        return StatusReport(ArtifactStatus.MISSING, f"File not found: {entry.path}")
     if not validate:
-        return ArtifactStatus.PRESENT
+        return StatusReport(ArtifactStatus.PRESENT, "Present — not yet validated (Validate phase)")
     validator = _VALIDATORS.get(role_of(entry.id))
-    if validator is None:
-        return ArtifactStatus.OK
-    return ArtifactStatus.OK if validator(resolved).ok else ArtifactStatus.INVALID
+    if validator is not None:
+        result = validator(resolved)
+        if not result.ok:
+            return StatusReport(ArtifactStatus.INVALID, _issues_detail(result.issues))
+    if manifest is not None:
+        missing = _missing_dependencies(entry, resolved, manifest)
+        if missing:
+            return StatusReport(
+                ArtifactStatus.UNRESOLVED, "Not in this phase: " + ", ".join(missing)
+            )
+    return StatusReport(ArtifactStatus.OK)
+
+
+def _missing_dependencies(entry: _Entry, resolved: Path, manifest: PhaseManifest) -> list[str]:
+    """The entry's dependency ids that aren't indexed in ``manifest`` (order preserved)."""
+    observation = load_observation(resolved) if isinstance(entry, ObservationEntry) else None
+    present = manifest_ids(manifest)
+    return [dep for dep in dependency_ids(entry, observation=observation) if dep not in present]
+
+
+def _issues_detail(issues: tuple[str, ...]) -> str:
+    """A short 'why' for an INVALID row from its schema issues."""
+    shown = "; ".join(issues[:_MAX_ISSUES])
+    more = len(issues) - _MAX_ISSUES
+    return f"Invalid: {shown}" + (f" (+{more} more)" if more > 0 else "")
+
+
+def phase_status_report(
+    manifest: PhaseManifest, base_dir: Path | str, *, validate: bool = False
+) -> dict[str, StatusReport]:
+    """Every artifact id -> its :class:`StatusReport` (status + "why"). ``validate=False``
+    is the cheap on-load existence pass; ``validate=True`` runs per-type format validation
+    *and* the dependency check (referenced ids must be indexed in ``manifest``)."""
+    return {
+        e.id: artifact_report(base_dir, e, validate=validate, manifest=manifest)
+        for e in _all_entries(manifest)
+    }
 
 
 def phase_statuses(
     manifest: PhaseManifest, base_dir: Path | str, *, validate: bool = False
 ) -> dict[str, ArtifactStatus]:
-    """Every artifact id -> its status. ``validate=False`` is the cheap on-load
-    existence pass (PRESENT / MISSING); ``validate=True`` also runs the per-type
-    format validation, resolving PRESENT into OK or INVALID."""
-    return {e.id: artifact_status(base_dir, e, validate=validate) for e in _all_entries(manifest)}
+    """Every artifact id -> its status (the :func:`phase_status_report` status, sans "why")."""
+    return {
+        artifact_id: report.status
+        for artifact_id, report in phase_status_report(
+            manifest, base_dir, validate=validate
+        ).items()
+    }
