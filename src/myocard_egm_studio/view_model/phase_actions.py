@@ -35,7 +35,6 @@ class ArtifactAction:
 # Where the not-yet-built viewers land (egm-studio roadmap blocks).
 _B7 = "Arrives with Signal exploration (Block 7)"
 _B8 = "Arrives with ML diagnostics (Block 8)"
-_B9 = "Arrives with Paper figure prep (Block 9)"
 _B10 = "Arrives with the Save flow (Block 10)"
 
 # Info actions every artifact ends with (Show metadata is added per-role below).
@@ -74,6 +73,25 @@ _PREDICTION_BANK = (
     ArtifactAction("compare_bank", "Compare with another bank…", available=False, note=_B8),
 )
 
+
+def figure_actions(*, output_exists: bool) -> tuple[ArtifactAction, ...]:
+    """The figure viewers, tuned to whether the rendered image exists yet (B9).
+
+    Always **Edit figure spec** (opens Flow C) + a generate action. **View figure** appears
+    only once the image is on disk, and the generate action is labelled **Regenerate
+    figure** then (it overwrites) rather than **Generate figure**.
+    """
+    actions = [ArtifactAction("edit_spec", "Edit figure spec")]
+    if output_exists:
+        actions.append(ArtifactAction("view_figure", "View figure"))
+    actions.append(
+        ArtifactAction(
+            "generate_figure", "Regenerate figure" if output_exists else "Generate figure"
+        )
+    )
+    return tuple(actions)
+
+
 _VIEWERS_BY_ROLE: dict[Role, tuple[ArtifactAction, ...]] = {
     Role.training_bank: _INPUT_BANK,
     Role.pretraining_bank: _INPUT_BANK,
@@ -93,11 +111,9 @@ _VIEWERS_BY_ROLE: dict[Role, tuple[ArtifactAction, ...]] = {
     Role.observation: (
         ArtifactAction("open_observation", "Open observation", available=False, note=_B10),
     ),
-    Role.figure: (
-        ArtifactAction("view_figure", "View figure", available=False, note=_B9),
-        ArtifactAction("generate_figure", "Generate figure", available=False, note=_B9),
-        ArtifactAction("edit_spec", "Edit figure spec", available=False, note=_B9),
-    ),
+    # Figures are dynamic: the tree calls figure_actions(output_exists=...) per artifact.
+    # This default (image not generated yet) is the fallback for non-dynamic callers.
+    Role.figure: figure_actions(output_exists=False),
     Role.paper: (),  # the universal "Reveal file" already opens the paper dir
 }
 

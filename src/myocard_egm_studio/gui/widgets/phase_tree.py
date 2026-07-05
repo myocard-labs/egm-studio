@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from myocard_egm_contracts import role_of
+from myocard_egm_contracts import Role, role_of
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from myocard_egm_studio.view_model import phase_actions
@@ -66,10 +66,19 @@ class PhaseTree(QtWidgets.QTreeWidget):
         self._items_by_id: dict[str, QtWidgets.QTreeWidgetItem] = {}
         self._groups: list[tuple[QtWidgets.QTreeWidgetItem, tuple[str, ...]]] = []
         self._add_mode = False  # a bank is loaded -> additive viewers relabel to "Add …"
+        self._figure_outputs: dict[str, bool] = {}  # figure id -> its image is on disk (B9)
 
     def set_add_mode(self, add_mode: bool) -> None:
         """Toggle the additive-when-loaded relabel of the bank viewers (B7.8)."""
         self._add_mode = add_mode
+
+    def set_figure_outputs(self, outputs: Mapping[str, bool]) -> None:
+        """Record which figures have a rendered image, tuning their menus (B9).
+
+        A figure with an image offers **View figure** + **Regenerate figure**; without one,
+        just **Generate figure**. The shell recomputes + re-sets this after a generate.
+        """
+        self._figure_outputs = dict(outputs)
 
     def set_groups(self, groups: Sequence[ArtifactGroup]) -> None:
         """Populate from a phase's display groups, replacing any prior contents."""
@@ -109,7 +118,12 @@ class PhaseTree(QtWidgets.QTreeWidget):
         menu = QtWidgets.QMenu(self)
         menu.setToolTipsVisible(True)
         role = role_of(artifact_id)
-        specific = phase_actions.type_actions(role)
+        if role is Role.figure:  # figures are dynamic: View / Generate / Regenerate per state
+            specific = phase_actions.figure_actions(
+                output_exists=self._figure_outputs.get(artifact_id, False)
+            )
+        else:
+            specific = phase_actions.type_actions(role)
         for action in specific:
             self._add_action(menu, action, artifact_id)
         if specific:

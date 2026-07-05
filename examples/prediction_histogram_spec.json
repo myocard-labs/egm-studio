@@ -5,8 +5,8 @@
   "recipe": "prediction-histogram",
   "inputs": {
     "groups": [
-      { "name": "Synthetic val", "bank_id": "lpred_v1_baseline_bin_2026-06-29" },
-      { "name": "IAFDB", "bank_id": "upred_v1_baseline_bin_2026-06-29" }
+      { "name": "Synthetic val", "bank_id": "lpred_synth_small_2026-06-27" },
+      { "name": "IAFDB", "bank_id": "upred_iafdb_sanchez_2026-06-27" }
     ]
   },
   "layout": { "mode": "panels" },

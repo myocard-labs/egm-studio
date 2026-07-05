@@ -17,7 +17,7 @@ from typing import Literal
 
 import pandas as pd
 from myocard_egm_contracts import role_of
-from myocard_egm_data.phases import PhaseManifest, load_phase_dir
+from myocard_egm_data.phases import PhaseManifest, load_figure_spec, load_phase_dir
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from myocard_egm_studio.charts.inputs import TrainingCurve
@@ -46,6 +46,7 @@ from myocard_egm_studio.view_model import (
     phase_artifact_groups,
 )
 from myocard_egm_studio.view_model.artifact_metadata import artifact_metadata_text
+from myocard_egm_studio.view_model.figure_output import figure_output_exists_map, figure_output_path
 from myocard_egm_studio.view_model.filtering import FilterSpec
 from myocard_egm_studio.view_model.phase_actions import reveal_target
 from myocard_egm_studio.view_model.phase_status import ArtifactStatus, phase_statuses
@@ -357,6 +358,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._diagnostics_view.runRemoveRequested.connect(self._remove_training_run)
         self._figure_view = PaperFigurePrepView()
         self._figure_view.statusMessage.connect(self.statusBar().showMessage)
+        self._figure_view.figureGenerated.connect(self._refresh_figure_outputs)
         self._modes_stack = QtWidgets.QStackedWidget()
         self._modes_stack.setMinimumWidth(_MAIN_MIN_W)
         self._modes_stack.addWidget(self._explore_view)  # 0 — signal exploration
@@ -705,6 +707,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._phase_dir = Path(folder)
         # Flow C resolves a figure spec's bank ids against this phase's manifest.
         self._figure_view.set_bank_paths(bank_paths_from_phase(self._phase_dir))
+        self._refresh_figure_outputs()  # tune the figure menus to which images exist
         statuses = phase_statuses(manifest, self._phase_dir)
         self._phase_tree.set_statuses(statuses)
         total = len(statuses)
@@ -776,6 +779,39 @@ class MainWindow(QtWidgets.QMainWindow):
             self._load_training_run(str(self._phase_dir / entry.path), entry.id)
             if any(name == entry.id for name, _ in self._loaded_runs):
                 self._show_training_runs()
+        elif action_id == "edit_spec":
+            # Open the figure spec in Flow C. The phase's bank_paths are already set
+            # (from the Open-phase load), so the spec's bank ids resolve + preview.
+            self._figure_view.load_spec(str(self._phase_dir / entry.path))
+            self._show_mode(2)  # paper-figure-prep mode
+        elif action_id == "view_figure":
+            self._view_figure(self._phase_dir / entry.path)
+        elif action_id == "generate_figure":
+            # Render the spec to its output in Flow C (async, confirms an overwrite);
+            # figureGenerated -> _refresh_figure_outputs updates the menu afterwards.
+            self._figure_view.generate_to_file(str(self._phase_dir / entry.path))
+            self._show_mode(2)
+
+    def _refresh_figure_outputs(self) -> None:
+        """Retune the figure menus to which images exist (on phase load + after a render)."""
+        if self._phase_manifest is None:
+            return
+        self._phase_tree.set_figure_outputs(
+            figure_output_exists_map(self._phase_manifest, self._phase_dir)
+        )
+
+    def _view_figure(self, spec_path: Path) -> None:
+        """Open a figure's rendered image (View figure) in the OS default viewer."""
+        try:
+            spec = load_figure_spec(spec_path)
+        except (OSError, ValueError) as exc:
+            self.statusBar().showMessage(f"Could not read figure spec: {exc}")
+            return
+        out = figure_output_path(spec, spec_path)
+        if not out.exists():
+            self.statusBar().showMessage(f"Figure not generated yet: {out}")
+            return
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(out)))
 
     def _copy_to_clipboard(self, text: str) -> None:
         app = QtWidgets.QApplication.instance()

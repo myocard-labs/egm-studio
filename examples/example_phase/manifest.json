@@ -62,6 +62,17 @@
   ],
   "figures": [
     {
+      "id": "fig_prediction_histogram",
+      "path": "../prediction_histogram_spec.json",
+      "produced_by_package": "egm-studio",
+      "produced_by_version": "v0.1.0",
+      "consumes_banks": [
+        "lpred_synth_small_2026-06-27",
+        "upred_iafdb_sanchez_2026-06-27"
+      ],
+      "usage_tag": "exploratory"
+    },
+    {
       "id": "fig_feature_distribution_overlay",
       "path": "../feature_distribution_overlay_spec.json",
       "produced_by_package": "egm-studio",

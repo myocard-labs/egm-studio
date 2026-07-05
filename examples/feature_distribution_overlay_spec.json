@@ -5,8 +5,8 @@
   "recipe": "feature-distribution-overlay",
   "inputs": {
     "groups": [
-      { "name": "Synthetic", "bank_id": "lpred_v1_baseline_bin_2026-06-29" },
-      { "name": "IAFDB", "bank_id": "upred_v1_baseline_bin_2026-06-29" }
+      { "name": "Synthetic", "bank_id": "tbank_synthegm_v1_baseline_1_2026-06-27" },
+      { "name": "IAFDB", "bank_id": "upred_iafdb_sanchez_2026-06-27" }
     ]
   },
   "styling": { "kind": "kde", "annotate": "ks", "bins": 40 },
