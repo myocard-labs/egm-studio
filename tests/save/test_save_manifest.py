@@ -1,4 +1,4 @@
-"""Tests for save.manifest — add entries to a phase manifest + write it (B10a)."""
+"""Tests for save.manifest — generic add / remove entries + write (B10a, B10d-0)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 from myocard_egm_data.phases import FigureEntry, ObservationEntry, PhaseManifest, load_phase_dir
 
-from myocard_egm_studio.save.manifest import save_manifest, with_figure, with_observation
+from myocard_egm_studio.save.manifest import remove_entry, save_manifest, with_entry
 from myocard_egm_studio.save.observation import build_observation, observation_entry
 
 
@@ -25,15 +25,29 @@ def _obs_entry(title: str) -> ObservationEntry:
     return observation_entry(build_observation(title=title, description="b", today="2026-07-04"))
 
 
-def test_with_observation_appends() -> None:
-    updated = with_observation(_empty_manifest(), _obs_entry("first"))
+def _fig_entry(fig_id: str) -> FigureEntry:
+    return FigureEntry.model_validate(
+        {
+            "id": fig_id,
+            "path": f"figures/{fig_id}.json",
+            "produced_by_package": "egm-studio",
+            "produced_by_version": "0.1.0",
+            "consumes_banks": ["lpred_x_2026-06-27"],
+            "usage_tag": "exploratory",
+        }
+    )
+
+
+def test_with_entry_appends() -> None:
+    updated = with_entry(_empty_manifest(), "observations", _obs_entry("first"))
     assert [e.id for e in updated.observations or []] == ["obs_first_2026-07-04"]
 
 
-def test_with_observation_replaces_same_id() -> None:
-    manifest = with_observation(_empty_manifest(), _obs_entry("note"))
-    again = with_observation(
+def test_with_entry_replaces_same_id() -> None:
+    manifest = with_entry(_empty_manifest(), "observations", _obs_entry("note"))
+    again = with_entry(
         manifest,
+        "observations",
         observation_entry(
             build_observation(title="note", description="edited", today="2026-07-04"),
             usage_notes="v2",
@@ -44,23 +58,27 @@ def test_with_observation_replaces_same_id() -> None:
     assert entries[0].usage_notes == "v2"
 
 
-def test_with_figure_appends() -> None:
-    entry = FigureEntry.model_validate(
-        {
-            "id": "fig_x",
-            "path": "figure_specs/fig_x.json",
-            "produced_by_package": "egm-studio",
-            "produced_by_version": "0.1.0",
-            "consumes_banks": ["lpred_x_2026-06-27"],
-            "usage_tag": "exploratory",
-        }
-    )
-    updated = with_figure(_empty_manifest(), entry)
+def test_with_entry_targets_the_named_section() -> None:
+    updated = with_entry(_empty_manifest(), "figures", _fig_entry("fig_x"))
     assert [e.id for e in updated.figures or []] == ["fig_x"]
+    assert not updated.observations  # a different section is untouched
+
+
+def test_remove_entry_drops_the_matching_id() -> None:
+    manifest = with_entry(_empty_manifest(), "figures", _fig_entry("fig_x"))
+    manifest = with_entry(manifest, "figures", _fig_entry("fig_y"))
+    pruned = remove_entry(manifest, "figures", "fig_x")
+    assert [e.id for e in pruned.figures or []] == ["fig_y"]
+
+
+def test_remove_entry_empties_the_section_to_none() -> None:
+    manifest = with_entry(_empty_manifest(), "observations", _obs_entry("only"))
+    pruned = remove_entry(manifest, "observations", "obs_only_2026-07-04")
+    assert pruned.observations is None  # last one removed -> section cleared, not []
 
 
 def test_save_manifest_round_trips(tmp_path: Path) -> None:
-    manifest = with_observation(_empty_manifest(), _obs_entry("note"))
+    manifest = with_entry(_empty_manifest(), "observations", _obs_entry("note"))
     written = save_manifest(manifest, tmp_path)
     assert written == tmp_path / "manifest.json"
     reloaded = load_phase_dir(tmp_path)

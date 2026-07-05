@@ -270,3 +270,22 @@ def test_overlapping_preview_requests_coalesce(
     assert view._rendering
     assert view._pending_preview is not None  # coalesced onto the in-flight render
     qtbot.waitUntil(lambda: view._preview.has_image and not view._rendering)
+
+
+def test_save_into_phase_button_emits_the_current_spec(qtbot: QtBot) -> None:
+    view = PaperFigurePrepView()
+    qtbot.addWidget(view)
+    view.new_spec()  # a template spec is loaded
+    assert view.findChild(QtWidgets.QPushButton, "saveFigureIntoPhase") is not None
+    with qtbot.waitSignal(view.saveIntoPhaseRequested) as blocker:
+        view._save_into_phase_button.click()
+    assert isinstance(blocker.args[0], FigureSpec)  # the shell receives the spec to index
+
+
+def test_save_into_phase_needs_a_spec_first(qtbot: QtBot) -> None:
+    view = PaperFigurePrepView()
+    qtbot.addWidget(view)
+    seen: list[str] = []
+    view.statusMessage.connect(seen.append)
+    view._save_into_phase_button.click()  # nothing loaded yet -> no emit, just a nudge
+    assert seen and "figure spec first" in seen[-1]

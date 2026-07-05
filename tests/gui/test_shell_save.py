@@ -15,9 +15,12 @@ import pytest
 from myocard_egm_contracts import Role
 from myocard_egm_data.phases import (
     MANIFEST_FILENAME,
+    FigureEntry,
+    FigureSpec,
     ObservationEntry,
     TraceRef,
     ViewState,
+    load_figure_spec,
     load_observation,
 )
 from PySide6 import QtGui
@@ -30,7 +33,7 @@ from myocard_egm_studio.save import (
     observation_id,
     save_manifest,
     save_observation,
-    with_observation,
+    with_entry,
 )
 from myocard_egm_studio.view_model import entries_by_id
 from myocard_egm_studio.view_model.phase_actions import type_actions
@@ -212,7 +215,7 @@ def test_apply_observation_edit_preserves_the_usage_tag(qtbot: QtBot, tmp_path: 
     # Promote the entry to informed_paper, then reload so the window sees it.
     assert window._phase_manifest is not None
     promoted = observation_entry(existing, usage_tag="informed_paper")
-    save_manifest(with_observation(window._phase_manifest, promoted), phase)
+    save_manifest(with_entry(window._phase_manifest, "observations", promoted), phase)
     window._load_phase_into_tree(str(phase))
 
     window._apply_observation_edit(existing, "Paper finding", "edited prose", [])
@@ -330,6 +333,47 @@ def test_open_observation_when_no_banks_resolve_reports(
     monkeypatch.setattr(window, "_reload_banks", lambda ids: (0, 1))
     window._open_observation("obs_reload_me_x", path)
     assert "none of its 1 bank(s)" in window.statusBar().currentMessage()
+
+
+def _figure_spec(**overrides: object) -> FigureSpec:
+    raw: dict[str, object] = {
+        "schema_version": "1",
+        "id": "fig_demo",
+        "description": "demo",
+        "recipe": "prediction-histogram",
+        "inputs": {"groups": [{"name": "g", "bank_id": "lpred_a_2026-06-27"}]},
+        "output": {"format": "pdf", "path": "out.pdf"},
+    }
+    raw.update(overrides)
+    return FigureSpec.model_validate(raw)
+
+
+def test_save_figure_into_phase_writes_the_spec_and_indexes_it(
+    qtbot: QtBot, tmp_path: Path
+) -> None:
+    phase = _phase_copy(tmp_path)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._load_phase_into_tree(str(phase))
+
+    window._save_figure_into_phase(_figure_spec(illustrates_observations=[_FIXTURE_PARENT]))
+
+    written = phase / "figures" / "fig_demo.json"
+    assert written.exists()
+    assert load_figure_spec(written).id == "fig_demo"  # spec round-trips at the canonical path
+    assert window._phase_manifest is not None
+    entry = entries_by_id(window._phase_manifest)["fig_demo"]
+    assert isinstance(entry, FigureEntry)
+    assert [b.root for b in entry.consumes_banks or []] == ["lpred_a_2026-06-27"]
+    assert [o.root for o in entry.consumes_observations or []] == [_FIXTURE_PARENT]
+    assert "Saved figure fig_demo into the phase" in window.statusBar().currentMessage()
+
+
+def test_save_figure_into_phase_needs_a_phase(qtbot: QtBot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._save_figure_into_phase(_figure_spec())  # no phase loaded
+    assert "Open a phase" in window.statusBar().currentMessage()
 
 
 def test_current_selection_dispatches_by_active_flow(
