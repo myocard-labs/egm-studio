@@ -158,3 +158,26 @@ def test_triggering_action_emits_signal(qtbot: QtBot) -> None:
     with qtbot.waitSignal(tree.actionRequested) as blocker:
         _menu_action(menu, "Copy id").trigger()
     assert blocker.args == ["copy_id", bank_id]
+
+
+def test_figure_menu_reflects_output_existence(qtbot: QtBot) -> None:
+    """A figure offers Generate until its image exists, then View + Regenerate (B9)."""
+    from myocard_egm_contracts import Role, role_of
+
+    from myocard_egm_studio.view_model import entries_by_id
+
+    tree = _populated(qtbot)
+    fig_id = next(
+        aid for aid in entries_by_id(load_phase_dir(_FIXTURE_DIR)) if role_of(aid) == Role.figure
+    )
+
+    before = _menu_labels(tree._artifact_menu(fig_id))  # default: not generated
+    assert "Generate figure" in before
+    assert "View figure" not in before
+    assert "Regenerate figure" not in before
+
+    tree.set_figure_outputs({fig_id: True})  # the image now exists
+    after = _menu_labels(tree._artifact_menu(fig_id))
+    assert "View figure" in after
+    assert "Regenerate figure" in after
+    assert "Generate figure" not in after

@@ -8,8 +8,8 @@ import numpy as np
 import pandas as pd
 import pytest
 from myocard_egm_contracts import Role, role_of
-from myocard_egm_data.phases import load_phase_dir
-from PySide6 import QtGui, QtWidgets
+from myocard_egm_data.phases import FigureSpec, load_phase_dir, write_figure_spec
+from PySide6 import QtCore, QtGui, QtWidgets
 from pytestqt.qtbot import QtBot
 
 from myocard_egm_studio.charts.inputs import TrainingCurve
@@ -182,3 +182,82 @@ def test_view_ml_diagnostics_loads_bank_then_lands_on_flow_b(
     window._on_phase_action("view_ml_diagnostics", pred_id)
     assert calls == [(None, True)]  # no Flow A tab focus; replace (nothing loaded yet)
     assert window._modes_stack.currentIndex() == 1  # landed on ML diagnostics
+
+
+def test_edit_spec_action_opens_the_figure_in_flow_c(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A figure's 'Edit figure spec' resolves the spec from the manifest + opens Flow C."""
+    window = _loaded_window(qtbot)
+    fig_id = next(aid for aid in _ENTRIES if role_of(aid) == Role.figure)
+    seen: list[str] = []
+    monkeypatch.setattr(window._figure_view, "load_spec", lambda path: seen.append(str(path)))
+    window._on_phase_action("edit_spec", fig_id)
+    assert seen == [str(_FIXTURE_DIR / _ENTRIES[fig_id].path)]  # resolved from the manifest
+    assert window._modes_stack.currentIndex() == 2  # switched to Flow C
+
+
+def test_generate_figure_action_delegates_to_flow_c(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """'Generate figure' hands the resolved spec path to Flow C's generate + shows it."""
+    window = _loaded_window(qtbot)
+    fig_id = next(aid for aid in _ENTRIES if role_of(aid) == Role.figure)
+    seen: list[str] = []
+    monkeypatch.setattr(window._figure_view, "generate_to_file", lambda p: seen.append(str(p)))
+    window._on_phase_action("generate_figure", fig_id)
+    assert seen == [str(_FIXTURE_DIR / _ENTRIES[fig_id].path)]
+    assert window._modes_stack.currentIndex() == 2
+
+
+def test_figure_generated_refreshes_the_tree_menus(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After a render, the shell recomputes which figures exist + retunes their menus."""
+    window = _loaded_window(qtbot)
+    pushed: list[dict[str, bool]] = []
+    monkeypatch.setattr(window._phase_tree, "set_figure_outputs", lambda m: pushed.append(dict(m)))
+    window._figure_view.figureGenerated.emit()
+    assert pushed  # recomputed + pushed to the tree
+
+
+def _figure_spec(tmp_path: Path, output_name: str) -> Path:
+    spec = FigureSpec.model_validate(
+        {
+            "schema_version": "1",
+            "id": "fig_view_test",
+            "description": "view-figure test spec",
+            "recipe": "prediction-histogram",
+            "inputs": {"groups": [{"name": "g", "bank_id": "lpred_x_2026-06-27"}]},
+            "output": {"format": "pdf", "path": output_name},
+        }
+    )
+    path = tmp_path / "spec.json"
+    write_figure_spec(path, spec)
+    return path
+
+
+def test_view_figure_opens_the_rendered_image(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    (tmp_path / "fig.pdf").write_bytes(b"%PDF-1.4")  # already generated
+    spec_path = _figure_spec(tmp_path, "fig.pdf")
+    opened: list[str] = []
+
+    def _fake_open(url: QtCore.QUrl) -> bool:
+        opened.append(url.toLocalFile())
+        return True
+
+    monkeypatch.setattr(QtGui.QDesktopServices, "openUrl", _fake_open)
+    window._view_figure(spec_path)
+    assert opened == [str(tmp_path / "fig.pdf")]
+
+
+def test_view_figure_reports_when_not_generated(qtbot: QtBot, tmp_path: Path) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    spec_path = _figure_spec(tmp_path, "missing.pdf")  # no image on disk
+    window._view_figure(spec_path)
+    assert "not generated" in window.statusBar().currentMessage().lower()

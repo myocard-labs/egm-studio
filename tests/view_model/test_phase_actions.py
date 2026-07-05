@@ -59,6 +59,21 @@ def test_training_run_view_curves_is_wired() -> None:
     assert not action.note
 
 
+def test_figure_actions_are_dynamic() -> None:
+    from myocard_egm_studio.view_model.phase_actions import figure_actions
+
+    not_generated = [a.id for a in figure_actions(output_exists=False)]
+    assert not_generated == ["edit_spec", "generate_figure"]  # no View figure until rendered
+
+    generated = {a.id: a.label for a in figure_actions(output_exists=True)}
+    assert list(generated) == ["edit_spec", "view_figure", "generate_figure"]
+    assert generated["generate_figure"] == "Regenerate figure"  # relabel once it exists
+    assert all(a.available for a in figure_actions(output_exists=True))  # all live, no placeholders
+
+    # the static default (non-dynamic callers) is the not-generated set
+    assert type_actions(Role.figure) == figure_actions(output_exists=False)
+
+
 def test_model_has_viewers_but_no_metadata() -> None:
     assert [a.id for a in type_actions(Role.model)] == ["go_to_run", "view_architecture"]
     # model + paper are Reveal / Copy only — no Show metadata
