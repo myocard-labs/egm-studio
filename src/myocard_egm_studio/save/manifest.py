@@ -1,39 +1,61 @@
-"""Add egm-studio-authored entries to a phase manifest + write it (Block 10, ADR-021).
+"""Add / remove entries in a phase manifest + write it (Block 10, ADR-021).
 
-egm-studio is the canonical manifest curator: when an observation or figure spec is
-saved into a phase, its entry is added here and the manifest re-written. Adding is
-idempotent — an entry with the same id replaces the old one, so re-saving updates in
-place. (The end-of-phase ``validate_manifest.py`` release gate lives in
-intracardiac-platform, not here — it is not run per write.)
+egm-studio is the canonical manifest curator: as observations / figure specs are saved
+into a phase (and, in B10g, producer artifacts are indexed or removed), the manifest is
+re-written here. One generic :func:`with_entry` / :func:`remove_entry` pair serves every
+section — adding is idempotent (a same-id entry replaces the old one, so re-saving
+updates in place). The end-of-phase ``validate_manifest.py`` release gate lives in
+intracardiac-platform, not here — it is not run per write.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from myocard_egm_data.phases import MANIFEST_FILENAME, write_phase_manifest
 
 if TYPE_CHECKING:
-    from myocard_egm_contracts._generated.python.phase_manifest import (
+    from myocard_egm_data.phases import (
+        EgmBankEntry,
         FigureEntry,
+        ModelEntry,
+        NoiseBankEntry,
         ObservationEntry,
+        PaperEntry,
         PhaseManifest,
+        TrainingRunEntry,
     )
 
-__all__ = ["save_manifest", "with_figure", "with_observation"]
+    #: Any manifest pointer entry — every one carries an ``id`` (the dedup key).
+    _Entry = (
+        EgmBankEntry
+        | NoiseBankEntry
+        | TrainingRunEntry
+        | ModelEntry
+        | ObservationEntry
+        | FigureEntry
+        | PaperEntry
+    )
+
+#: The manifest's list-valued sections (each holds one artifact type's entries).
+_Section = Literal[
+    "egm_banks", "noise_banks", "training_runs", "models", "observations", "figures", "papers"
+]
+
+__all__ = ["remove_entry", "save_manifest", "with_entry"]
 
 
-def with_observation(manifest: PhaseManifest, entry: ObservationEntry) -> PhaseManifest:
-    """A copy of ``manifest`` with ``entry`` in its observations (replacing a same-id one)."""
-    kept = [e for e in (manifest.observations or ()) if e.id != entry.id]
-    return manifest.model_copy(update={"observations": [*kept, entry]})
+def with_entry(manifest: PhaseManifest, section: _Section, entry: _Entry) -> PhaseManifest:
+    """A copy of ``manifest`` with ``entry`` in ``section`` (replacing a same-id one)."""
+    kept = [e for e in (getattr(manifest, section) or ()) if e.id != entry.id]
+    return manifest.model_copy(update={section: [*kept, entry]})
 
 
-def with_figure(manifest: PhaseManifest, entry: FigureEntry) -> PhaseManifest:
-    """A copy of ``manifest`` with ``entry`` in its figures (replacing a same-id one)."""
-    kept = [e for e in (manifest.figures or ()) if e.id != entry.id]
-    return manifest.model_copy(update={"figures": [*kept, entry]})
+def remove_entry(manifest: PhaseManifest, section: _Section, entry_id: str) -> PhaseManifest:
+    """A copy of ``manifest`` with the ``section`` entry whose id is ``entry_id`` removed."""
+    kept = [e for e in (getattr(manifest, section) or ()) if e.id != entry_id]
+    return manifest.model_copy(update={section: kept or None})
 
 
 def save_manifest(manifest: PhaseManifest, phase_dir: Path | str) -> Path:

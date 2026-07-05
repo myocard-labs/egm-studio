@@ -18,6 +18,7 @@ from typing import Literal
 import pandas as pd
 from myocard_egm_contracts import role_of
 from myocard_egm_data.phases import (
+    FigureSpec,
     Observation,
     ObservationEntry,
     PhaseManifest,
@@ -55,13 +56,15 @@ from myocard_egm_studio.save import (
     build_observation,
     capture_view_state,
     describe_filter,
+    figure_entry,
     observation_entry,
     parse_filter,
     references_from,
+    save_figure_spec,
     save_manifest,
     save_observation,
     update_observation,
-    with_observation,
+    with_entry,
 )
 from myocard_egm_studio.view_model import (
     apply_filter,
@@ -391,6 +394,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._figure_view = PaperFigurePrepView()
         self._figure_view.statusMessage.connect(self.statusBar().showMessage)
         self._figure_view.figureGenerated.connect(self._refresh_figure_outputs)
+        self._figure_view.saveIntoPhaseRequested.connect(self._save_figure_into_phase)
         self._modes_stack = QtWidgets.QStackedWidget()
         self._modes_stack.setMinimumWidth(_MAIN_MIN_W)
         self._modes_stack.addWidget(self._explore_view)  # 0 — signal exploration
@@ -895,7 +899,8 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         save_observation(observation, self._phase_dir)
         save_manifest(
-            with_observation(self._phase_manifest, observation_entry(observation)), self._phase_dir
+            with_entry(self._phase_manifest, "observations", observation_entry(observation)),
+            self._phase_dir,
         )
         self._reindex_phase_after_write()  # tree shows the new observation; validation preserved
         self.statusBar().showMessage(f"Saved observation {observation.id}")
@@ -1017,14 +1022,29 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         save_observation(updated, self._phase_dir)
         save_manifest(
-            with_observation(
+            with_entry(
                 self._phase_manifest,
+                "observations",
                 observation_entry(updated, usage_tag=usage, usage_notes=entry.usage_notes),
             ),
             self._phase_dir,
         )
         self._reindex_phase_after_write()  # validation indicators preserved across the edit
         self.statusBar().showMessage(f"Updated observation {updated.id}")
+
+    def _save_figure_into_phase(self, spec: FigureSpec) -> None:
+        """Write a Flow C figure spec into the loaded phase + index it (add/update FigureEntry)."""
+        if self._phase_manifest is None:
+            self.statusBar().showMessage(
+                "Open a phase (File ▸ Open phase) to save a figure into it."
+            )
+            return
+        save_figure_spec(spec, self._phase_dir)
+        save_manifest(
+            with_entry(self._phase_manifest, "figures", figure_entry(spec)), self._phase_dir
+        )
+        self._reindex_phase_after_write()  # tree shows the figure; validation preserved
+        self.statusBar().showMessage(f"Saved figure {spec.id} into the phase")
 
     def _current_selection(self) -> list[int]:
         """The selected trace row_ids in the active flow (empty for Flow C / figure prep)."""

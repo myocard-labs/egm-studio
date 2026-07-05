@@ -107,6 +107,7 @@ class PaperFigurePrepView(QtWidgets.QWidget):
 
     statusMessage = QtCore.Signal(str)  # to the shell status bar (export / error notices)
     figureGenerated = QtCore.Signal()  # a Render/Generate wrote the output (shell refreshes tree)
+    saveIntoPhaseRequested = QtCore.Signal(object)  # a FigureSpec to write + index in the phase
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -141,6 +142,8 @@ class PaperFigurePrepView(QtWidgets.QWidget):
         self._new_button = QtWidgets.QPushButton("New spec")
         self._open_button = QtWidgets.QPushButton("Open spec…")
         self._save_button = QtWidgets.QPushButton("Save spec…")
+        self._save_into_phase_button = QtWidgets.QPushButton("Save into phase")
+        self._save_into_phase_button.setObjectName("saveFigureIntoPhase")
         self._render_button = QtWidgets.QPushButton("Render full…")
         self._auto_check = QtWidgets.QCheckBox("Auto-preview")
         self._auto_check.setChecked(True)
@@ -148,6 +151,7 @@ class PaperFigurePrepView(QtWidgets.QWidget):
         self._new_button.clicked.connect(self.new_spec)
         self._open_button.clicked.connect(self._on_open_clicked)
         self._save_button.clicked.connect(self._on_save_clicked)
+        self._save_into_phase_button.clicked.connect(self._on_save_into_phase_clicked)
         self._render_button.clicked.connect(self.request_render)
         self._refresh_button.clicked.connect(self._render_current)
         self._auto_check.toggled.connect(self._on_auto_toggled)
@@ -157,6 +161,7 @@ class PaperFigurePrepView(QtWidgets.QWidget):
         toolbar.addWidget(self._new_button)
         toolbar.addWidget(self._open_button)
         toolbar.addWidget(self._save_button)
+        toolbar.addWidget(self._save_into_phase_button)
         toolbar.addWidget(self._render_button)
         toolbar.addStretch(1)
         toolbar.addWidget(self._auto_check)  # preview controls sit at the right
@@ -382,6 +387,13 @@ class PaperFigurePrepView(QtWidgets.QWidget):
         if path:
             self.save_spec(path)
             self.statusMessage.emit(f"Saved spec to {path}")
+
+    def _on_save_into_phase_clicked(self) -> None:
+        """Hand the current spec to the shell to write into the loaded phase + index it."""
+        if not self._spec_loaded:
+            self.statusMessage.emit("New or open a figure spec first.")
+            return
+        self.saveIntoPhaseRequested.emit(self._form.spec())
 
     def request_render(self) -> None:
         """Render full → write to the spec's own ``output.path`` (no save prompt).

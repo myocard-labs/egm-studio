@@ -13,8 +13,9 @@ The GUI (Save-observation dialog + Phase-tree actions) calls these; the end-of-p
 """
 
 from myocard_egm_studio.save.capture import capture_view_state, describe_filter, parse_filter
+from myocard_egm_studio.save.figure import figure_entry, figure_spec_path, save_figure_spec
 from myocard_egm_studio.save.ids import observation_id, slugify, today_utc, validate_artifact_id
-from myocard_egm_studio.save.manifest import save_manifest, with_figure, with_observation
+from myocard_egm_studio.save.manifest import remove_entry, save_manifest, with_entry
 from myocard_egm_studio.save.observation import (
     build_observation,
     observation_entry,
@@ -28,17 +29,20 @@ __all__ = [
     "build_observation",
     "capture_view_state",
     "describe_filter",
+    "figure_entry",
+    "figure_spec_path",
     "observation_entry",
     "observation_id",
     "observation_path",
     "parse_filter",
     "references_from",
+    "remove_entry",
+    "save_figure_spec",
     "save_manifest",
     "save_observation",
     "slugify",
     "today_utc",
     "update_observation",
     "validate_artifact_id",
-    "with_figure",
-    "with_observation",
+    "with_entry",
 ]

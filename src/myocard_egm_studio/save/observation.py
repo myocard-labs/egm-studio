@@ -10,12 +10,12 @@ shell (:mod:`.manifest`).
 from __future__ import annotations
 
 from collections.abc import Sequence
-from importlib.metadata import version
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from myocard_egm_data.phases import Observation, ObservationEntry, References, write_observation
 
+from myocard_egm_studio.save.artifacts import authored_path, base_entry_fields, save_authored
 from myocard_egm_studio.save.ids import observation_id, today_utc
 
 if TYPE_CHECKING:
@@ -23,7 +23,6 @@ if TYPE_CHECKING:
 
 #: Subfolder of a phase where observation files live; also the manifest entry's path root.
 OBSERVATIONS_DIR = "observations"
-_PACKAGE = "egm-studio"
 
 
 def build_observation(
@@ -88,14 +87,12 @@ def references_from(
 
 def observation_path(observation: Observation, phase_dir: Path | str) -> Path:
     """Where ``observation`` is written under ``phase_dir`` — ``observations/<id>.json``."""
-    return Path(phase_dir) / OBSERVATIONS_DIR / f"{observation.id}.json"
+    return authored_path(phase_dir, OBSERVATIONS_DIR, observation.id)
 
 
 def save_observation(observation: Observation, phase_dir: Path | str) -> Path:
     """Write ``observation`` to ``<phase_dir>/observations/<id>.json`` (creating the dir)."""
-    path = observation_path(observation, phase_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return write_observation(path, observation)
+    return save_authored(observation, observation_path(observation, phase_dir), write_observation)
 
 
 def observation_entry(
@@ -103,12 +100,10 @@ def observation_entry(
 ) -> ObservationEntry:
     """The manifest entry for a saved observation (path relative to the phase dir)."""
     return ObservationEntry.model_validate(
-        {
-            "id": observation.id,
-            "path": f"{OBSERVATIONS_DIR}/{observation.id}.json",
-            "produced_by_package": _PACKAGE,
-            "produced_by_version": version("myocard-egm-studio"),
-            "usage_tag": usage_tag,
-            "usage_notes": usage_notes,
-        }
+        base_entry_fields(
+            observation.id,
+            f"{OBSERVATIONS_DIR}/{observation.id}.json",
+            usage_tag=usage_tag,
+            usage_notes=usage_notes,
+        )
     )
