@@ -582,11 +582,56 @@ two-column layout.
 
 ### Block 9 — Flow C paper figure prep
 
-GUI editor that wraps the headless `figures/` module from Block 3.
-First implementation of ADR-019 live-preview (Qt sliders →
-re-render).
+GUI editor that wraps the headless `figures/` module from Block 3, with a
+live preview. **✓ Shipped 2026-07-04.** The plan below is retained; the
+sub-block notes record what shipped + where it deviated.
 
-**Scope:**
+**ADR-019 resolved — Matplotlib WYSIWYG, not pyqtgraph sliders.** The preview
+is a raster of the *real* matplotlib recipe (Agg → PNG via `figures.preview_png`),
+routed through the same `draw_figure` + `paper_style` + `savefig` pipeline as the
+export — so the preview is pixel-identical to the exported PDF by construction
+(the exit criterion for free), and every recipe previews with zero new drawing
+code. A pyqtgraph fast-preview was rejected: only one of the eight paper recipes
+has a pyqtgraph twin, and preview ≠ export would defeat a figure composer. The
+`@interact` slider idea became a curated form + debounce; a Post-v0.1 perf
+revision (still ADR-019) can revisit if real-bank preview latency forces it.
+
+**Shipped (by sub-block):**
+
+- **B9a — WYSIWYG preview spine.** **✓ Shipped** — `figures.draw_figure` (the shared
+  recipe invocation `render` + preview both route through) + `figures.preview_png`
+  (in-memory PNG raster) + `gui/widgets/figure_preview.FigurePreview` (scaled-to-fit
+  display). A test asserts `preview_png` at 300 DPI is pixel-identical to `render()`'s PNG.
+- **B9b — curated per-recipe form.** **✓ Shipped** — `gui/widgets/figure_form.FigureForm`:
+  identity + groups table + output + a per-recipe styling block driven by a curated
+  `RECIPE_FIELDS` registry (in-code, not schema-generated). Overlays edits onto the loaded
+  spec + re-validates, so unknown keys + shared knobs survive a recipe switch.
+- **B9c — view + shell mount.** **✓ Shipped** — `gui/views/paper_figure_prep.py`
+  (form + preview + toolbar) mounted at mode 2; on each edit it resolves the spec's bank
+  ids (`loaders.resolve_recipe_data`, against the loaded phase's `bank_paths`) and previews;
+  Open/Save via `load/write_figure_spec`.
+- **B9d — interactivity + round-trip.** **✓ Shipped** — debounce the eager form signal;
+  suppress auto-preview for expensive recipes (feature-dist / trace-pair) behind a Refresh
+  button (ADR-019 "manual Run for expensive ops"); edit → save → reopen round-trip.
+- **Review — usability + robustness (beyond plan).** **✓ Shipped** —
+  (1) **New spec** button (blank template). (2) Render-full writes to the spec's own
+  `output.path`, no save prompt, confirming before an overwrite. (3) Unmapped bank ids show
+  a GUI message pointing at *File ▸ Open phase*, not the CLI's `--bank`. (4) The resolve
+  (bank load + feature extraction) runs on a **worker thread** so a large bank no longer
+  freezes the window; requests coalesce + never stack; a gated busy dialog shows on a long
+  render. (5) **Phase-tree figure actions**: *Edit figure spec* opens Flow C, *View figure*
+  opens the rendered image, *Generate*/*Regenerate* renders to the output — the menu is
+  dynamic per artifact (View only once the image exists; Generate ↔ Regenerate), resolved
+  via `view_model.figure_output`. Example phase + specs aligned so the flow is demoable.
+- **B9e — docs pass.** **✓ Shipped** — this section + README Flow C refresh + architecture
+  module-map + the walkthroughs as-built note + the ADR-019 resolution.
+
+**This closes Block 9 — the Flow C paper-figure-prep mode is complete.** The plan's
+`@interact` sliders + per-feature similarity dropdown were not built as such: the curated
+form + spec fields cover the knobs, and similarity-pair recipes (trace-pair-gallery) read
+their feature from the spec. Live-preview perf on very large banks is a Post-v0.1 follow-up.
+
+**Original plan (retained):**
 
 - `gui/views/paper_figure_prep.py` — form-based figure_spec editor
   with live preview.

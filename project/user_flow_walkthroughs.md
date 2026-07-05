@@ -594,4 +594,16 @@ step 2, already annotated above); the **3-way** output comparison generalized to
 `ExploreDetail`'s source-first 3-pane compare (same machinery as Flow A's B7.10),
 not a distinct two-column layout; and the **filter-by-ML-outcome** became the
 shell's *shared* filter panel driving both flows rather than a Flow-B-specific
-control. Flow C (figure prep) remains pending (Block 9).
+control.
+
+**Flow C shipped in Block 9** — a curated per-recipe spec form beside a live
+**WYSIWYG** preview (a raster of the real matplotlib recipe, pixel-identical to the
+export). Deviations from this walkthrough: **ADR-019 resolved to matplotlib WYSIWYG,
+not the `@interact` pyqtgraph sliders** (a pyqtgraph twin would make preview ≠
+export); the resolve runs on a **worker thread** so a large bank doesn't freeze the
+window (edits debounce; expensive recipes gate behind Refresh); **Render-full writes
+to the spec's own `output.path`** (no save dialog; confirms an overwrite); and the
+**Phase tree drives it** (Edit / View / Generate / Regenerate figure, the menu
+dynamic on whether the image exists). Live-preview perf on very large banks is a
+Post-v0.1 follow-up. The Flow C → Flow B trace-set bridge waits on the Block 10 save
+flow.

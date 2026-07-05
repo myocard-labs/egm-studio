@@ -26,8 +26,10 @@ Three modes from one shell:
   metric suite (ROC, calibration, confusion), training curves, and an Explore
   tab that filters to the failure cases (FP / FN) and finds each one's nearest
   correctly-classified counterpart.
-- **Paper-figure prep** — build publication-quality, reproducible figures from
-  per-figure JSON specs, iterated interactively and regenerable headlessly.
+- **Paper-figure prep** — edit a per-figure JSON spec in a curated form beside a
+  live WYSIWYG preview (a raster of the real recipe, pixel-identical to the export),
+  then render to the spec's output. The same figures regenerate headlessly and from
+  the Phase tree.
 
 A three-layer rendering split keeps the figure code framework-agnostic:
 `analysis/` (pure numpy / pandas / scipy / egm-features computation — no Qt, no
@@ -127,20 +129,20 @@ ks = distributions.ks_distance(synthetic_feature_values, iafdb_feature_values)
 | Module | What's in it |
 |---|---|
 | `myocard_egm_studio.analysis` | Pure data computation (no rendering, no Qt): `distributions` (CDF / KS / Wasserstein / histogram / KDE), `aggregation` (between-group feature distance), `similarity` (per-feature nearest). |
-| `myocard_egm_studio.view_model` | Prepared, Qt-free view data. `build_view_model` — the unified per-trace table joining identity + bank metadata + egm-features columns (plus the `ml_outcomes` columns — predicted prob / class, correctness bucket, per-trace loss, calibration residual — when the bank carries predictions) — `combine` (`combine_view_models` — pool loaded banks into one frame under a unique global `row_id`, the multi-bank result-list + detail key), `summary` (`bank_summary` — the Flow A landing's count / class balance / provenance), `trace_detail` (the per-trace compare table, with per-feature deltas vs the source column), `similar` (`similar_in_other_sources` — the nearest trace in each other bank along a feature, over `analysis.similarity` — plus the Flow B finds `nearest_correct_pair` (a misclassification → its nearest correctly-classified opposite-label trace) and `within_class_neighborhood` (a trace's k nearest same-label peers)), plus the Phase-tree view models: `phase_groups` (manifest → the ten role groups), `phase_status` (per-artifact existence + validation), `phase_actions` (right-click policy), `artifact_metadata` (file-level metadata). |
+| `myocard_egm_studio.view_model` | Prepared, Qt-free view data. `build_view_model` — the unified per-trace table joining identity + bank metadata + egm-features columns (plus the `ml_outcomes` columns — predicted prob / class, correctness bucket, per-trace loss, calibration residual — when the bank carries predictions) — `combine` (`combine_view_models` — pool loaded banks into one frame under a unique global `row_id`, the multi-bank result-list + detail key), `summary` (`bank_summary` — the Flow A landing's count / class balance / provenance), `trace_detail` (the per-trace compare table, with per-feature deltas vs the source column), `similar` (`similar_in_other_sources` — the nearest trace in each other bank along a feature, over `analysis.similarity` — plus the Flow B finds `nearest_correct_pair` (a misclassification → its nearest correctly-classified opposite-label trace) and `within_class_neighborhood` (a trace's k nearest same-label peers)), plus the Phase-tree view models: `phase_groups` (manifest → the ten role groups), `phase_status` (per-artifact existence + validation), `phase_actions` (right-click policy), `artifact_metadata` (file-level metadata), `figure_output` (a figure spec's rendered-image path + per-figure existence, driving the dynamic Phase-tree figure menu). |
 | `myocard_egm_studio.charts.matplotlib` | The publication (static) rendering backend + the recipe registry the dispatch fills. |
 | `myocard_egm_studio.charts.pyqtgraph` | The interactive (GUI-embedded) rendering backend — pyqtgraph chart widgets that reuse `analysis/` and the shared `charts.inputs` / `charts.palette`, so a chart matches its matplotlib twin — plus GUI-only recipes with no matplotlib twin: `draw_feature_scatter` (a live `(feat_x, feat_y)` scatter coloured by source) and the Flow B primitives `output_distribution` (P(positive) per source), `metrics` (ROC / calibration / confusion, the last with a counts/overall%/row%/col% normalization), and `training` (loss + metric curves, train vs val by colour). |
-| `myocard_egm_studio.figures` | `render(spec, *, data) -> Path` — the thin headless dispatch over `charts/matplotlib`. Pure rendering; the data-loading step lives in `loaders/`. |
+| `myocard_egm_studio.figures` | `render(spec, *, data) -> Path` — the thin headless dispatch over `charts/matplotlib` — plus `preview_png` (the in-memory PNG raster the GUI preview shows, routed through the same `draw_figure` + `paper_style` pipeline as `render`, so preview is pixel-identical to the export). Pure rendering; the data-loading step lives in `loaders/`. |
 | `myocard_egm_studio.loaders` | Data-loading (ids/paths → in-memory inputs): `figure_inputs` (spec + `{id: path}` → recipe inputs + the permanent bank → recipe-input adapters), `feature_group` (`feature_group_from_frame` + `feature_groups_by_source` — view-model-frame → charts `FeatureGroup`(s), shared by the figure loader + the GUI summary grid; the by-source split feeds the multi-bank overlay — plus `scatter_series_by_source`, the same split into id-carrying `ScatterSeries` for the scatter view), and `manifest` (`bank_paths_from_phase` — a phase's `manifest.json` → `{artifact_id: path}`). |
-| `myocard_egm_studio.gui` | The PySide6 desktop shell (Block 4): `app` (the `egm-studio` entry), `shell` (ADR-025 layout — collapsible sidebars + 3-mode switch), `theme` (dark / light / vibrant QSS), `preferences` (persisted theme via QSettings). `widgets/` holds the Block 5 trace-display primitive, the Block 6 right-rail Phase artifact tree, and the Block 7 composable filter / result list / `feature_grid` (the ADR-018 responsive distribution grid, which overlays one KDE / histogram curve per source with a legend + toggle) / `feature_scatter` (the interactive `(feat_x, feat_y)` scatter with axis pickers) / `bank_list` (the loaded-banks roster) / a shared `SourceLegend`, and the Block 8 shared `explore_detail` (waveforms + Features / Model / Metadata table + pluggable finds, reused by both flows) plus the Flow B widgets `metrics_view` / `training_view` / `output_distribution` / `run_list`; `views/signal_exploration` assembles the Signal-exploration mode as Summary (per-bank stats + the overlaid grid), Explore (filter → list → detail, with a "find similar in other bank" per-feature compare — via the detail control or a result-list right-click) and Scatter (click a point → the Explore detail) sub-tabs, and `views/ml_diagnostics` assembles the ML-diagnostics mode as Output / Metrics / Training / Explore tabs over an evaluated bank — fed by the *same* Open-bank path (predictions auto-detected via `frame_eval_mode`) and narrowed by the *same* filter panel. Loading many banks pools them under one `row_id`, with a progress dialog spanning extraction + the view build. |
+| `myocard_egm_studio.gui` | The PySide6 desktop shell (Block 4): `app` (the `egm-studio` entry), `shell` (ADR-025 layout — collapsible sidebars + 3-mode switch), `theme` (dark / light / vibrant QSS), `preferences` (persisted theme via QSettings). `widgets/` holds the Block 5 trace-display primitive, the Block 6 right-rail Phase artifact tree, and the Block 7 composable filter / result list / `feature_grid` (the ADR-018 responsive distribution grid, which overlays one KDE / histogram curve per source with a legend + toggle) / `feature_scatter` (the interactive `(feat_x, feat_y)` scatter with axis pickers) / `bank_list` (the loaded-banks roster) / a shared `SourceLegend`, and the Block 8 shared `explore_detail` (waveforms + Features / Model / Metadata table + pluggable finds, reused by both flows) plus the Flow B widgets `metrics_view` / `training_view` / `output_distribution` / `run_list`; `views/signal_exploration` assembles the Signal-exploration mode as Summary (per-bank stats + the overlaid grid), Explore (filter → list → detail, with a "find similar in other bank" per-feature compare — via the detail control or a result-list right-click) and Scatter (click a point → the Explore detail) sub-tabs, and `views/ml_diagnostics` assembles the ML-diagnostics mode as Output / Metrics / Training / Explore tabs over an evaluated bank — fed by the *same* Open-bank path (predictions auto-detected via `frame_eval_mode`) and narrowed by the *same* filter panel. The Block 9 Flow C widgets `figure_form` (the curated per-recipe spec editor) + `figure_preview` (the WYSIWYG raster panel) assemble in `views/paper_figure_prep`, which resolves a spec's banks off a worker thread and renders to the spec's own output (the Phase tree's Edit / View / Generate figure actions drive it). Loading many banks pools them under one `row_id`, with a progress dialog spanning extraction + the view build. |
 | `myocard_egm_studio.cli` | Console-script entry points: `render` (`egm-studio-render`). |
 
 The Qt shell (`gui/`) landed in Block 4 (layout + theming); Block 5 added the
 trace-display widgets (`gui/widgets/trace.py`) and the `charts/pyqtgraph/`
 backend; Block 6 added the read-only Phase artifact tree
 (`gui/widgets/phase_tree.py`, fed by the `view_model` phase modules); the mode
-views that assemble them shipped in Blocks 7 (Flow A signal exploration) and 8
-(Flow B ML diagnostics), with Flow C (figure prep) + the save flow in Blocks 9–10.
+views that assemble them shipped in Blocks 7 (Flow A signal exploration), 8
+(Flow B ML diagnostics), and 9 (Flow C paper-figure prep); the save flow is Block 10.
 The figure-data loaders now live in `loaders/`; `egm-studio-render --phase
 FOLDER` resolves a spec's bank ids through the phase manifest (the Block 6
 reader), with `--bank` / `--banks` as the ad-hoc override — see
@@ -169,7 +171,7 @@ machine with no display.
 ## Project status
 
 Pre-v0.1.0; built across 14 blocks (see
-[`project/roadmap.md`](project/roadmap.md)). **Blocks 2–8 have shipped.** The
+[`project/roadmap.md`](project/roadmap.md)). **Blocks 2–9 have shipped.** The
 headless figure pipeline (Blocks 2–3): the `charts/matplotlib/` foundation, the
 `render(spec, *, data)` contract, the figure-data loaders (`egm-studio-render
 --bank/--banks`), and all eight Phase-1.5 P0 recipes — `prediction-histogram`,
@@ -203,7 +205,15 @@ with a counts / overall% / row% / col% normalization, labelled sets only), **Tra
 colour, a removable loaded-runs roster), and **Explore**, which reuses Flow A's detail
 pane (extracted into a shared `ExploreDetail` widget) and the *same* Banks-&-filter
 panel: filter to the failure cases (FP / FN) and each one still finds its nearest
-correctly-classified counterpart. Pins
+correctly-classified counterpart. **Block 9** completes the Flow C paper-figure-prep
+mode: a curated per-recipe form beside a live **WYSIWYG** preview — a raster of the real
+matplotlib recipe (`figures.preview_png`), pixel-identical to the export by construction
+(ADR-019 resolved to matplotlib, not pyqtgraph sliders). The resolve runs on a worker
+thread so a large bank never freezes the window; edits debounce, expensive recipes gate
+behind Refresh, and Render-full writes to the spec's own output (confirming an overwrite).
+The Phase tree drives it — **Edit figure spec** opens it, **View figure** opens the
+rendered image, **Generate** / **Regenerate** renders to disk — with a menu that turns
+dynamic on whether the image exists. Pins
 `myocard-egm-contracts v0.5.2`, `myocard-egm-data v0.4.2`, `myocard-egm-features
 v0.1.1`.
 

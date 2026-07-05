@@ -120,7 +120,8 @@ myocard_egm_studio/
 │       ├── metrics.py               # Flow B: ROC / calibration / confusion      [B8f]
 │       └── training.py              # Flow B: loss + metric curves               [B8f]
 ├── figures/              # Thin headless layer over charts/matplotlib/.
-│   └── render.py         #   render(spec, *, data, overwrite) -> Path (pure rendering)
+│   ├── render.py         #   render(spec, *, data, overwrite) -> Path + draw_figure (shared)
+│   └── preview.py        #   preview_png -> PNG bytes (WYSIWYG GUI raster, == export) [B9a]
 ├── gui/                  # Qt shell — imports PySide6 + pyqtgraph.
 │   ├── app.py            #   QApplication entry (`egm-studio` script)  [B4]
 │   ├── shell.py          #   Layout shell + CollapsibleSidebar    [ADR-025, B4]
@@ -133,11 +134,13 @@ myocard_egm_studio/
 │   │   ├── filter.py     #   Filter / query UI              [ADR-002]
 │   │   ├── phase_tree.py #   Phase artifact tree: groups, status dots, menu  [B6]
 │   │   ├── explore_detail.py  # shared per-trace detail + pluggable finds (both flows) [B8g]
+│   │   ├── figure_form.py    # Flow C: curated per-recipe spec editor          [B9b]
+│   │   ├── figure_preview.py # Flow C: WYSIWYG raster panel (scaled-to-fit)     [B9a]
 │   │   └── ...           #   Other shared widgets (result_list, feature_grid, metrics_view, ...)
 │   └── views/
 │       ├── signal_exploration.py   # Flow A — Summary/Explore/Scatter tabs      [B7]
 │       ├── ml_diagnostics.py       # Flow B — Output/Metrics/Training/Explore    [B8]
-│       └── paper_figure_prep.py    # Flow C — wraps figures/        (Block 9, pending)
+│       └── paper_figure_prep.py    # Flow C — form + WYSIWYG preview, async render [B9]
 ├── cli/
 │   └── render.py         #   `egm-studio-render` entry point
 │                         #   (`egm-studio` GUI script -> gui/app.py:main)
@@ -154,7 +157,8 @@ myocard_egm_studio/
     ├── similar.py        #   nearest-in-other-bank + correct-pair / in-class finds [B7.10, B8b]
     ├── phase_groups.py   #   manifest -> the ten role-based groups       [B6]
     ├── phase_status.py   #   per-artifact existence + schema validation  [B6]
-    ├── phase_actions.py  #   right-click action policy per role          [B6]
+    ├── phase_actions.py  #   right-click action policy per role (figure menu dynamic) [B6, B9]
+    ├── figure_output.py  #   figure image path + per-figure existence    [B9]
     └── artifact_metadata.py  # file-level "Show metadata" summaries       [B6]
 ```
 
@@ -334,9 +338,16 @@ checkmarks stay in sync. Region content stays placeholder until Blocks 5+.
   whether it carries predictions (+ labels) to populate Flow B — no
   separate "load evaluated bank" entry. One filter panel narrows both
   flows.
-- **Live-preview** via `@interact`-equivalent: Qt sliders bound to
-  PyQtGraph redraw callbacks with debouncing; manual-trigger button
-  for expensive operations [ADR-019].
+- **Live WYSIWYG preview** for Flow C [ADR-019, B9]: the preview is a
+  raster of the *real* matplotlib recipe (`figures.preview_png`, same
+  `draw_figure` + `paper_style` pipeline as the export), so preview ==
+  export — not a pyqtgraph twin. Curated-form edits debounce; expensive
+  recipes gate behind a manual Refresh; the resolve runs on a worker
+  thread so a large bank doesn't freeze the window (coalesced, never
+  stacked). Render-full writes to the spec's `output.path`.
+- **Dynamic artifact actions** [B9]: the Phase-tree figure menu adapts
+  to whether the rendered image exists — *View figure* only once it does,
+  *Generate* ↔ *Regenerate* — via `view_model.figure_output`.
 - **Multi-monitor**: views can tear out into separate windows
   (Qt's `QMdiArea` / detached windows).
 - **Time-axis navigation** on traces: pan + zoom via PyQtGraph mouse

@@ -1263,7 +1263,22 @@ the wrap behavior feels weird on real devices.
 ## ADR-019: Live-preview strategy for figure-prep + parameter exploration
 
 **Date:** 2026-06-25 (initial); **Updated:** 2026-06-25 (reference-app study)
-**Status:** Tentative (promoted from Deferred via reference-app study)
+**Status:** Tentative → **figure-prep case shipped in Block 9 (2026-07-04)**; the
+broader parameter-exploration slider vision (egm-features / activation-peak tuning)
+remains future.
+
+**As-built (Block 9 — figure prep).** Resolved to a **Matplotlib WYSIWYG** preview,
+*not* the `@interact` pyqtgraph-slider pattern below. The preview is a raster of the
+real matplotlib recipe (`figures.preview_png`, the same `draw_figure` + `paper_style`
++ `savefig` pipeline as the export), so preview is pixel-identical to the exported PDF
+by construction — the exit criterion for free — and every recipe previews with no new
+drawing code. A pyqtgraph fast-preview was rejected: only one of the eight paper
+recipes has a pyqtgraph twin, and preview ≠ export defeats a figure composer. Sliders
+became a **curated form + debounce**; the "manual Run for expensive ops" survived as a
+Refresh button that gates the feature-heavy recipes. The perf concern the ADR flags
+(real-bank latency) was met by moving the resolve **off the UI thread** (a worker;
+requests coalesce, a gated busy dialog shows) rather than by caching/sampling — a
+Post-v0.1 perf revision can still supersede this if needed.
 
 ### Context
 
