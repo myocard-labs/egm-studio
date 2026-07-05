@@ -681,6 +681,23 @@ path.
 - Scratch mode: no phase loaded → save to
   `intracardiac-platform/project/scratch/`. "Promote to Phase"
   action moves + indexes.
+- **Artifact add/remove in the Phase tree (sub-block).** So far the
+  write path only *authors* artifacts (observations, figure specs);
+  this adds direct manifest curation of the rest:
+  - **Remove** any tree entry — unindex it from the manifest. For
+    egm-studio-authored artifacts (observations, figure specs) also
+    delete the local file; for *produced* artifacts (banks, noise
+    banks, training runs, models) unindex only, leaving the file in
+    place (it belongs to the producing repo / a GitHub Release).
+    Confirm destructive removes.
+  - **Manual-add** a produced bank / noise bank / training run / model
+    by pointing at its file — write the manifest entry with the
+    artifact's stable id + relationship fields (the DP#8 "manual-add
+    controls"). No new files are produced here.
+  - Boundary (ADR-021): producers write the artifact files; egm-studio
+    only curates the manifest pointers. The scan-and-validate script
+    stays the orphan / consistency safety net, so add/remove writes are
+    subject to the same end-of-phase gate.
 - Phase manifest scan-and-validate hook (call into
   `intracardiac-platform/scripts/validate_manifest.py` after each
   write).
@@ -699,8 +716,11 @@ path.
 - Phase manifest updates correctly; scan-and-validate passes Check A
   (orphan detection).
 - Scratch → Promote-to-Phase round-trip works.
+- Any tree artifact can be removed (authored files deleted, producer
+  files left in place); a produced bank / noise bank / training run /
+  model can be added to the phase by pointing at its file.
 
-**Estimated effort:** ~1-1.5 days.
+**Estimated effort:** ~2-2.5 days.
 
 ### Block 11 — Performance / optimization
 
@@ -890,6 +910,8 @@ condition for when it becomes priority work.
 | Weighted multi-feature distance — joint similarity + realism aggregate [ADR-020] | **Phase 1.5** (synthetic-realism research), scheduled after the refactor + egm-studio finish (Daniel's call 2026-07-01). Supersedes the per-feature v0.1 similarity + unweighted-KS aggregate once the realism study says which features matter — the weights are downstream of that investigation. A rigor upgrade to the realism *analysis*, NOT a Phase-1.5 *figure* blocker (F-1.5.2/3/7 work per-feature today) | Medium — one core, two applications: standardize each feature's distance by its pooled spread (theory.md §2.3, -> dimensionless), add config-sourced importance weights, then apply as (a) a joint nearest-neighbour metric for `trace-pair-gallery` (ADR-020 resolution) and (b) a weighted aggregate for `bar-chart-with-deltas`. Unlocks weighted **Wasserstein** (whole-distribution shift, not just the max CDF gap) over weighted KS. Needs a weight source + the joint-distance impl. Cross-cutting Phase-1.5 plan lives in intracardiac-platform/project/project_plan.md |
 | Single-activation IAFDB windows for sim-vs-real comparison | Sim-vs-IAFDB feature / trace comparisons (F-1.5.2, F-1.5.7, ...) are confounded — IAFDB segments carry multiple activation waves, Phase-1 synthetic is single-beat (surfaced 2026-06-30 from F-1.5.7). See the inventory "Sim-real comparability prerequisite" | Medium — segment IAFDB to one-activation windows before feature extraction (a curation / windowing step; fix-location TBD: producer iafdb-pipeline segmentation vs an egm-studio comparison-loader hook). Resolves once multibeat synthetic lands (Phase 4) |
 | LaTeX / markdown text export for summary-table | A paper wants an editable table (not an embedded image) — surfaced 2026-06-30 building F-1.5.10; the figure_spec `output.format` enum is pdf/png/svg only, so summary-table renders an image today | Medium — add a `tex` / `md` output format to egm-contracts' figure_spec (coordinated bump) + a text branch in `figures/render` (write `pandas.to_latex` / `to_markdown` of the TableData instead of `savefig`). egm-studio-side once the contract lands |
+| Structured filter / sort in observation `view_state` | Reloading a saved observation's filter is best-effort: `view_state.filter` / `sort` are free-text strings in egm-contracts, so **Open observation** re-parses egm-studio's own `describe_filter` rendering and only re-applies it when it round-trips exactly (else it surfaces the raw text for manual re-entry — B10c-r4, and r6 which folds the Match-all/any match type into the string). Banks + pinned traces reload exactly; only the filter is lossy | Small egm-studio side; needs a **structured** filter field on egm-contracts `view_state` (conditions + combine) — a coordinated bump. Slot into the next egm-contracts change: the refactor-cleanup contracts pass if one lands there, else project Phase 1.5 |
+| Active view / tab in observation `view_state` | An observation can be made about a chart on any egm-studio tab (Summary / Scatter / Metrics / figure preview / …), but `view_state` records only banks + filter + traces — not which view was open — so **Open observation** always lands on Signal-exploration ▸ Explore. Capturing the active view would reopen the exact tab the noticing was made on (Daniel, 2026-07-05) | Small egm-studio side; needs an `active_view` (tab id) field on egm-contracts `view_state` — a coordinated bump. Track in the refactor cleanup if other egm-contracts changes land there, else project Phase 1.5 |
 | Live-preview perf revision [ADR-019] | Real-bank perf forces a strategy change | ADR-NNN supersedes ADR-019 + impl |
 | Bottom panel (JupyterLab "down area") [ADR-025 deferred] | Use case emerges that the column layout doesn't accommodate | Small impl |
 | Multi-trace UI (TraceContainer used with N > 1) | Phase 4 multi-beat work begins | Small — substrate already in place |
