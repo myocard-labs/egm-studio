@@ -34,6 +34,7 @@ from myocard_egm_studio.charts.inputs import TrainingCurve
 from myocard_egm_studio.charts.palette import color_for
 from myocard_egm_studio.gui.new_phase_dialog import NewPhaseDialog
 from myocard_egm_studio.gui.preferences import (
+    default_cache_dir,
     load_auto_add_deps,
     load_cache_ceiling_mb,
     load_scratch_dir,
@@ -96,6 +97,7 @@ from myocard_egm_studio.save import (
     with_entry,
 )
 from myocard_egm_studio.view_model import (
+    DiskCache,
     FrameStore,
     apply_filter,
     combine_view_models,
@@ -133,8 +135,13 @@ _UNCONSTRAINED_W = 16777215  # Qt's QWIDGETSIZE_MAX — undoes a fixed width
 
 #: Default view-model cache ceiling (MiB) — the hot in-RAM tier of the Block 11 tiered
 #: store. A view-model frame is ~31 MB at IAFDB scale, so this holds ~30 banks resident.
-#: User-settable in Settings (C3 makes it a preference).
+#: User-settable in Settings (a preference).
 _DEFAULT_CACHE_CEILING_MB = 1024
+
+#: Cap (MiB) on the disk cold tier — larger than the RAM ceiling (disk is cheap), so
+#: ~130 IAFDB-scale frames persist across restarts before the disk LRU evicts the oldest.
+#: A constant, not a preference: the RAM ceiling is the surfaced knob, Flush the escape.
+_DISK_CACHE_CEILING_MB = 4096
 # Child order within the horizontal work-area splitter.
 _COL_LEFT, _COL_MAIN, _COL_RIGHT = 0, 1, 2
 
@@ -341,12 +348,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._metadata_dialog: QtWidgets.QDialog | None = None
         self._loaded_banks: list[_LoadedBank] = []  # banks open in Flow A (B7.8)
         self._explore_df: pd.DataFrame | None = None  # the combined view-model table
-        # The Block 11 view-model cache: re-opening a bank serves its extracted frame from
-        # here instead of re-running the O(T^2) extraction. In-memory tier now; a disk cold
-        # tier (write-through) is added behind the same get_or_compute in a later step.
-        # The ceiling is a user preference (Settings ▸ View-model cache); Flush clears it.
+        # The Block 11 view-model cache: re-opening a bank serves its extracted frame instead
+        # of re-running the O(T^2) extraction. A RAM hot tier (ceiling = a user preference,
+        # Settings ▸ View-model cache) over a write-through disk cold tier, so a frame also
+        # survives a restart. Flush clears both tiers.
         self._cache_ceiling_mb = load_cache_ceiling_mb(_DEFAULT_CACHE_CEILING_MB)
-        self._frame_store = FrameStore(self._cache_ceiling_mb * 1024 * 1024)
+        disk_cache = DiskCache(Path(default_cache_dir()), _DISK_CACHE_CEILING_MB * 1024 * 1024)
+        self._frame_store = FrameStore(self._cache_ceiling_mb * 1024 * 1024, disk=disk_cache)
         self._applied_spec: FilterSpec = FilterSpec(())  # last-applied filter (B10 capture)
         self._loaded_runs: list[tuple[str, TrainingCurve]] = []  # training runs in Flow B (B8f)
         self.setWindowTitle(_WINDOW_TITLE)

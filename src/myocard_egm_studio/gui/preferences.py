@@ -150,6 +150,19 @@ def save_auto_add_deps(value: bool) -> None:
     _settings().setValue(_AUTO_ADD_DEPS_KEY, value)
 
 
+def default_cache_dir() -> str:
+    """The per-user view-model cache folder — ``<cache-location>/view_model`` (created lazily).
+
+    The disk cold tier of the Block 11 view-model cache writes here. It uses the platform's
+    *cache* location (OS-cleanable, distinct from the AppData scratch folder), so it isn't
+    a user document — the only cache knobs surfaced are the memory ceiling + Flush.
+    """
+    root = QtCore.QStandardPaths.writableLocation(
+        QtCore.QStandardPaths.StandardLocation.CacheLocation
+    )
+    return str(Path(root) / "view_model")
+
+
 def load_cache_ceiling_mb(default: int) -> int:
     """Return the persisted view-model cache ceiling (MB, Block 11), or ``default``.
 
