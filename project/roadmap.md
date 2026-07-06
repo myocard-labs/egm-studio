@@ -670,14 +670,14 @@ Wires up egm-studio as the canonical manifest curator (ADR-021).
 Block 6 set up the read-only Phase tree; this block adds the write
 path.
 
-**✓ Shipped 2026-07-05** (save flow + scratch curation; the
-add/remove-in-tree sub-block **B10g is still open** — see below). The
-scope below is retained as written; the **Shipped (by sub-block)**
-notes after it record what actually shipped and where it deviated.
-The largest deviation is the scratch area, which grew from a single
-folder into a full **scratch mini-phase** with its own manifest,
-cross-scope dependency resolution, and auto-add — captured in the new
-**ADR-026**.
+**✓ Shipped 2026-07-06** (save flow + scratch curation + the
+add/remove-in-tree sub-block **B10g**). The scope below is retained as
+written; the **Shipped (by sub-block)** notes after it record what
+actually shipped and where it deviated. Two deviations grew well beyond
+the original plan: the scratch area became a full **scratch mini-phase**
+with its own manifest, cross-scope dependency resolution, and auto-add
+(**ADR-026**); and the B10g noise-bank viewer became a **fourth
+top-level mode**, the Noise view (**ADR-027**).
 
 **Scope:**
 
@@ -794,21 +794,60 @@ cross-scope dependency resolution, and auto-add — captured in the new
   call `intracardiac-platform/scripts/validate_manifest.py`; that gate
   stays a manual / end-of-phase step for now.
 
-**Still open:**
+- **B10g — artifact add/remove in the Phase tree. ✓ Shipped
+  2026-07-06.** The manual-add + remove UI, plus the viewer/menu cleanup
+  and the Noise view that the review surfaced:
+  - **A — Remove-from-phase + producer manual-add.** Right-click **Remove
+    from phase** on any tree entry: authored artifacts (observations /
+    figure specs) have their file deleted, produced artifacts (banks /
+    noise banks / training runs / models) are unindexed in place;
+    destructive removes confirm. **File ▸ Open model / Open noise bank**
+    added to round out the producer loads.
+  - **Cleanup.** The dead greyed-out right-click placeholders were pruned;
+    models gained **Show metadata** (a version-tolerant raw-JSON reader).
+    The noise bank's **View noise segments** was wired and its deferred
+    **View curation summary** removed.
+  - **Noise view (grew beyond scope).** The noise-segment viewer became a
+    **fourth top-level mode** — Signal exploration · **Noise** · ML
+    diagnostics · Paper figures — with a **mode-driven left sidebar** (the
+    noise controls replace *Banks & filters* in Noise mode) and an
+    aspect-capped plot. It reads the whole `.h5` off the UI thread under a
+    progress dialog; its stable id comes from the sibling
+    `<stem>_run_record.json` (the `.h5` carries none — see the egm-data
+    follow-up). Captured in **ADR-027**.
+  - **B — index-only Add-to-phase control.** An **Add to phase** button on
+    the Phase tree indexes an existing artifact into the loaded phase
+    *without opening it* (unlike File ▸ Open bank, which also loads it):
+    Bank / Noise bank / Training run / Model as path-pointers, Figure /
+    Observation as authored specs copied into the phase. Disabled until a
+    phase is open.
+  - **C — observation load/add.** **File ▸ Open observation ▸ Load to
+    scratch / Load to phase** mirrors the producer loads (index-only, the
+    captured view isn't reloaded); the Add-to-phase ▸ Observation item
+    does the same into the phase. One shared `_index_observation(obs,
+    target)` backs Save-observation, the loader, and the add.
 
-- **B10g — artifact add/remove in the Phase tree.** Direct manual-add of
-  a produced bank / noise bank / training run / model into a *phase* by
-  pointing at its file, and **Remove** (unindex; delete authored files,
-  leave producer files in place) for any tree entry, are **not yet
-  built**. (Load-into-scratch/phase from B10h covers the add path for
-  scratch; the phase-side manual-add + remove-from-tree UI remains.)
-
-**Deferred egm-contracts changes (batched for refactor-cleanup):**
+**Deferred egm-contracts / producer changes (batched for
+refactor-cleanup):**
 
 - Make `produced_by_package` / `produced_by_version` **optional** on
   manifest entries, so indexed producers need no sentinel values.
 - Add an **active view / tab** field to observation `view_state`, so
   Open observation can also restore the active flow + sub-tab.
+- **Stamp the noise bank's `bank_id` (+ a link to its run record) into
+  the `.h5` itself** (egm-data / iafdb-pipeline), so the Noise view no
+  longer has to read the id from the sibling `<stem>_run_record.json`.
+  Retire the sibling-record lookup once shipped.
+
+**Follow-ups surfaced by the B10g review:**
+
+- **Large-bank → small-bank freeze.** Loading a small bank while a large
+  one is already loaded freezes the window (the view-model re-derives over
+  *all* loaded banks on the main thread after the progress-covered
+  extraction). Tracked for **Block 11** — see its scope.
+- **Deeper noise analysis (Phase 1.5).** The Noise view today is a
+  segment browser; if Phase 1.5 pursues rigorous signal analysis of the
+  noise itself (spectra, statistics), the view gains feature panels then.
 
 **Estimated effort:** ~2-2.5 days.
 
@@ -828,6 +867,12 @@ then implements them.
 - **In-memory result cache.** Cache the per-bank computed view-model
   (features) keyed by bank id, so re-selecting an already-loaded bank is
   instant and a bank switch doesn't recompute. Bounded (LRU / by count).
+  - **Specific freeze to fix (B10g review):** loading a *small* bank
+    while a *large* one is already loaded freezes the window. Root cause:
+    after the progress-covered extraction, `combine_view_models`
+    re-derives over **all** loaded banks on the main thread (unfeedbacked).
+    The per-bank cache above removes the recompute; verify this exact
+    large→small switch no longer freezes.
 - **Disk-backed cache (decided by the spike).** Persist computed results
   to a cache dir keyed by bank id + a content/version hash, so the
   computation survives an egm-studio restart. Open question carried from
@@ -907,8 +952,8 @@ documentation really good." Budget real time here.
 
 - `docs/usage.md` — full user manual covering:
   - Install + first launch
-  - The three modes (signal exploration / ML diagnostics / paper
-    figure prep) — each with screenshots and step-by-step
+  - The four modes (signal exploration / **noise** / ML diagnostics /
+    paper figure prep; ADR-027) — each with screenshots and step-by-step
     walkthroughs
   - **Reading each figure** — a per-recipe interpretation guide (what each
     figure shows; how to read a good vs bad result), linking back to
@@ -935,7 +980,7 @@ documentation really good." Budget real time here.
 
 - A new user can install egm-studio, work through every documented
   flow, and successfully complete each one without external help.
-- All three modes have screenshot-illustrated walkthroughs.
+- All four modes have screenshot-illustrated walkthroughs.
 - README is approachable for someone landing on the GitHub page cold.
 
 **Estimated effort:** ~1.5-2 days.
@@ -949,7 +994,8 @@ Final pin-and-tag.
 - Pin all sibling-repo deps in `pyproject.toml` to their exact
   release versions.
 - End-to-end smoke test: launch GUI, run each of the three flows
-  from `user_flow_walkthroughs.md`, render a figure via the CLI.
+  from `user_flow_walkthroughs.md` + open a noise bank in the Noise
+  mode, render a figure via the CLI.
 - Final commit on `development` branch; merge `development` →
   `release` per [[project-branch-strategy]].
 - Tag `v0.1.0` on `release` branch.
@@ -1040,7 +1086,7 @@ critical-path picture:
                                  │
                                  ▼
                          egm-studio Blocks 4–13
-                         (Qt shell, three modes,
+                         (Qt shell, four modes,
                           Save flow, docs, ship)
 ```
 

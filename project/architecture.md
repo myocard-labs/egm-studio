@@ -140,8 +140,9 @@ myocard_egm_studio/
 │   │   ├── figure_form.py    # Flow C: curated per-recipe spec editor          [B9b]
 │   │   ├── figure_preview.py # Flow C: WYSIWYG raster panel (scaled-to-fit)     [B9a]
 │   │   └── ...           #   Other shared widgets (result_list, feature_grid, metrics_view, ...)
-│   └── views/
+│   └── views/               # One per top-level mode (four; ADR-027)
 │       ├── signal_exploration.py   # Flow A — Summary/Explore/Scatter tabs      [B7]
+│       ├── noise_exploration.py    # Noise — sidebar controls + aspect-capped plot [B10g, ADR-027]
 │       ├── ml_diagnostics.py       # Flow B — Output/Metrics/Training/Explore    [B8]
 │       └── paper_figure_prep.py    # Flow C — form + WYSIWYG preview, async render [B9]
 ├── cli/
@@ -171,6 +172,7 @@ myocard_egm_studio/
     ├── dependencies.py   #   what each artifact references; closure for auto-add  [B10h]
     ├── phase_actions.py  #   right-click action policy per role (figure menu dynamic) [B6, B9]
     ├── figure_output.py  #   figure image path + per-figure existence    [B9]
+    ├── noise.py          #   noise-bank .h5 -> segments for the Noise view [B10g, ADR-027]
     └── artifact_metadata.py  # file-level "Show metadata" summaries       [B6]
 ```
 
@@ -333,7 +335,8 @@ library-only extractor (no analysis workflows).
 implement this shell — draggable `QSplitter` columns, each sidebar folding to a
 ~40px Activity-Bar strip and back (the splitter drives the width, since a
 `QSplitter` ignores a child's max-width; a collapsed strip is non-resizable), a
-header-hosted 3-mode segmented control, and the `View > Theme` toggle.
+header-hosted 4-mode segmented control (Signal exploration · Noise · ML
+diagnostics · Paper figures; ADR-027), and the `View > Theme` toggle.
 `View > Toggle sidebar` and the in-panel buttons share one handler so the menu
 checkmarks stay in sync. Region content stays placeholder until Blocks 5+.
 
@@ -360,6 +363,21 @@ checkmarks stay in sync. Region content stays placeholder until Blocks 5+.
 - **Dynamic artifact actions** [B9]: the Phase-tree figure menu adapts
   to whether the rendered image exists — *View figure* only once it does,
   *Generate* ↔ *Regenerate* — via `view_model.figure_output`.
+- **Noise is a fourth top-level mode**, not a Flow A sub-tab [ADR-027,
+  B10g]: the Flow A tabs all operate on a *loaded classifier bank*,
+  whereas a noise bank is a different artifact (raw IAFDB segments), so it
+  gets its own mode with a **mode-driven left sidebar** — the noise
+  controls (overview + record/channel filters + segment table) replace
+  *Banks & filters* only in Noise mode. The plot is aspect-capped so a
+  single trace in a tall pane reads as a band, not a stretched line.
+- **Index-only manual curation** [B10g]: an **Add to phase** button on the
+  Phase tree (and **File ▸ Open …**) indexes an existing artifact into the
+  loaded phase. Producers (bank / noise bank / run / model) are indexed as
+  path-pointers *without opening them*; authored artifacts (figure /
+  observation) are copied into the phase's folder and indexed. **Remove
+  from phase** unindexes (deleting authored files, leaving producer files
+  in place). The producer `.h5` for a noise bank carries no id, so its
+  `bank_id` is read from the sibling `<stem>_run_record.json`.
 - **Multi-monitor**: views can tear out into separate windows
   (Qt's `QMdiArea` / detached windows).
 - **Time-axis navigation** on traces: pan + zoom via PyQtGraph mouse
@@ -438,10 +456,12 @@ unified save schema [ADR-017] and the scratch-curation model [ADR-026]:
   **cross-scope**: a scratch item resolves against scratch + the loaded
   phase; a phase item resolves against the phase only. [ADR-026, B10h-1a]
 
-Not yet built (Block 10 remainder, **B10g**): direct **manual-add** of a
-produced artifact into a *phase* by pointing at its file, and **Remove**
-(unindex) for any tree entry. The scan-and-validate hook into
-`validate_manifest.py` after each write is also still deferred.
+Manual curation shipped in **B10g**: **Add to phase** (index a produced
+artifact by pointing at its file, or copy in a figure / observation) and
+**Remove from phase** (unindex; delete authored files, leave producer
+files in place) — see the *Index-only manual curation* interaction
+pattern above. Still deferred: the scan-and-validate hook into
+`validate_manifest.py` after each write.
 
 ## Test strategy [ADR-013]
 

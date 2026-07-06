@@ -1801,6 +1801,78 @@ control.
 
 ---
 
+## ADR-027: Noise is a fourth top-level mode, not a Flow A sub-tab
+
+**Date:** 2026-07-06
+**Status:** Accepted (implemented, B10g)
+
+### Context
+
+A noise bank (raw IAFDB noise segments extracted by iafdb-pipeline) had
+no viewer. The first cut was a right-click pop-up dialog that crammed ~24
+segment tiles into a grid — illegible, and clearly not a real feature.
+The question was where a proper segment browser belongs. The natural-
+looking home was a new tab inside **Signal exploration** (Flow A).
+
+The obstacle: **every Flow A sub-tab operates on a *loaded classifier
+bank*** — the Summary landing, the Explore result list, and the Scatter
+all read the unified per-trace view-model of banks the user opened. A
+noise bank is a *different artifact*: N raw segments, each tagged with
+the record + channel it was cut from, with no features, labels, or
+predictions. Forcing it into a Flow A tab would mean a tab that ignores
+the loaded banks and the shared filter — a foot-gun.
+
+### Options considered
+
+1. **A Flow A sub-tab.** Visually tidy, but the tab would operate on a
+   data source unrelated to the rest of Flow A (which all share the
+   loaded-bank view-model + filter). Mixes two artifact types in one
+   flow.
+2. **A top-level mode** on par with Signal exploration / ML diagnostics /
+   Paper figures. More chrome (a fourth mode button), but the Noise view
+   then owns its own data source cleanly.
+
+### Decision
+
+Noise is a **fourth top-level mode**, ordered **Signal exploration ·
+Noise · ML diagnostics · Paper figures** (Noise next to Signal
+exploration — both are raw-signal views — ahead of the ML / figure
+workflows). Supporting decisions:
+
+- **Mode-driven left sidebar.** The left rail swaps with the mode: the
+  noise controls (overview + record/channel filters + segment table)
+  replace *Banks & filters* in Noise mode, and it returns for the other
+  modes. Both bodies live in one stack so neither rebuilds.
+- **Controls in the sidebar, plot in the main area.** The view is split
+  (`NoiseControls` emits the chosen segment; `NoiseExplorationView`
+  renders it) so each half hosts where it belongs, mirroring Flow A's
+  sidebar-filter / main-list split.
+- **Aspect-capped plot.** A single trace in a tall pane stretches
+  vertically; the plot height is capped to a fraction of its width and
+  centred, so it reads as a signal band.
+- **Off-thread load.** The whole `.h5` (66k+ segments) is read under a
+  progress dialog; the table filters by hiding rows, not repopulating.
+
+### Rationale
+
+Data coherence wins over visual tidiness: a mode's data source should be
+one thing. Keeping noise out of Flow A means the loaded-bank view-model
+and the shared filter stay meaningful everywhere in Flow A. The fourth
+mode is cheap (one more segmented-control button) next to the confusion a
+mismatched sub-tab would cause.
+
+### Consequences
+
+- The header segmented control + the modes stack grow from three to four;
+  `_MODE_*` constants replace the earlier literal indices.
+- The noise `.h5` carries no stable id, so the Noise view reads `bank_id`
+  from the sibling `<stem>_run_record.json`. A deferred egm-data change to
+  stamp the id into the `.h5` will retire that lookup.
+- If Phase 1.5 pursues rigorous signal analysis of the noise itself
+  (spectra, statistics), the Noise view is the place those panels land.
+
+---
+
 ## Open questions (post-0.5)
 
 All Block 0 ADRs are now Accepted or have a concrete next-step

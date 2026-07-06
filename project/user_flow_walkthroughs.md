@@ -635,5 +635,24 @@ described in Flow A step 9 + Flow B step 10 + Flow C, as built:
   referenced ids aren't resolvable shows **amber "unresolved"** with a
   tooltip naming the missing id; resolution is cross-scope (a scratch
   item sees scratch + the phase, a phase item sees the phase only).
-- **Still open:** manual add / remove of producer entries directly in a
-  *phase* tree (**B10g**), and the post-write scan-and-validate hook.
+**Block 10g shipped the manual-curation UI + a Noise view
+(2026-07-06):**
+
+- **Add to phase.** An **Add to phase** control on the Phase tree (and
+  **File ▸ Open bank / noise bank / training run / model / observation**)
+  indexes an existing artifact into the loaded phase. Producers are
+  indexed as path-pointers *without opening them*; a figure or observation
+  is copied into the phase's folder and indexed. **Remove from phase**
+  unindexes any entry (deleting authored files, leaving producer files in
+  place; destructive removes confirm).
+- **Noise view (new, ADR-027).** A noise bank now opens in its own
+  **fourth top-level mode** — right-click a noise bank ▸ **View noise
+  segments**. The left rail shows an overview + record/channel filters +
+  the segment table; selecting a segment plots it (aspect-capped so it
+  reads as a signal band). This is the noise-side analog of Flow A's
+  browse loop, kept out of Flow A because it isn't the loaded-bank
+  view-model.
+- **Cleanup:** dead greyed-out right-click placeholders removed; models
+  gained **Show metadata**.
+- **Still open:** the post-write scan-and-validate hook; a Block 11
+  perf fix for the large-bank → small-bank switch freeze.

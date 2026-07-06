@@ -47,6 +47,31 @@ automatically**, so you never end up with a figure in the phase whose banks are
 missing. To promote only the item itself, turn off **Settings ▸ Automatically
 add dependencies**.
 
+## Adding existing artifacts to a phase
+
+Beyond the things you author, you can pull an existing artifact into a phase you
+have open — a bank, noise bank, training run, model, figure spec, or observation
+— with the **Add to phase** button above the Phase tree (or **File ▸ Open …**).
+The button is disabled until a phase is open.
+
+- A **produced** artifact (bank / noise bank / training run / model) is
+  *referenced in place*: the file stays where it is and the phase just records a
+  pointer to it — nothing is opened.
+- A **figure or observation** you add is copied into the phase and indexed.
+
+To take something out, right-click it and choose **Remove from phase**. Removing
+an observation or figure you authored deletes its file; removing a referenced
+bank / run / model just drops the pointer, leaving the original untouched. You'll
+be asked to confirm.
+
+## Viewing a noise bank
+
+A noise bank holds the raw noise segments the pipeline extracted from real
+recordings. Right-click one in the tree and choose **View noise segments** to
+open the **Noise** view — a top-level mode alongside Signal exploration, ML
+diagnostics, and Paper figures. The left panel lists the segments with filters
+for the source record and channel; pick one to plot it.
+
 ## Reading the status dots
 
 Each tree item carries a small status indicator:
