@@ -956,15 +956,20 @@ freeze fix, and the tiered store is re-cast as revisit-latency.
   fields read muddy (the scatter's job is interactive selection). *(The
   survey's "LTTB / min-max" note was a mis-map — those downsample 1-D trace
   lines, not a 2-D scatter; a uniform subsample is the right tool here.)*
-- **Test-suite / CI health.** The pytest-qt GUI tests each pay ~2-3 s of Qt
-  startup, so the suite has grown slow, and a **wedged Qt modal froze CI for
-  ~3 hours** once. A per-test hang-guard already shipped (2026-07-06:
-  `pytest-timeout`, `timeout = 120`, `thread` method — a hang now aborts with
-  a traceback instead of freezing). The tracked improvement: **split fast vs
-  slow tests.** Every `tests/gui/` test is auto-tagged `gui` (conftest hook),
-  so CI can run the fast set on `development` pushes (`-m "not gui"` or
-  `--ignore=tests/gui`) and the full set on PRs into `release`. Weigh against
-  keeping full coverage on every push; decide + wire `ci.yml` here.
+- **Test-suite / CI health — ✓ shipped 2026-07-06.** The pytest-qt GUI tests
+  each pay ~2-3 s of Qt startup, so the suite has grown slow, and a **wedged
+  Qt modal froze CI for ~3 hours** once. A per-test hang-guard shipped first
+  (`pytest-timeout`, `timeout = 120`, `thread` method — a hang now aborts with
+  a traceback instead of freezing). Then the **fast/slow split**: every
+  `tests/gui/` test is auto-tagged `gui` (conftest hook), and `ci.yml`'s test
+  job now runs the fast set (`-m "not gui"`, ~389 tests) on **`development`
+  pushes** and the full suite (~709 tests) on **`release` pushes + PRs** — so
+  the GUI tests gate every merge to the stable branch while day-to-day dev
+  pushes stay quick. Chosen over full-coverage-everywhere (the roadmap's
+  "weigh against"): the risk is a GUI regression landing on `development`
+  uncaught until the release PR, mitigated by live testing + the sandbox GUI
+  runs each sub-block gets; the branch guard is a one-line flip back to
+  always-full if it bites.
 - **Deferred (with triggers), from the survey.** Standard techniques we
   are *not* building now — each revived only when its trigger fires (full
   detail in `project/optimization_survey.md`):
