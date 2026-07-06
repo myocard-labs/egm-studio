@@ -83,11 +83,11 @@ def test_mode_control_is_exclusive(qtbot: QtBot) -> None:
     qtbot.addWidget(window)
 
     buttons = window.findChildren(QtWidgets.QPushButton, "modeButton")
-    assert len(buttons) == 3
+    assert len(buttons) == 4  # signal exploration / ML diagnostics / paper figures / noise
     assert buttons[0].isChecked()  # signal-exploration default
 
-    buttons[2].click()
-    assert buttons[2].isChecked()
+    buttons[3].click()  # the Noise mode
+    assert buttons[3].isChecked()
     assert not buttons[0].isChecked()
 
 
@@ -221,13 +221,13 @@ def test_opening_a_raw_bank_leaves_flow_b_in_the_landing_state(
     assert "Open a bank with model predictions" in diagnostics._header.text()
 
 
-def test_flow_c_view_is_mounted_at_mode_two(qtbot: QtBot) -> None:
-    """The paper-figure-prep view occupies mode-stack index 2 (Flow C, B9c)."""
+def test_flow_c_view_is_mounted_at_mode_three(qtbot: QtBot) -> None:
+    """The paper-figure-prep view occupies mode-stack index 3 (Flow C; Noise is now index 1)."""
     from myocard_egm_studio.gui.views import PaperFigurePrepView
 
     window = MainWindow()
     qtbot.addWidget(window)
-    assert window._modes_stack.widget(2) is window._figure_view
+    assert window._modes_stack.widget(3) is window._figure_view
     assert isinstance(window._figure_view, PaperFigurePrepView)
 
 
@@ -280,7 +280,7 @@ def test_open_training_run_populates_flow_b_training(
         QtWidgets.QFileDialog, "getOpenFileNames", lambda *a, **k: ([str(path)], "")
     )
     window._load_runs("scratch")
-    assert window._modes_stack.currentIndex() == 1  # switched to ML diagnostics
+    assert window._modes_stack.currentIndex() == 2  # switched to ML diagnostics
     assert window._diagnostics_view._tabs.currentIndex() == 2  # Training tab
     assert window._diagnostics_view._training_view.overlay is not None
     assert [name for name, _ in window._loaded_runs] == ["v1p5_run"]  # labelled by run dir

@@ -111,16 +111,33 @@ def test_model_entry_needs_a_model_id(tmp_path: Path) -> None:
         model_entry(path)
 
 
-def test_noise_bank_entry_reads_bank_id_from_the_record(tmp_path: Path) -> None:
-    path = _write_json(tmp_path / "noise_run.json", {"bank_id": "nbank_studio_fixture_2026-06-15"})
-    entry = noise_bank_entry(path)
+def _noise_bank_with_record(tmp_path: Path, *, bank_id: object) -> Path:
+    """A noise-bank .h5 (dummy) + its sibling ``<stem>_run_record.json`` (iafdb convention)."""
+    h5 = tmp_path / "nbank_iafdb.h5"
+    h5.write_bytes(b"")  # the entry only records the path; the id comes from the sibling record
+    _write_json(
+        tmp_path / "nbank_iafdb_run_record.json", {} if bank_id is None else {"bank_id": bank_id}
+    )
+    return h5
+
+
+def test_noise_bank_entry_points_at_the_h5_with_id_from_the_sibling(tmp_path: Path) -> None:
+    h5 = _noise_bank_with_record(tmp_path, bank_id="nbank_studio_fixture_2026-06-15")
+    entry = noise_bank_entry(h5)
     assert isinstance(entry, NoiseBankEntry)
-    assert entry.id == "nbank_studio_fixture_2026-06-15"  # the id is the record's bank_id
-    assert entry.path == str(path)  # points at the record, not the .h5
+    assert entry.id == "nbank_studio_fixture_2026-06-15"  # id from the sibling run record...
+    assert entry.path == str(h5)  # ...but the entry points at the .h5 (where the segments live)
     assert entry.produced_by_package == UNKNOWN_PRODUCER
 
 
-def test_noise_bank_entry_needs_a_bank_id(tmp_path: Path) -> None:
-    path = _write_json(tmp_path / "noise_run.json", {"source": "x"})  # no bank_id
+def test_noise_bank_entry_needs_a_sibling_record(tmp_path: Path) -> None:
+    h5 = tmp_path / "lonely.h5"
+    h5.write_bytes(b"")  # no <stem>_run_record.json next to it
+    with pytest.raises(ValueError, match="no sibling run record"):
+        noise_bank_entry(h5)
+
+
+def test_noise_bank_entry_needs_a_bank_id_in_the_record(tmp_path: Path) -> None:
+    h5 = _noise_bank_with_record(tmp_path, bank_id=None)  # sibling exists but has no bank_id
     with pytest.raises(ValueError, match="no bank_id"):
-        noise_bank_entry(path)
+        noise_bank_entry(h5)

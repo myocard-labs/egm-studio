@@ -59,6 +59,12 @@ def test_prediction_bank_adds_ml_actions() -> None:
     )
 
 
+def test_noise_bank_viewers() -> None:
+    (view_noise,) = type_actions(Role.noise_bank)  # curation-summary placeholder was removed
+    assert view_noise.id == "view_noise" and view_noise.available is True  # wired B10g (.h5)
+    assert "view_curation_summary" not in {a.id for a in actions_for(Role.noise_bank)}
+
+
 def test_training_run_view_curves_is_wired() -> None:
     (action,) = type_actions(Role.training_run)
     assert action.id == "view_curves"

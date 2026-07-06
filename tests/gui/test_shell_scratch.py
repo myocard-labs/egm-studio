@@ -513,19 +513,73 @@ def test_load_model_indexes_a_pointer_into_the_phase(
     assert "model_studio_fixture_2026-06-26" in entries_by_id(window._phase_manifest)
 
 
-def test_load_noise_bank_indexes_the_record_into_the_phase(
+def test_load_noise_bank_indexes_the_h5_into_the_phase(
     qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     window = _window(qtbot, tmp_path)
     _open_phase(window, tmp_path)
-    record = tmp_path / "noise_run.json"
-    record.write_text('{"bank_id": "nbank_studio_fixture_2026-06-15"}')
-    _pick_files(monkeypatch, record)
+    h5 = tmp_path / "nbank_iafdb.h5"
+    h5.write_bytes(b"")  # picked file is the .h5...
+    (tmp_path / "nbank_iafdb_run_record.json").write_text(
+        '{"bank_id": "nbank_studio_fixture_2026-06-15"}'
+    )  # ...its stable id comes from the sibling run record
+    _pick_files(monkeypatch, h5)
 
     window._load_noise_banks("phase")
 
     assert window._phase_manifest is not None
-    assert "nbank_studio_fixture_2026-06-15" in entries_by_id(window._phase_manifest)
+    entry = entries_by_id(window._phase_manifest)["nbank_studio_fixture_2026-06-15"]
+    assert entry.path == str(h5)  # the entry points at the .h5 (so the segment viewer works)
+
+
+def _noise_bank(n: int) -> object:
+    import numpy as np
+
+    from myocard_egm_studio.view_model.noise import NoiseBankSegments, NoiseSegment
+
+    segments = tuple(
+        NoiseSegment(
+            index=i, source_record="rec1", source_channel=str(i), signal=np.zeros(32, dtype=float)
+        )
+        for i in range(n)
+    )
+    return NoiseBankSegments(segments=segments, fs_hz=1000.0, source="iafdb")
+
+
+def test_view_noise_segments_opens_the_noise_view(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from myocard_egm_studio.gui import shell as shell_mod
+
+    window = _window(qtbot, tmp_path)
+    monkeypatch.setattr(shell_mod, "load_noise_bank", lambda _p: _noise_bank(3))
+
+    window._open_noise_view("nbank.h5", "nbank_studio_fixture_2026-06-15")
+
+    assert window._modes_stack.currentIndex() == 1  # switched to the Noise mode (now index 1)...
+    assert window._noise_controls._table.rowCount() == 3  # ...with the whole bank in the sidebar
+    assert window._left_body_stack.currentIndex() == 1  # left rail swapped to the noise controls
+
+
+def test_view_noise_segments_warns_on_a_read_failure(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from myocard_egm_studio.gui import shell as shell_mod
+
+    def _boom(_p: str) -> object:
+        raise ValueError("file signature not found")
+
+    window = _window(qtbot, tmp_path)
+    monkeypatch.setattr(shell_mod, "load_noise_bank", _boom)
+    warned: list[str] = []
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox, "warning", lambda _s, _t, text, *a, **k: warned.append(text)
+    )
+
+    window._open_noise_view("nbank.h5", "nbank_bad")
+
+    assert warned and "Could not read noise segments" in warned[0]  # a loud, friendly failure
+    assert window._modes_stack.currentIndex() != 1  # didn't switch to a broken Noise view
 
 
 def test_indexing_an_id_less_file_warns_and_indexes_nothing(

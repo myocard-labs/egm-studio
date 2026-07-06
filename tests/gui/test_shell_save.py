@@ -379,9 +379,11 @@ def test_current_selection_dispatches_by_active_flow(
     monkeypatch.setattr(window._explore_view.result_list, "selected_row_ids", lambda: [1, 2])
     monkeypatch.setattr(window._diagnostics_view.result_list, "selected_row_ids", lambda: [7])
 
-    window._modes_stack.setCurrentIndex(0)  # Flow A
+    window._modes_stack.setCurrentIndex(0)  # Flow A (signal exploration)
     assert window._current_selection() == [1, 2]
-    window._modes_stack.setCurrentIndex(1)  # Flow B
+    window._modes_stack.setCurrentIndex(1)  # Noise — no trace selection
+    assert window._current_selection() == []
+    window._modes_stack.setCurrentIndex(2)  # Flow B (ML diagnostics)
     assert window._current_selection() == [7]
-    window._modes_stack.setCurrentIndex(2)  # Flow C — no trace selection
+    window._modes_stack.setCurrentIndex(3)  # Flow C — no trace selection
     assert window._current_selection() == []

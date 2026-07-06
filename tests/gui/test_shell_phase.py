@@ -161,7 +161,7 @@ def test_view_curves_action_loads_run_into_flow_b(
     window._on_phase_action("view_curves", run_id)
     assert seen == [str(_FIXTURE_DIR / _ENTRIES[run_id].path)]  # resolved from the manifest
     assert [name for name, _ in window._loaded_runs] == [run_id]
-    assert window._modes_stack.currentIndex() == 1  # switched to ML diagnostics
+    assert window._modes_stack.currentIndex() == 2  # switched to ML diagnostics
     assert window._diagnostics_view._tabs.currentIndex() == 2  # Training tab
 
 
@@ -183,7 +183,7 @@ def test_view_ml_diagnostics_loads_bank_then_lands_on_flow_b(
     )
     window._on_phase_action("view_ml_diagnostics", pred_id)
     assert calls == [(None, True)]  # no Flow A tab focus; replace (nothing loaded yet)
-    assert window._modes_stack.currentIndex() == 1  # landed on ML diagnostics
+    assert window._modes_stack.currentIndex() == 2  # landed on ML diagnostics
 
 
 def test_edit_spec_action_opens_the_figure_in_flow_c(
@@ -196,7 +196,7 @@ def test_edit_spec_action_opens_the_figure_in_flow_c(
     monkeypatch.setattr(window._figure_view, "load_spec", lambda path: seen.append(str(path)))
     window._on_phase_action("edit_spec", fig_id)
     assert seen == [str(_FIXTURE_DIR / _ENTRIES[fig_id].path)]  # resolved from the manifest
-    assert window._modes_stack.currentIndex() == 2  # switched to Flow C
+    assert window._modes_stack.currentIndex() == 3  # switched to Flow C
 
 
 def test_generate_figure_action_delegates_to_flow_c(
@@ -209,7 +209,7 @@ def test_generate_figure_action_delegates_to_flow_c(
     monkeypatch.setattr(window._figure_view, "generate_to_file", lambda p: seen.append(str(p)))
     window._on_phase_action("generate_figure", fig_id)
     assert seen == [str(_FIXTURE_DIR / _ENTRIES[fig_id].path)]
-    assert window._modes_stack.currentIndex() == 2
+    assert window._modes_stack.currentIndex() == 3
 
 
 def test_figure_generated_refreshes_the_tree_menus(
