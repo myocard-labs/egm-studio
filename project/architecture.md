@@ -162,6 +162,7 @@ myocard_egm_studio/
 │   └── scratch.py       #   scratch = a real (migrating) mini-phase manifest  [ADR-026, B10h-2a]
 └── view_model/           # Prepared, Qt-free view data       [ADR-002]
     ├── builder.py        #   unified per-trace table (features + metadata + ML outcomes)
+    ├── cache.py          #   tiered view-model cache: RAM LRU + write-through disk  [ADR-028, Block 11]
     ├── ml_outcomes.py    #   predictions-bank -> ML columns; ML_COLUMNS         [B8a]
     ├── combine.py        #   pool N banks into one frame (global row_id)  [B7.8]
     ├── summary.py        #   bank stats for the Flow A summary landing    [B7.7]

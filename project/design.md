@@ -1873,6 +1873,79 @@ mismatched sub-tab would cause.
 
 ---
 
+## ADR-028: Tiered view-model cache — RAM LRU + write-through disk
+
+**Date:** 2026-07-06
+**Status:** Accepted (implemented, Block 11)
+
+### Context
+
+Building a bank's per-trace view-model runs an O(T²) sample-entropy pass
+(`egm-features.extract_all`) over every trace — a Block 11 profiling pass
+(2026-07-06) measured ~3 minutes on an IAFDB-scale bank, and confirmed
+extraction dominates the load. Yet every open re-extracted from scratch:
+re-selecting or re-adding a bank paid the full cost again. Reopening a bank
+the user just closed should be near-instant, and ideally survive a restart.
+
+### Options considered
+
+1. **In-memory LRU only.** Simple; a re-select within a session is instant.
+   But everything is lost on exit — a restart re-extracts.
+2. **Disk cache only** (joblib.Memory-style). Survives restart, but with no
+   RAM front every access reads + unpickles ~31 MB from disk, and there is
+   no bound on resident memory to reason about.
+3. **One tiered store:** a size-bounded in-memory LRU as the hot front over a
+   persistent disk cold tier.
+
+### Decision
+
+**One tiered store** (`view_model/cache.py`). A `FrameStore` (RAM, size-aware
+LRU under a byte ceiling) optionally backed by a `DiskCache` (persistent cold
+tier). `get_or_compute` looks up memory → disk → `compute`. Supporting
+decisions:
+
+- **Keyed by (bank id + source + extraction params + the feature-math
+  version).** The math version is **egm-features' package version** plus a
+  small egm-studio `CACHE_FORMAT` constant — *not* egm-studio's release
+  version. So a change to the feature math (an egm-features bump under the
+  coordinated-bump discipline) invalidates automatically, while unrelated
+  egm-studio releases don't needlessly flush the cache. The version + format
+  are in the key → in the disk filename, so old-math files are simply never
+  addressed again.
+- **Write-through, not write-on-evict + exit-flush.** Each computed frame is
+  pickled to disk *at compute time*. Persistence is therefore crash-safe and
+  needs no shutdown hook — a write-on-exit scheme would lose the whole
+  resident cache on a crash / force-quit / OS kill. Extraction (~3 min) dwarfs
+  the pickle write (~100–300 ms), so writing every frame is a ~0.1 % overhead.
+- **RAM ceiling is a user preference** (Settings ▸ View-model cache), the disk
+  cap a constant (4 GB); **Flush** clears both tiers. The RAM ceiling is the
+  one surfaced knob; the disk cap is an implementation guard with its own
+  mtime-LRU eviction.
+- **Guarded to banks with a stable id.** An unidentified bank can't be keyed
+  safely (it would collide with others), so it bypasses the cache entirely.
+- **pickle on disk** (no pyarrow dependency), with **defensive reads** — a
+  corrupt / version-incompatible pickle is treated as a miss and dropped, so
+  a bad file just triggers a recompute + rewrite.
+
+### Rationale
+
+The tiered shape gets both properties at once: the RAM front keeps re-selects
+instant, the disk tier gives restart persistence. Write-through is the robust
+persistence model precisely because extraction is so much more expensive than
+the write it guards. Versioning on the feature *math* (not the release) is what
+makes automatic invalidation correct without over-flushing.
+
+### Consequences
+
+- The cache is a rebuildable artifact in the platform cache location; the
+  version key + Flush are the invalidation paths (never hand-managed files).
+- Cross-repo escalation, deferred: precomputing features when the *producer*
+  writes the bank (iafdb-pipeline / egm-classifier) would make even the first
+  open cheap — egm-studio would load precomputed features instead of extracting.
+- The disk cap is a constant, not a preference — revisit if it ever bites.
+
+---
+
 ## Open questions (post-0.5)
 
 All Block 0 ADRs are now Accepted or have a concrete next-step

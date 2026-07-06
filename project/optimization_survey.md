@@ -87,6 +87,14 @@ not three systems to build and keep in sync. They are **one tiered store**:
 - The user can **flush the disk cache** manually (Settings / a menu action) for a clean
   slate — belt-and-suspenders alongside the automatic version-key invalidation.
 
+> **Shipped refinement (ADR-028).** Implementation changed the disk tier from *write-on-
+> eviction* (above) to **write-through**: every computed frame is persisted at compute time,
+> not when it's evicted from RAM. That is crash-safe and needs no shutdown hook — a
+> write-on-exit scheme loses the resident cache on a crash / kill, and extraction (~3 min)
+> dwarfs the pickle write (~0.1 %), so writing every frame is free in practice. The rest of
+> this section (one keyed store, version-keyed on the feature math, LRU under a ceiling,
+> Flush) shipped as described. See ADR-028 for the as-built design.
+
 This is the joblib.Memory model (transparent, hash-keyed, disk-backed persistence for
 large array/DataFrame results) unified with the Polars/DuckDB spilling model (size-aware
 threshold eviction). It directly answers the "what's held in memory vs on disk" schema

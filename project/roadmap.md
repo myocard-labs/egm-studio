@@ -915,22 +915,23 @@ freeze fix, and the tiered store is re-cast as revisit-latency.
   escalation for that. (Known gap: the theme-change path (`set_style`) still
   recomputes the KDE unpumped; the tiered store, by caching computed
   curves, is the natural fix.)
-- **Tiered result store (revisit latency, not the freeze).** Re-cast from
-  "centerpiece": the freeze is fixed by the table + threading above; the
-  store's job is to avoid recomputing the ~3-min extraction when you
-  re-select or re-add a bank. Still worth building. One keyed store for the
-  per-bank computed view-model — *not* a separate in-memory cache + disk
-  cache (see the survey). Keyed by **(bank id + egm-features version +
-  extraction params)**; a size-aware **LRU** keeps the hot set in RAM
-  under a **user-settable memory ceiling** (Settings), and eviction
-  **spills the cold tier to a disk cache** (joblib-style) rather than
-  dropping it, so a result survives a restart. The version key is the
-  *feature math* (egm-features + a small egm-studio cache-format
-  constant), never egm-studio's release version, so a math change never
-  reuses stale results; a **Flush cache** action clears it manually.
-  (Persistent, version-keyed, ceiling-bounded.) Profiling sizes the
-  default ceiling generously — frames are ~31 MB, so many IAFDB-scale
-  banks fit in RAM and disk-spill is a rare safety valve.
+- **Tiered result store (revisit latency) — ✓ shipped 2026-07-06 (ADR-028).**
+  The freeze is fixed by the table + threading above; the store's job is to
+  avoid recomputing the ~3-min extraction when you re-select or re-add a bank.
+  One keyed store for the per-bank computed view-model (`view_model/cache.py`)
+  — *not* a separate in-memory cache + disk cache (see the survey). Keyed by
+  **(bank id + source + extraction params + egm-features version + a
+  cache-format constant)**; a size-aware **LRU** (`FrameStore`) keeps the hot
+  set in RAM under a **user-settable memory ceiling** (Settings ▸ View-model
+  cache), over a **write-through `DiskCache`** cold tier that persists every
+  computed frame *at compute time* (crash-safe, no exit hook), so a result
+  survives a restart and a memory miss falls through to disk before
+  recomputing. The version key is the *feature math* (egm-features + the
+  cache-format constant), never egm-studio's release version, so a math change
+  never reuses stale results; a **Flush cache** action clears both tiers. Only
+  banks with a stable id are cached (an unidentified bank can't be keyed).
+  Frames are ~31 MB, so the default RAM ceiling holds ~30 banks; the disk cap
+  (a constant) ~130.
 - **Filter-change cost — measure, likely skip.** When a filter is
   *narrowed* its result is a subset of the previous one, so in principle
   you could re-filter only the rows that already passed instead of
@@ -995,10 +996,11 @@ freeze fix, and the tiered store is re-cast as revisit-latency.
   *unfeedbacked* freeze on add-a-bank, and no ~900 MB table-widget spike.
   (The rebuild is still ~4 s of KDE, now animated + cancellable; a true
   worker thread is deferred with a trigger.)
-- Switching between (or re-adding) two already-loaded banks does not
-  recompute features — served from the tiered store.
-- The tiered store is version-keyed (egm-features), ceiling-bounded,
-  disk-spilling, and user-flushable.
+- ✓ Switching between (or re-adding) two already-loaded banks does not
+  recompute features — served from the tiered store (and survives a restart
+  via the write-through disk tier).
+- ✓ The tiered store is version-keyed (egm-features math + a cache-format
+  constant), ceiling-bounded, write-through-disk-backed, and user-flushable.
 - The load / filter loop on a large bank feels responsive.
 
 **Estimated effort:** ~1-2 days (spike + implementation).
