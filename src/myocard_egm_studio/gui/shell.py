@@ -388,6 +388,15 @@ class MainWindow(QtWidgets.QMainWindow):
             scratch_text="Load to &scratch…",
             phase_text="Load to &phase…",
         )
+        obs_menu = file_menu.addMenu("Open &observation")
+        obs_menu.setObjectName("openObservation")
+        self._add_target_actions(
+            obs_menu,
+            "openObservation",
+            self._load_observations,
+            scratch_text="Load to &scratch…",
+            phase_text="Load to &phase…",
+        )
         new_phase_action = file_menu.addAction("&New phase…")
         new_phase_action.setObjectName("newPhase")
         new_phase_action.triggered.connect(self._new_phase)
@@ -693,10 +702,13 @@ class MainWindow(QtWidgets.QMainWindow):
         for kind, (label, _title, _filt) in _ADD_TO_PHASE_PICKERS.items():
             action = add_menu.addAction(label)
             action.triggered.connect(lambda _checked=False, k=kind: self._add_existing_to_phase(k))
-        # A figure is an authored artifact copied into the phase (vs. the producer pointers above),
-        # but that's internal — the menu reads as one flat "add this to the phase" list.
+        # Figures + observations are authored artifacts copied into the phase (vs. the producer
+        # pointers above), but that's internal — the menu reads as one flat "add to phase" list.
         add_menu.addAction("Figure…").triggered.connect(
             lambda _checked=False: self._add_figure_to_phase()
+        )
+        add_menu.addAction("Observation…").triggered.connect(
+            lambda _checked=False: self._add_observation_to_phase()
         )
         self._phase_add_button.setMenu(add_menu)
         self._phase_add_button.setEnabled(False)  # enabled once a phase is loaded
@@ -741,6 +753,28 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
                 continue
             self._save_figure(spec, target="phase")  # writes it into figures/ + indexes it
+
+    def _add_observation_to_phase(self) -> None:
+        """Add-to-phase ▸ Observation…: copy an existing observation into the phase's
+        observations/ folder and index it (with its dependencies). Index-only — its captured
+        view isn't reloaded (that's the tree's Open observation). Bad file -> visible warning."""
+        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self, "Add observation to phase", "", "Observations (*.json);;All files (*)"
+        )
+        for path in paths:
+            try:
+                observation = load_observation(path)
+            except Exception as exc:  # not an observation / unreadable -> visible warning, no crash
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Could not add to the manifest",
+                    f"Could not read observation {Path(path).name}:\n\n{exc}",
+                )
+                continue
+            added = self._index_observation(observation, "phase")
+            self.statusBar().showMessage(
+                f"Added observation {observation.id} to the phase{self._dep_suffix(added)}"
+            )
 
     def _toggle_sidebar(self, side: _Side) -> None:
         """Collapse/expand a sidebar, resize the splitter, and sync the View checkmark."""
@@ -945,6 +979,30 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         for path in paths:
             self._index_producer(path, kind="noise", target=target)
+
+    def _load_observations(self, target: _Target) -> None:
+        """File > Open observation ▸ Load to scratch / phase: copy an existing observation into
+        ``target`` (observations/ folder) and index it. Index-only — its captured view isn't
+        reloaded (that's the tree's Open observation). Mirrors the producer loads (B10g-C)."""
+        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self, "Open observation", "", "Observations (*.json);;All files (*)"
+        )
+        for path in paths:
+            try:
+                observation = load_observation(path)
+            except Exception as exc:  # not an observation / unreadable -> visible warning, no crash
+                self.statusBar().showMessage(f"Could not open observation {Path(path).name}: {exc}")
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Could not add to the manifest",
+                    f"Could not read observation {Path(path).name}:\n\n{exc}",
+                )
+                continue
+            added = self._index_observation(observation, target)
+            where = "the phase" if target == "phase" else "scratch"
+            self.statusBar().showMessage(
+                f"Loaded observation {observation.id} into {where}{self._dep_suffix(added)}"
+            )
 
     def _index_producer(
         self, path: str, *, kind: Literal["bank", "run", "model", "noise"], target: _Target
@@ -1346,28 +1404,36 @@ class MainWindow(QtWidgets.QMainWindow):
             traces=traces,
             references=references_from(observations=parents),
         )
-        if self._resolve_save_target(target) == "phase":
-            assert self._phase_manifest is not None  # resolver returns "phase" only with one open
+        resolved = self._resolve_save_target(target)
+        added = self._index_observation(observation, resolved)
+        where = "the phase" if resolved == "phase" else "scratch"
+        self.statusBar().showMessage(
+            f"Saved observation {observation.id} to {where}{self._dep_suffix(added)}"
+        )
+
+    def _index_observation(self, observation: Observation, target: _Target) -> int:
+        """Write ``observation`` into ``target`` (the loaded phase or scratch) + index it. The
+        phase pulls its dependency closure (returns how many deps were auto-added); scratch
+        returns 0. Shared by Save-observation, File ▸ Open observation, and the Phase-tree
+        Add ▸ Observation… (B10g)."""
+        if target == "phase":
+            assert self._phase_manifest is not None  # callers only pass "phase" with one open
             save_observation(observation, self._phase_dir)
             save_manifest(
                 with_entry(self._phase_manifest, "observations", observation_entry(observation)),
                 self._phase_dir,
             )
             self._reindex_phase_after_write()  # tree shows it; validation preserved
-            added = self._auto_add_into_phase(observation_dependency_ids(observation))
-            self.statusBar().showMessage(
-                f"Saved observation {observation.id}{self._dep_suffix(added)}"
-            )
-        else:
-            save_observation(observation, self._scratch_dir)  # into the scratch area...
-            save_manifest(  # ...and index it in the scratch manifest
-                with_entry(
-                    load_scratch(self._scratch_dir), "observations", observation_entry(observation)
-                ),
-                self._scratch_dir,
-            )
-            self._refresh_scratch()
-            self.statusBar().showMessage(f"Saved observation {observation.id} to scratch")
+            return self._auto_add_into_phase(observation_dependency_ids(observation))
+        save_observation(observation, self._scratch_dir)  # into the scratch area...
+        save_manifest(  # ...and index it in the scratch manifest
+            with_entry(
+                load_scratch(self._scratch_dir), "observations", observation_entry(observation)
+            ),
+            self._scratch_dir,
+        )
+        self._refresh_scratch()
+        return 0
 
     def _existing_observation_ids(self, target: _Target | None = None) -> list[str]:
         """Observation ids offered as parent links. A phase-bound save sees the phase's; a
