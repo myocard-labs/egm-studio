@@ -147,9 +147,12 @@ order below reflects that.
   distribution-grid KDEs, the scatter, the result table (B7-filter-A). So the win, *if*
   profiling flags filtering at all, is recomputing only the *changed* downstream views, not
   the masking. Demoted from a build item to a profiling-pass check.
-- **Scatter decimation** (LTTB / min-max) for the two-large-banks overplot case that
-  bring-to-front can't fix (roadmap B7-scatter-front note). Low urgency — the scatter *data
-  prep* is ~18 ms; overplotting is a visual problem, not a timing one.
+- **Scatter decimation** for the two-large-banks overplot case that bring-to-front can't fix
+  (roadmap B7-scatter-front note). Overplotting is a *visual* problem, not a timing one (the
+  data prep is ~18 ms). **Shipped 2026-07-06** as an *opt-in* per-source uniform subsample (a
+  Decimate toggle + a pts/source level). Correction: the LTTB / min-max named above apply to
+  **1-D trace-line** downsampling, not a 2-D feature scatter — a uniform random subsample is
+  the right decimation for a point cloud.
 
 ---
 

@@ -943,12 +943,19 @@ freeze fix, and the tiered store is re-cast as revisit-latency.
   flags filtering at all, the win is *recomputing only the downstream
   views that actually changed*, not the masking. Demoted from a
   standalone item to a profiling-pass check.
-- **Scatter at very large N (overplotting).** The B7-scatter-front
-  bring-to-front button is the short-term fix for *one* huge bank burying
-  the others; when *two* banks are both very large it can't help (whichever
-  is on top still hides the other). Needs a real strategy: point-decimation,
-  per-point alpha / density shading, or 2-D-histogram / hexbin rendering so
-  neither source overplots the other. Decide + implement here.
+- **Scatter at very large N (overplotting) — ✓ shipped 2026-07-06.** The
+  B7-scatter-front bring-to-front button only helps when *one* bank buries
+  the others; two large banks still overplot each other. Chosen strategy
+  (with Daniel): **opt-in point-decimation** — a *Decimate* checkbox (off by
+  default, so nothing changes for small sets) + a *pts/source* spinbox that
+  caps each source to a deterministic uniform subsample (fixed seed, so the
+  cloud doesn't jitter on a refilter). `draw_feature_scatter` gained a
+  `max_points` param; the widget wires the toggle + level. Decimation only
+  thins the *display* — the result list always lists every trace. Density
+  hexbin was rejected: it kills click-to-select and two overlaid density
+  fields read muddy (the scatter's job is interactive selection). *(The
+  survey's "LTTB / min-max" note was a mis-map — those downsample 1-D trace
+  lines, not a 2-D scatter; a uniform subsample is the right tool here.)*
 - **Test-suite / CI health.** The pytest-qt GUI tests each pay ~2-3 s of Qt
   startup, so the suite has grown slow, and a **wedged Qt modal froze CI for
   ~3 hours** once. A per-test hang-guard already shipped (2026-07-06:
