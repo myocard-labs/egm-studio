@@ -46,12 +46,11 @@ def test_prediction_bank_adds_ml_actions() -> None:
     assert [a.id for a in actions] == [
         "explore_signal",
         "view_feature_distributions",
-        "view_ml_diagnostics",
-        "compare_bank",
+        "view_ml_diagnostics",  # the "Compare with another bank" placeholder was pruned
     ]
     by_id = {a.id: a for a in actions}
     assert by_id["view_ml_diagnostics"].available is True  # B8f — feeds Flow B
-    assert by_id["compare_bank"].available is False  # pair-compare lands in B8g
+    assert all(a.available for a in actions)  # no dead placeholders left
     # additive-aware: with a bank loaded, the ML-diagnostics viewer relabels to Add …
     assert (
         phase_actions.menu_label(by_id["view_ml_diagnostics"], add_mode=True)
@@ -81,9 +80,9 @@ def test_figure_actions_are_dynamic() -> None:
     assert type_actions(Role.figure) == figure_actions(output_exists=False)
 
 
-def test_model_has_viewers_but_no_metadata() -> None:
-    assert [a.id for a in type_actions(Role.model)] == ["go_to_run", "view_architecture"]
-    # model + paper are Reveal / Copy only — no Show metadata
+def test_model_and_paper_are_info_only() -> None:
+    assert type_actions(Role.model) == ()  # the never-built model viewers were pruned
+    # model + paper are Reveal / Copy only — no Show metadata (yet)
     assert info_actions(Role.model) == UNIVERSAL_ACTIONS
     assert info_actions(Role.paper) == UNIVERSAL_ACTIONS
     assert "show_metadata" not in {a.id for a in actions_for(Role.model)}

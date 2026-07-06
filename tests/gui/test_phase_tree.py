@@ -151,18 +151,14 @@ def test_run_menu_enables_view_curves(qtbot: QtBot) -> None:
     assert _menu_action(menu, "Show metadata").isEnabled() is True
 
 
-def test_model_menu_disables_planned_action(qtbot: QtBot) -> None:
-    tree = _populated(qtbot)
-    menu = tree._artifact_menu(_child(_top(tree, 6), 0).text(0))  # a model
-    assert _menu_action(menu, "Go to training run").isEnabled() is False  # not wired yet
-
-
-def test_model_menu_has_no_show_metadata(qtbot: QtBot) -> None:
+def test_model_menu_is_info_only(qtbot: QtBot) -> None:
     tree = _populated(qtbot)
     labels = _menu_labels(tree._artifact_menu(_child(_top(tree, 6), 0).text(0)))  # a model
-    assert "Go to training run" in labels
-    assert "Show metadata" not in labels  # .pt checkpoints have no cheap file view
-    assert labels[-3:] == ["Reveal file", "Copy id", "Remove from phase"]  # + curator (B10g)
+    # the never-built viewers were pruned; no Show metadata yet either
+    assert "Go to training run" not in labels
+    assert "View architecture" not in labels
+    assert "Show metadata" not in labels
+    assert labels == ["Reveal file", "Copy id", "Remove from phase"]  # info + curator only
 
 
 def test_triggering_action_emits_signal(qtbot: QtBot) -> None:

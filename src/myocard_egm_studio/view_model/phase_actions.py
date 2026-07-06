@@ -69,7 +69,6 @@ _PREDICTION_BANK = (
     _EXPLORE,
     _FEATURE_DIST,
     ArtifactAction("view_ml_diagnostics", "View ML diagnostics"),  # wired in B8f (Flow B)
-    ArtifactAction("compare_bank", "Compare with another bank…", available=False, note=_B8),
 )
 
 
@@ -103,10 +102,9 @@ _VIEWERS_BY_ROLE: dict[Role, tuple[ArtifactAction, ...]] = {
     Role.training_run: (
         ArtifactAction("view_curves", "View training curves"),  # wired in B8f (Flow B Training)
     ),
-    Role.model: (
-        ArtifactAction("go_to_run", "Go to training run", available=False, note=_B8),
-        ArtifactAction("view_architecture", "View architecture", available=False, note=_B8),
-    ),
+    Role.model: (),  # no viewers wired; Show metadata + the universal info actions only.
+    # (Dropped the never-built "Go to training run" + "View architecture" placeholders — a
+    # model-architecture figure for the paper is an open question, likely a separate tool.)
     Role.observation: (
         ArtifactAction("open_observation", "Open observation"),  # reloads the captured view
         ArtifactAction("edit_observation", "Edit observation"),
