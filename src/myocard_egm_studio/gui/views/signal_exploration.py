@@ -216,14 +216,18 @@ class SignalExplorationView(QtWidgets.QWidget):
         filtered frame on every Recalculate. The distribution grid + per-bank stats
         reflect the filter just like the list and scatter, so filtering shows how the
         distributions shift (e.g. narrowing a metadata range). No tab switch — the
-        landing is an explicit :meth:`show_summary` / :meth:`show_explore`. ``progress``
-        drives the table build on the big initial load.
+        landing is an explicit :meth:`show_summary` / :meth:`show_explore`.
+
+        ``progress`` drives the *distribution-grid* rebuild (Block 11): the model/view
+        table build is fast now, so the per-panel KDE grid is the slow step, and pumping
+        the dialog between its panels is what keeps the window responsive on a big
+        load / filter instead of freezing.
         """
         self._frame = frame
-        self._result_list.set_frame(frame, progress=progress)
+        self._result_list.set_frame(frame)
         self._detail.set_context(frame, self._traces)  # the finds search the filtered frame
         self._scatter.set_series(scatter_series_by_source(frame))
-        self._feature_grid.set_groups(feature_groups_by_source(frame))
+        self._feature_grid.set_groups(feature_groups_by_source(frame), progress=progress)
         self._summary_panel.set_summaries(_summaries_by_source(frame))
 
     def show_summary(self) -> None:

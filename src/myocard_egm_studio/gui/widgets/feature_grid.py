@@ -13,7 +13,7 @@ curves compare more cleanly than overlaid step histograms).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import pyqtgraph as pg
 from PySide6 import QtCore, QtWidgets
@@ -172,10 +172,19 @@ class FeatureDistributionGrid(QtWidgets.QWidget):
 
     # -- public API -----------------------------------------------------------
 
-    def set_groups(self, groups: Sequence[FeatureGroup]) -> None:
-        """Overlay one distribution curve per group in each feature panel."""
+    def set_groups(
+        self, groups: Sequence[FeatureGroup], *, progress: Callable[[int, int], None] | None = None
+    ) -> None:
+        """Overlay one distribution curve per group in each feature panel.
+
+        ``progress`` (the load / filter rebuild, Block 11) is called ``(panels_done,
+        panels_total)`` after each panel's KDE is drawn, so the caller can pump its
+        progress dialog between panels — the per-panel KDE is the slow rebuild step
+        (~300 ms each at IAFDB scale), so this keeps the window responsive instead of
+        freezing on the whole grid. It stays None for the cheap theme / kind redraws.
+        """
         self._groups = list(groups)
-        self._rebuild()
+        self._rebuild(progress=progress)
 
     def set_group(self, group: FeatureGroup) -> None:
         """Convenience for the single-bank case: overlay just one group."""
@@ -232,7 +241,7 @@ class FeatureDistributionGrid(QtWidgets.QWidget):
             panel.setFixedSize(size)
         self._flow_host.updateGeometry()
 
-    def _rebuild(self) -> None:
+    def _rebuild(self, progress: Callable[[int, int], None] | None = None) -> None:
         while self._flow.count():
             item = self._flow.takeAt(0)
             widget = item.widget() if item is not None else None
@@ -244,7 +253,9 @@ class FeatureDistributionGrid(QtWidgets.QWidget):
         if not self._groups:
             return
         units = self._groups[0].units or {}
-        for feature in self._groups[0].values:
+        features = list(self._groups[0].values)
+        total = len(features)
+        for index, feature in enumerate(features):
             panel = pg.PlotWidget()
             panel.setBackground(self._style.background)
             draw_feature_panel(
@@ -259,6 +270,8 @@ class FeatureDistributionGrid(QtWidgets.QWidget):
             )
             self._flow.addWidget(panel)
             self._panels.append(panel)
+            if progress is not None:  # pump the caller's dialog between panels (Block 11)
+                progress(index + 1, total)
         self._apply_panel_size()
 
     def _on_kind(self, index: int) -> None:
