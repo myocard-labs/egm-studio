@@ -32,6 +32,7 @@ _METADATA_ROLES = {
     Role.training_run,
     Role.figure,
     Role.observation,
+    Role.model,
 }
 
 
@@ -81,9 +82,17 @@ def test_has_metadata_view_matches_roles() -> None:
         assert has_metadata_view(role) is (role in _METADATA_ROLES)
 
 
+def test_model_metadata_shows_the_raw_json(tmp_path: Path) -> None:
+    path = tmp_path / "best.model_metadata.json"
+    path.write_text('{"schema_version": "1.1", "model_id": "model_demo_2026-06-26"}')
+    text = artifact_metadata_text(Role.model, path)  # read directly, tolerates old versions
+    assert "model_demo_2026-06-26" in text
+    assert '"schema_version": "1.1"' in text  # pretty-printed as-is
+
+
 def test_role_without_a_view_raises() -> None:
     with pytest.raises(ValueError):
-        artifact_metadata_text(Role.model, "anything")
+        artifact_metadata_text(Role.paper, "anything")  # papers (dirs) have no file view
 
 
 def test_noise_summary_reports_header(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

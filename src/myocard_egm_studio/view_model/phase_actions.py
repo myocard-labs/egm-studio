@@ -55,6 +55,7 @@ _METADATA_ROLES: frozenset[Role] = frozenset(
         Role.training_run,
         Role.figure,
         Role.observation,
+        Role.model,  # the model-metadata sidecar JSON is viewable
     }
 )
 

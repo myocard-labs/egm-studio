@@ -151,14 +151,13 @@ def test_run_menu_enables_view_curves(qtbot: QtBot) -> None:
     assert _menu_action(menu, "Show metadata").isEnabled() is True
 
 
-def test_model_menu_is_info_only(qtbot: QtBot) -> None:
+def test_model_menu_is_metadata_and_info_only(qtbot: QtBot) -> None:
     tree = _populated(qtbot)
     labels = _menu_labels(tree._artifact_menu(_child(_top(tree, 6), 0).text(0)))  # a model
-    # the never-built viewers were pruned; no Show metadata yet either
-    assert "Go to training run" not in labels
+    assert "Go to training run" not in labels  # the never-built viewers were pruned
     assert "View architecture" not in labels
-    assert "Show metadata" not in labels
-    assert labels == ["Reveal file", "Copy id", "Remove from phase"]  # info + curator only
+    # the model-metadata JSON is now viewable, then the info + curator actions
+    assert labels == ["Show metadata", "Reveal file", "Copy id", "Remove from phase"]
 
 
 def test_triggering_action_emits_signal(qtbot: QtBot) -> None:

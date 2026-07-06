@@ -1,17 +1,21 @@
 """File-level metadata for a phase artifact — the "Show metadata" content (Block 6).
 
 The right-click "Show metadata" reads an artifact's *actual file* (not its manifest
-pointer) and renders a per-type summary. All reads go through egm-data — egm-studio
-never opens an HDF5/JSON directly (architecture invariant #1). Three tiers:
+pointer) and renders a per-type summary. Structured reads route through egm-data
+(architecture invariant #1); the lone exception is the model-metadata sidecar, shown as
+raw JSON so the view tolerates schema-version drift. Tiers:
 
 - **EGM banks** (the four bank roles) -> a curated :class:`ClassifierBank` summary:
   trace count, sample rate, labels + their distribution, splits, and each source
   bank's free ``bank_metadata`` dict (this is where synthetic vs IAFDB banks differ).
 - **Noise banks** -> the slim noise-bank header (source, rate, segment count).
 - **Runs / figures / observations** -> the validated record, pretty-printed as JSON.
+- **Models** -> the model-metadata sidecar JSON, shown as-is (read directly, not via the
+  typed loader, so it tolerates versions the loader would reject — a display, not an
+  interpretation; matches ``save.producer.model_entry``).
 
-Models (``.pt`` checkpoints) and papers (directories) have no cheap file view and
-are intentionally absent here — their menu offers Reveal file + Copy id only.
+Papers (directories) have no cheap file view and are intentionally absent here — their
+menu offers Reveal file + Copy id only.
 """
 
 from __future__ import annotations
@@ -140,6 +144,13 @@ def _observation_json(path: Path) -> str:
     return _as_json(load_observation(path))
 
 
+def _model_json(path: Path) -> str:
+    """The model-metadata sidecar, shown as-is. Model-metadata schema versions drift and this
+    is a display (not an interpretation), so it reads the JSON directly + pretty-prints it —
+    tolerating versions the typed loader would reject (matches ``save.producer.model_entry``)."""
+    return json.dumps(json.loads(path.read_text(encoding="utf-8")), indent=2, default=str)
+
+
 # -- shared helpers ---------------------------------------------------------------
 
 
@@ -168,4 +179,5 @@ _READERS: dict[Role, Callable[[Path], str]] = {
     Role.training_run: _run_json,
     Role.figure: _figure_json,
     Role.observation: _observation_json,
+    Role.model: _model_json,
 }

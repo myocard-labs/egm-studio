@@ -9,6 +9,7 @@ from myocard_egm_contracts import Role
 from myocard_egm_studio.view_model import phase_actions
 from myocard_egm_studio.view_model.artifact_metadata import has_metadata_view
 from myocard_egm_studio.view_model.phase_actions import (
+    SHOW_METADATA,
     UNIVERSAL_ACTIONS,
     actions_for,
     info_actions,
@@ -80,12 +81,13 @@ def test_figure_actions_are_dynamic() -> None:
     assert type_actions(Role.figure) == figure_actions(output_exists=False)
 
 
-def test_model_and_paper_are_info_only() -> None:
+def test_model_has_show_metadata_but_no_viewers() -> None:
     assert type_actions(Role.model) == ()  # the never-built model viewers were pruned
-    # model + paper are Reveal / Copy only — no Show metadata (yet)
-    assert info_actions(Role.model) == UNIVERSAL_ACTIONS
+    # the model-metadata JSON is viewable, so the model gets Show metadata...
+    assert "show_metadata" in {a.id for a in actions_for(Role.model)}
+    assert info_actions(Role.model) == (SHOW_METADATA, *UNIVERSAL_ACTIONS)
+    # ...but a paper (a directory) still has no file view — Reveal / Copy only
     assert info_actions(Role.paper) == UNIVERSAL_ACTIONS
-    assert "show_metadata" not in {a.id for a in actions_for(Role.model)}
 
 
 def test_metadata_roles_lead_the_info_group() -> None:
