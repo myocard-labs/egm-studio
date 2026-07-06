@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
@@ -580,6 +581,78 @@ def test_view_noise_segments_warns_on_a_read_failure(
 
     assert warned and "Could not read noise segments" in warned[0]  # a loud, friendly failure
     assert window._modes_stack.currentIndex() != 1  # didn't switch to a broken Noise view
+
+
+def test_add_to_phase_control_is_gated_on_an_open_phase(qtbot: QtBot, tmp_path: Path) -> None:
+    window = _window(qtbot, tmp_path)
+    assert not window._phase_add_button.isEnabled()  # nothing to add to yet
+    _open_phase(window, tmp_path)
+    assert window._phase_add_button.isEnabled()  # a phase is open -> the Add control lights up
+
+
+def test_add_existing_to_phase_indexes_without_opening_a_view(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = _window(qtbot, tmp_path)
+    _open_phase(window, tmp_path)
+    bank = tmp_path / "bank.h5"
+    bank.write_bytes(b"")
+    _pick_files(monkeypatch, bank)
+    indexed: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        window,
+        "_index_producer",
+        lambda path, *, kind, target: indexed.append((Path(path).name, kind, target)),
+    )
+    opened: list[object] = []
+    monkeypatch.setattr(window, "_open_bank_explore", lambda *a, **k: opened.append(a))
+
+    window._add_existing_to_phase("bank")
+
+    assert indexed == [("bank.h5", "bank", "phase")]  # indexed into the phase...
+    assert opened == []  # ...index-only: no Flow A view opened (unlike File ▸ Open bank)
+
+
+def test_add_existing_to_phase_lands_the_entry_in_the_manifest(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = _window(qtbot, tmp_path)
+    _open_phase(window, tmp_path)
+    model_file = tmp_path / "best.model_metadata.json"
+    model_file.write_text('{"model_id": "model_studio_fixture_2026-06-26"}')
+    _pick_files(monkeypatch, model_file)
+
+    window._add_existing_to_phase("model")
+
+    assert window._phase_manifest is not None
+    assert "model_studio_fixture_2026-06-26" in entries_by_id(window._phase_manifest)
+
+
+def test_add_figure_to_phase_copies_the_spec_in_and_indexes_it(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = _window(qtbot, tmp_path)
+    phase = _open_phase(window, tmp_path)
+    spec_file = tmp_path / "fig_demo.json"
+    spec_file.write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "id": "fig_demo",
+                "description": "demo",
+                "recipe": "prediction-histogram",
+                "inputs": {"groups": [{"name": "g", "bank_id": "lpred_a_2026-06-27"}]},
+                "output": {"format": "pdf", "path": "out.pdf"},
+            }
+        )
+    )
+    _pick_files(monkeypatch, spec_file)
+
+    window._add_figure_to_phase()
+
+    assert (phase / "figures" / "fig_demo.json").exists()  # a figure lives inside the phase...
+    assert window._phase_manifest is not None
+    assert "fig_demo" in entries_by_id(window._phase_manifest)  # ...and is indexed
 
 
 def test_indexing_an_id_less_file_warns_and_indexes_nothing(
