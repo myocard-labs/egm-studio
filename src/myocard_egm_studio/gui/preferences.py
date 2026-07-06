@@ -27,6 +27,7 @@ _CONFUSION_NORM_KEY = "ml/confusion_norm"
 _CONFUSION_NORMS = ("row", "col", "overall", "count")
 _SCRATCH_DIR_KEY = "save/scratch_dir"
 _AUTO_ADD_DEPS_KEY = "save/auto_add_dependencies"
+_CACHE_CEILING_KEY = "cache/memory_ceiling_mb"
 
 
 def _settings() -> QtCore.QSettings:
@@ -147,3 +148,23 @@ def load_auto_add_deps(default: bool) -> bool:
 def save_auto_add_deps(value: bool) -> None:
     """Persist the auto-add-dependencies toggle (Settings) to restore on next launch."""
     _settings().setValue(_AUTO_ADD_DEPS_KEY, value)
+
+
+def load_cache_ceiling_mb(default: int) -> int:
+    """Return the persisted view-model cache ceiling (MB, Block 11), or ``default``.
+
+    The in-RAM hot tier of the view-model cache is bounded by this; the shell converts
+    it to bytes for the ``FrameStore``. Parsed defensively (IniFormat stores as a string)
+    and floored at 1 MB — a non-positive / unparseable value falls back to ``default``.
+    """
+    raw = _settings().value(_CACHE_CEILING_KEY, default)
+    try:
+        value = int(float(str(raw)))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+def save_cache_ceiling_mb(value: int) -> None:
+    """Persist the view-model cache ceiling in MB (Settings) to restore on next launch."""
+    _settings().setValue(_CACHE_CEILING_KEY, int(value))

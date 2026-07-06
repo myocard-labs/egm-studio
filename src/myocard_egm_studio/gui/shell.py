@@ -35,9 +35,11 @@ from myocard_egm_studio.charts.palette import color_for
 from myocard_egm_studio.gui.new_phase_dialog import NewPhaseDialog
 from myocard_egm_studio.gui.preferences import (
     load_auto_add_deps,
+    load_cache_ceiling_mb,
     load_scratch_dir,
     load_theme,
     save_auto_add_deps,
+    save_cache_ceiling_mb,
     save_scratch_dir,
     save_theme,
 )
@@ -342,7 +344,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # The Block 11 view-model cache: re-opening a bank serves its extracted frame from
         # here instead of re-running the O(T^2) extraction. In-memory tier now; a disk cold
         # tier (write-through) is added behind the same get_or_compute in a later step.
-        self._frame_store = FrameStore(_DEFAULT_CACHE_CEILING_MB * 1024 * 1024)
+        # The ceiling is a user preference (Settings ▸ View-model cache); Flush clears it.
+        self._cache_ceiling_mb = load_cache_ceiling_mb(_DEFAULT_CACHE_CEILING_MB)
+        self._frame_store = FrameStore(self._cache_ceiling_mb * 1024 * 1024)
         self._applied_spec: FilterSpec = FilterSpec(())  # last-applied filter (B10 capture)
         self._loaded_runs: list[tuple[str, TrainingCurve]] = []  # training runs in Flow B (B8f)
         self.setWindowTitle(_WINDOW_TITLE)
@@ -533,20 +537,32 @@ class MainWindow(QtWidgets.QMainWindow):
         return DEFAULT_THEME
 
     def _open_settings(self) -> None:
-        """File ▸ Settings…: edit the scratch folder + theme; apply the choices on accept."""
+        """File ▸ Settings…: edit the scratch folder + theme + cache; apply on accept."""
         dialog = SettingsDialog(
             self,
             scratch_dir=self._scratch_dir,
             theme=self._current_theme,
             themes=THEME_NAMES,
             auto_add_deps=self._auto_add_deps,
+            cache_ceiling_mb=self._cache_ceiling_mb,
         )
+        dialog.flushRequested.connect(lambda: self._flush_cache(dialog))
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted.value:
             self._scratch_dir = dialog.scratch_dir()
             save_scratch_dir(self._scratch_dir)
             self._auto_add_deps = dialog.auto_add_deps()
             save_auto_add_deps(self._auto_add_deps)
+            self._cache_ceiling_mb = dialog.cache_ceiling_mb()
+            save_cache_ceiling_mb(self._cache_ceiling_mb)
+            self._frame_store.set_ceiling(self._cache_ceiling_mb * 1024 * 1024)
             self._set_theme(dialog.theme())
+
+    def _flush_cache(self, parent: QtWidgets.QWidget) -> None:
+        """Clear the view-model cache (Settings ▸ Flush cache now) + confirm."""
+        self._frame_store.flush()
+        QtWidgets.QMessageBox.information(
+            parent, "View-model cache", "The view-model cache was cleared."
+        )
 
     # -- body -----------------------------------------------------------------
 

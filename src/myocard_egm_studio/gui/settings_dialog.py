@@ -10,13 +10,20 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 __all__ = ["SettingsDialog"]
 
+_CEILING_MIN_MB = 128
+_CEILING_MAX_MB = 65536  # 64 GB — a generous cap, well past any realistic working set
+_CEILING_STEP_MB = 128
+
 
 class SettingsDialog(QtWidgets.QDialog):
-    """Edit the scratch folder + theme; the shell reads the choices back on accept."""
+    """Edit the scratch folder + theme + view-model cache; the shell reads the choices back."""
+
+    #: Emitted when the user clicks "Flush cache now"; the shell clears the frame store.
+    flushRequested = QtCore.Signal()
 
     def __init__(
         self,
@@ -26,11 +33,12 @@ class SettingsDialog(QtWidgets.QDialog):
         theme: str = "",
         themes: Sequence[str] = (),
         auto_add_deps: bool = True,
+        cache_ceiling_mb: int = 1024,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("settingsDialog")
         self.setWindowTitle("Settings")
-        self.resize(520, 190)
+        self.resize(520, 230)
 
         self._scratch_edit = QtWidgets.QLineEdit(scratch_dir)
         self._scratch_edit.setObjectName("scratchDir")
@@ -54,6 +62,22 @@ class SettingsDialog(QtWidgets.QDialog):
         if theme in self._themes:
             self._theme_combo.setCurrentIndex(self._themes.index(theme))
 
+        # View-model cache (Block 11): the in-RAM ceiling + a manual flush. The spinbox
+        # is a persisted preference; the button clears the store immediately (the shell
+        # handles flushRequested).
+        self._ceiling_spin = QtWidgets.QSpinBox()
+        self._ceiling_spin.setObjectName("cacheCeiling")
+        self._ceiling_spin.setRange(_CEILING_MIN_MB, _CEILING_MAX_MB)
+        self._ceiling_spin.setSingleStep(_CEILING_STEP_MB)
+        self._ceiling_spin.setSuffix(" MB")
+        self._ceiling_spin.setValue(cache_ceiling_mb)
+        self._flush_button = QtWidgets.QPushButton("Flush cache now")
+        self._flush_button.setObjectName("flushCache")
+        self._flush_button.clicked.connect(self.flushRequested)
+        cache_row = QtWidgets.QHBoxLayout()
+        cache_row.addWidget(self._ceiling_spin, 1)
+        cache_row.addWidget(self._flush_button)
+
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.StandardButton.Save
             | QtWidgets.QDialogButtonBox.StandardButton.Cancel
@@ -65,6 +89,7 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow("Scratch folder", scratch_row)
         form.addRow("Theme", self._theme_combo)
         form.addRow("Dependencies", self._auto_add_check)
+        form.addRow("View-model cache", cache_row)
         hint = QtWidgets.QLabel(
             "Observations and figures saved with no phase open go to the scratch folder,"
             " then Promote them into a phase."
@@ -93,3 +118,6 @@ class SettingsDialog(QtWidgets.QDialog):
 
     def auto_add_deps(self) -> bool:
         return self._auto_add_check.isChecked()
+
+    def cache_ceiling_mb(self) -> int:
+        return self._ceiling_spin.value()
