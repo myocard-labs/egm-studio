@@ -94,6 +94,7 @@ from myocard_egm_studio.save import (
     with_entry,
 )
 from myocard_egm_studio.view_model import (
+    FrameStore,
     apply_filter,
     combine_view_models,
     entries_by_id,
@@ -127,6 +128,11 @@ _MAIN_MIN_W = 480
 _MAIN_DEFAULT_W = 620
 _STRIP_W = 40  # width of a collapsed sidebar's icon strip
 _UNCONSTRAINED_W = 16777215  # Qt's QWIDGETSIZE_MAX — undoes a fixed width
+
+#: Default view-model cache ceiling (MiB) — the hot in-RAM tier of the Block 11 tiered
+#: store. A view-model frame is ~31 MB at IAFDB scale, so this holds ~30 banks resident.
+#: User-settable in Settings (C3 makes it a preference).
+_DEFAULT_CACHE_CEILING_MB = 1024
 # Child order within the horizontal work-area splitter.
 _COL_LEFT, _COL_MAIN, _COL_RIGHT = 0, 1, 2
 
@@ -333,6 +339,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._metadata_dialog: QtWidgets.QDialog | None = None
         self._loaded_banks: list[_LoadedBank] = []  # banks open in Flow A (B7.8)
         self._explore_df: pd.DataFrame | None = None  # the combined view-model table
+        # The Block 11 view-model cache: re-opening a bank serves its extracted frame from
+        # here instead of re-running the O(T^2) extraction. In-memory tier now; a disk cold
+        # tier (write-through) is added behind the same get_or_compute in a later step.
+        self._frame_store = FrameStore(_DEFAULT_CACHE_CEILING_MB * 1024 * 1024)
         self._applied_spec: FilterSpec = FilterSpec(())  # last-applied filter (B10 capture)
         self._loaded_runs: list[tuple[str, TrainingCurve]] = []  # training runs in Flow B (B8f)
         self.setWindowTitle(_WINDOW_TITLE)
@@ -858,7 +868,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 raise _LoadCancelled
 
         try:
-            frame, traces = load_exploration(path, progress=on_progress)
+            frame, traces = load_exploration(path, progress=on_progress, store=self._frame_store)
         except _LoadCancelled:
             self.statusBar().showMessage("Bank load canceled.")
             dialog.close()

@@ -17,7 +17,7 @@ import pandas as pd
 from myocard_egm_data.banks import ClassifierBank, load_classifier_bank
 
 from myocard_egm_studio.gui.widgets import TraceData
-from myocard_egm_studio.view_model import ProgressFn, build_view_model
+from myocard_egm_studio.view_model import FrameStore, ProgressFn, build_view_model, view_model_key
 
 # Electrode-ish metadata keys (preference order) + how they read in a plot title.
 _ELECTRODE_PREFIX = {"source_channel": "ch", "pair_index": "pair", "electrode_pair_id": "pair"}
@@ -63,7 +63,11 @@ def load_view_model(path: str | Path, *, source: str | None = None) -> pd.DataFr
 
 
 def load_exploration(
-    path: str | Path, *, source: str | None = None, progress: ProgressFn | None = None
+    path: str | Path,
+    *,
+    source: str | None = None,
+    progress: ProgressFn | None = None,
+    store: FrameStore | None = None,
 ) -> tuple[pd.DataFrame, list[TraceData]]:
     """Load a bank once as both the view-model table and its display traces.
 
@@ -75,11 +79,37 @@ def load_exploration(
 
     ``progress`` is forwarded to the feature-extraction pass (the slow step); the
     GUI passes a callback that drives a progress dialog and raises on Cancel.
+
+    ``store`` (Block 11 tiered cache) memoizes the extracted frame: re-opening a bank
+    that carries a stable id serves the cached frame and skips the O(T^2) extraction.
+    A bank without a stable id can't be safely keyed, so it always extracts.
     """
     bank = load_classifier_bank(path)
     label = source or bank.id or Path(path).stem
-    frame = build_view_model(bank, source=label, progress=progress)
+    frame = _extract_frame(bank, source=label, progress=progress, store=store)
     return frame, traces_from_bank(bank)
+
+
+def _extract_frame(
+    bank: ClassifierBank,
+    *,
+    source: str,
+    progress: ProgressFn | None,
+    store: FrameStore | None,
+) -> pd.DataFrame:
+    """``build_view_model``, memoized in ``store`` when the bank has a cacheable stable id.
+
+    The key mirrors the ``build_view_model`` call's params (``with_features`` /
+    ``positive_label`` defaults), so the cached frame is only reused for an identical
+    extraction. A bank without ``bank.id`` bypasses the cache — an unidentified bank
+    would collide with others under a shared key.
+    """
+    if store is not None and bank.id:
+        key = view_model_key(bank_id=bank.id, source=source)
+        return store.get_or_compute(
+            key, lambda: build_view_model(bank, source=source, progress=progress)
+        )
+    return build_view_model(bank, source=source, progress=progress)
 
 
 def traces_from_bank(bank: ClassifierBank, *, limit: int | None = None) -> list[TraceData]:
