@@ -116,11 +116,15 @@ order below reflects that.
   ~900 MB (the frame is ~31 MB; the widget was the hog). The `canFetchMore` / `fetchMore`
   *streaming* approach is **rejected** (its match / selectRow / filter see only fetched
   rows). No longer conditional.
-- **Background-thread / progress-cover the `set_results` rebuild.** Even virtualized, the
-  KDE grid is ~4 s, so the rebuild (table + KDE + scatter) runs off the UI thread and/or
-  under a progress dialog. This is what actually unfreezes the large→small add: `combine` is
-  3 ms — the cost was always the un-progress-covered GUI rebuild. Same threading covers the
-  slow extraction.
+- **Progress-cover the `set_results` rebuild (cooperative pump) — ✓ shipped 2026-07-06.**
+  Even virtualized, the KDE grid is ~4 s. Rather than introduce the app's first worker
+  thread, the rebuild stays on the UI thread but *pumps* the progress dialog between the 11
+  KDE panels (`feature_grid.set_groups(progress=…)`), consistent with the app's cooperative
+  model. This unfreezes the large→small add + the filter-recalc — worst-case gap between
+  repaints ~390 ms (one panel) vs the old ~4 s frozen block; the load path stays cancellable.
+  `combine` was never the cost (3 ms) — the un-progress-covered GUI rebuild was. Decided (with
+  Daniel, 2026-07-06) over a true worker thread to keep one concurrency model + low risk; the
+  worker-thread escalation is deferred with a trigger (below).
 - **Tiered result store (revisit latency).** In-memory cache keyed by (bank id +
   egm-features version + extraction params), size-aware LRU, spilling the cold tier to a
   temp/cache dir under a **user-settable memory ceiling** (Settings). Re-selecting a loaded
@@ -211,6 +215,14 @@ for a scale we're not near. Recorded with the trigger that would revive it:
   path).
   **Trigger:** we regularly overflow the memory ceiling and the constant disk read/write
   causes significant slowdown.
+- **Escalate to a true worker thread (generalized).** Move heavy compute off the UI thread
+  entirely — the proper async — instead of the cooperative pump we shipped. Applies to **any**
+  prohibitive compute, not just the KDE grid. Requires separating compute from render (pull
+  the scipy KDE math out of the pyqtgraph draw), which also feeds the tiered store (cache
+  computed curves) and pairs naturally with it. Introduces the app's first worker thread + a
+  second concurrency model, so it's deliberately deferred.
+  **Trigger:** a compute cost grows past what a pumped dialog can hide (the per-unit pump gap
+  gets annoyingly long), **or** full mid-rebuild interactivity becomes a requirement.
 
 ---
 
@@ -220,7 +232,7 @@ The largest *raw* wins live **upstream**, not in egm-studio: memory-mapping in *
 the entropy kernel in **egm-features**, and "precompute features when the producer writes
 the bank" in **iafdb-pipeline / egm-classifier** (so egm-studio loads precomputed features
 instead of extracting on every open). Block 11 is deliberately the **egm-studio
-consumer-side half** (cache + threads + virtualize + decimate). The deferred upstream items
+consumer-side half** (cache + responsive rebuild + virtualize + decimate). The deferred upstream items
 above are cross-cutting; coordinate them through the architecture chat if/when their
 triggers fire.
 

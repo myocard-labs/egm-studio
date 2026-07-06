@@ -900,14 +900,21 @@ freeze fix, and the tiered store is re-cast as revisit-latency.
   replacing today's eager `QTableWidget` build. The `fetchMore`
   *streaming* approach is **rejected** (it sees only fetched rows). No
   longer conditional: profiling justified it.
-- **Background-thread / progress-cover the `set_results` rebuild.** Even
-  with the table virtualized, the KDE grid is ~4 s, so the rebuild (table
-  + KDE + scatter) must run off the UI thread and/or under a progress
-  dialog. This is what actually kills the **large→small freeze** (B10g
-  review): adding a *small* bank while a *large* one is loaded re-runs
-  `set_results` over all rows on the main thread — `combine` is cheap, the
-  GUI rebuild is not. Same threading keeps the GUI responsive during the
-  slow extraction.
+- **Progress-cover the `set_results` rebuild (cooperative pump) — ✓ shipped
+  2026-07-06.** With the table virtualized, the KDE grid is the last slow
+  step (~4 s). Rather than introduce the app's first worker thread, the
+  rebuild stays on the UI thread but *pumps* the progress dialog between
+  the 11 KDE panels (`feature_grid.set_groups(progress=…)` threaded through
+  `set_results`), consistent with the app's existing cooperative model. The
+  **large→small freeze** (B10g review) and the filter-recalc now animate +
+  stay responsive instead of freezing — worst-case gap between repaints
+  ~390 ms (one panel) vs the old ~4 s frozen block; the load path stays
+  cancellable. The table build no longer needs pumping (156 ms after
+  virtualization), so the bar tracks the KDE panels (the real cost). This
+  does *not* make the KDE faster — see the deferred worker-thread
+  escalation for that. (Known gap: the theme-change path (`set_style`) still
+  recomputes the KDE unpumped; the tiered store, by caching computed
+  curves, is the natural fix.)
 - **Tiered result store (revisit latency, not the freeze).** Re-cast from
   "centerpiece": the freeze is fixed by the table + threading above; the
   store's job is to avoid recomputing the ~3-min extraction when you
@@ -963,6 +970,16 @@ freeze fix, and the tiered store is re-cast as revisit-latency.
   - *Shrink the frame (dtype + categorical) + copy-on-write* — trigger:
     we regularly overflow the memory ceiling and disk thrash slows things
     down.
+  - *Escalate to a true worker thread (generalized).* Move heavy compute
+    off the UI thread entirely (the proper async) instead of the
+    cooperative pump above — applies to **any** prohibitive compute, not
+    just the KDE grid. Requires separating compute from render (e.g. pull
+    the scipy KDE math out of the pyqtgraph draw), which also feeds the
+    tiered store (cache computed curves) and pairs naturally with it.
+    **Trigger:** a compute cost grows past what a pumped dialog can hide
+    (the per-panel/per-unit gap gets annoyingly long), or full
+    mid-rebuild interactivity becomes a requirement. Chosen against for
+    now (2026-07-06, Daniel) to keep the app single-model + low-risk.
 
 **Deps:**
 
@@ -974,8 +991,10 @@ freeze fix, and the tiered store is re-cast as revisit-latency.
 
 - The large→small freeze is gone: the result table is virtualized
   (model/view, no eager per-cell build) and the `set_results` rebuild is
-  off the UI thread / progress-covered — no multi-second unfeedbacked
-  freeze on add-a-bank, and no ~900 MB table-widget spike.
+  progress-covered (cooperative pump between KDE panels) — no multi-second
+  *unfeedbacked* freeze on add-a-bank, and no ~900 MB table-widget spike.
+  (The rebuild is still ~4 s of KDE, now animated + cancellable; a true
+  worker thread is deferred with a trigger.)
 - Switching between (or re-adding) two already-loaded banks does not
   recompute features — served from the tiered store.
 - The tiered store is version-keyed (egm-features), ceiling-bounded,
