@@ -96,6 +96,9 @@ dev = [
   # GUI integration tests for the Qt shell [ADR-013]; runs headless under
   # offscreen QPA (CI uses xvfb).
   "pytest-qt>=4.4",
+  # Per-test timeout: a hung Qt modal (an un-stubbed dialog) must fail fast with
+  # a traceback, never freeze CI for hours. See the pytest config below.
+  "pytest-timeout>=2.3",
   "ruff>=0.6.0",
   "mypy>=1.10",
   "pre-commit>=3.7",
@@ -182,6 +185,17 @@ addopts = [
   "-ra",
   "--strict-markers",
   "--strict-config",
+]
+# Hang guard (pytest-timeout): no test legitimately runs this long, so a wedged
+# Qt modal / event loop aborts with a full traceback instead of freezing CI for
+# hours. `thread` guarantees the abort even if the main thread is stuck in a C
+# call (a native dialog) that a signal can't interrupt.
+timeout = 120
+timeout_method = "thread"
+markers = [
+  # Auto-applied to everything under tests/gui/ (see conftest.py). Lets the slow
+  # Qt-widget tests be selected out for a fast run: `pytest -m 'not gui'`.
+  "gui: pytest-qt tests that spin up Qt widgets (slower)",
 ]
 filterwarnings = [
   "error",

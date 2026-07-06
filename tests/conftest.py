@@ -24,6 +24,15 @@ from myocard_egm_data.banks import (
     ClassifierTrace,
 )
 
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Auto-tag every test under ``tests/gui/`` with the ``gui`` marker, so the slow
+    Qt-widget tests can be deselected for a fast run (``pytest -m 'not gui'``)."""
+    for item in items:
+        if item.path is not None and item.path.parent.name == "gui":
+            item.add_marker("gui")
+
+
 #: Stable id for the fixture's single source bank (egm-contracts ArtifactId).
 _FIXTURE_BANK_ID = "tbank_studio_fixture_2026-06-27"
 
