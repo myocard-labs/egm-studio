@@ -81,3 +81,37 @@ def test_axis_labels_use_units(qtbot: QtBot) -> None:
 def test_empty_series_clears(qtbot: QtBot) -> None:
     plot = _plot(qtbot)
     assert draw_feature_scatter(plot.getPlotItem(), [], x="peak_to_peak", y="sample_entropy") == []
+
+
+def _big_series(n: int) -> list[ScatterSeries]:
+    rng = np.random.default_rng(1)
+    return [
+        ScatterSeries(
+            name="A",
+            values={"x": rng.normal(0.0, 1.0, n), "y": rng.normal(0.0, 1.0, n)},
+            ids=np.arange(n, dtype=np.int64),
+        )
+    ]
+
+
+def test_max_points_none_plots_every_point(qtbot: QtBot) -> None:
+    plot = _plot(qtbot)
+    (item,) = draw_feature_scatter(plot.getPlotItem(), _big_series(200), x="x", y="y")
+    assert len(item.points()) == 200  # default: decimation off, every point drawn
+
+
+def test_max_points_caps_each_source(qtbot: QtBot) -> None:
+    plot = _plot(qtbot)
+    (item,) = draw_feature_scatter(
+        plot.getPlotItem(), _big_series(200), x="x", y="y", max_points=50
+    )
+    assert len(item.points()) == 50  # subsampled down to the cap
+
+
+def test_decimation_subset_is_deterministic(qtbot: QtBot) -> None:
+    """The fixed seed keeps the subsample stable across redraws (no jitter on refilter)."""
+    plot = _plot(qtbot)
+    series = _big_series(200)
+    (a,) = draw_feature_scatter(plot.getPlotItem(), series, x="x", y="y", max_points=50)
+    (b,) = draw_feature_scatter(plot.getPlotItem(), series, x="x", y="y", max_points=50)
+    assert sorted(int(p.data()) for p in a.points()) == sorted(int(p.data()) for p in b.points())
