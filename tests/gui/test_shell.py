@@ -108,6 +108,22 @@ def test_open_bank_populates_result_list(
     assert "Loaded" in window.statusBar().currentMessage()
 
 
+def test_reopening_a_bank_serves_the_frame_from_cache(
+    qtbot: QtBot, tiny_predictions_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    """Reopening a stable-id bank reuses its cached view-model frame (Block 11 tiered store)."""
+    path = tmp_path / "preds.h5"
+    write_classifier_bank(tiny_predictions_bank, path)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._open_bank_explore(str(path))
+    assert len(window._frame_store) == 1
+    first = window._loaded_banks[0].frame
+    window._open_bank_explore(str(path))  # reopen (replace) -> served from the cache
+    assert len(window._frame_store) == 1  # still one entry, reused
+    assert window._loaded_banks[0].frame is first  # the same cached frame object
+
+
 def test_open_bank_lands_on_summary_with_grid(
     qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
 ) -> None:
@@ -325,7 +341,9 @@ def test_open_bank_cancel_aborts_the_load(
     window = MainWindow()
     qtbot.addWidget(window)
 
-    def cancel_then_progress(_path: str, *, progress: Callable[[int, int], None]) -> object:
+    def cancel_then_progress(
+        _path: str, *, progress: Callable[[int, int], None], store: object = None
+    ) -> object:
         dialog = window.findChild(QtWidgets.QProgressDialog)
         assert dialog is not None  # the shell shows it before load_exploration runs
         dialog.cancel()  # as if the user clicked Cancel

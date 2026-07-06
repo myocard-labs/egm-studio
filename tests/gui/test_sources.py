@@ -3,18 +3,27 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
+import pytest
 from myocard_egm_data.banks import ClassifierBank, write_classifier_bank
 
+from myocard_egm_studio.gui import sources
 from myocard_egm_studio.gui.sources import (
     frame_eval_mode,
+    load_exploration,
     load_traces,
     load_view_model,
     traces_from_bank,
 )
 from myocard_egm_studio.gui.widgets import TraceData
-from myocard_egm_studio.view_model import FEATURE_COLUMNS, IDENTITY_COLUMNS, build_view_model
+from myocard_egm_studio.view_model import (
+    FEATURE_COLUMNS,
+    IDENTITY_COLUMNS,
+    FrameStore,
+    build_view_model,
+)
 
 
 def test_traces_from_bank_adapts(tiny_classifier_bank: ClassifierBank) -> None:
@@ -91,3 +100,37 @@ def test_frame_eval_mode_none_for_a_raw_bank(tiny_classifier_bank: ClassifierBan
 
 def test_frame_eval_mode_none_for_an_empty_frame() -> None:
     assert frame_eval_mode(pd.DataFrame()) is None
+
+
+def test_load_exploration_caches_a_bank_with_a_stable_id(
+    tiny_predictions_bank: ClassifierBank, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stable-id bank is extracted once, then served from the store on reopen (Block 11)."""
+    path = tmp_path / "preds.h5"
+    write_classifier_bank(tiny_predictions_bank, path)
+    store = FrameStore(ceiling_bytes=50_000_000)
+
+    calls: list[int] = []
+
+    def counting(*args: Any, **kwargs: Any) -> pd.DataFrame:
+        calls.append(1)
+        return build_view_model(*args, **kwargs)  # the real extractor (the test's import)
+
+    monkeypatch.setattr(sources, "build_view_model", counting)
+
+    frame1, _ = load_exploration(path, store=store)
+    frame2, _ = load_exploration(path, store=store)
+    assert len(calls) == 1  # extracted once — the reopen is served from the cache
+    assert frame2 is frame1
+    assert len(store) == 1
+
+
+def test_load_exploration_skips_cache_without_a_stable_id(
+    tiny_classifier_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    """A bank with no stable id can't be keyed safely, so it bypasses the store."""
+    path = tmp_path / "synth_bank.h5"  # the fixture bank carries no stable id
+    write_classifier_bank(tiny_classifier_bank, path)
+    store = FrameStore(ceiling_bytes=50_000_000)
+    load_exploration(path, store=store)
+    assert len(store) == 0  # nothing cached
