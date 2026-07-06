@@ -888,6 +888,15 @@ then implements them.
   is on top still hides the other). Needs a real strategy: point-decimation,
   per-point alpha / density shading, or 2-D-histogram / hexbin rendering so
   neither source overplots the other. Decide + implement here.
+- **Test-suite / CI health.** The pytest-qt GUI tests each pay ~2-3 s of Qt
+  startup, so the suite has grown slow, and a **wedged Qt modal froze CI for
+  ~3 hours** once. A per-test hang-guard already shipped (2026-07-06:
+  `pytest-timeout`, `timeout = 120`, `thread` method — a hang now aborts with
+  a traceback instead of freezing). The tracked improvement: **split fast vs
+  slow tests.** Every `tests/gui/` test is auto-tagged `gui` (conftest hook),
+  so CI can run the fast set on `development` pushes (`-m "not gui"` or
+  `--ignore=tests/gui`) and the full set on PRs into `release`. Weigh against
+  keeping full coverage on every push; decide + wire `ci.yml` here.
 
 **Deps:**
 
