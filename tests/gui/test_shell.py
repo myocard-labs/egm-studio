@@ -124,6 +124,21 @@ def test_reopening_a_bank_serves_the_frame_from_cache(
     assert window._loaded_banks[0].frame is first  # the same cached frame object
 
 
+def test_open_bank_writes_through_to_the_disk_cache(
+    qtbot: QtBot,
+    tiny_predictions_bank: ClassifierBank,
+    tmp_path: Path,
+    isolated_cache_dir: Path,
+) -> None:
+    """The shell wires a write-through DiskCache into the store (Block 11 C4b)."""
+    path = tmp_path / "preds.h5"
+    write_classifier_bank(tiny_predictions_bank, path)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._open_bank_explore(str(path))
+    assert list(isolated_cache_dir.glob("*.pkl"))  # the extracted frame persisted to disk
+
+
 def test_open_bank_lands_on_summary_with_grid(
     qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
 ) -> None:

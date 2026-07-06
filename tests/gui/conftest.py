@@ -2,8 +2,26 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from PySide6 import QtWidgets
+
+from myocard_egm_studio.gui import shell as _shell
+
+
+@pytest.fixture(autouse=True)
+def isolated_cache_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Point the shell's disk view-model cache at a per-test temp dir.
+
+    ``MainWindow`` builds a ``DiskCache`` from ``default_cache_dir()`` (a platform cache
+    location). Left alone, GUI tests would write pickles into the real user cache and could
+    even be served a frame another test cached. Redirect it to ``tmp_path`` so every test is
+    hermetic; returned so a test can inspect what was written.
+    """
+    cache_dir = tmp_path / "view-model-cache"
+    monkeypatch.setattr(_shell, "default_cache_dir", lambda: str(cache_dir))
+    return cache_dir
 
 
 @pytest.fixture(autouse=True)

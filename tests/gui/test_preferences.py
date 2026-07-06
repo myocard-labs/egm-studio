@@ -126,3 +126,7 @@ def test_cache_ceiling_falls_back_on_nonpositive_or_nonnumeric() -> None:
     assert preferences.load_cache_ceiling_mb(512) == 512
     settings.setValue("cache/memory_ceiling_mb", "lots")  # non-numeric -> default
     assert preferences.load_cache_ceiling_mb(512) == 512
+
+
+def test_cache_dir_defaults_to_a_cache_location() -> None:
+    assert preferences.default_cache_dir().endswith("view_model")  # the disk cold tier folder
