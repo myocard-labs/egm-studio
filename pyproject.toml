@@ -229,6 +229,13 @@ disallow_untyped_defs = true
 no_implicit_optional = true
 show_error_codes = true
 files = ["src", "tests"]
+# The tests tree has per-directory conftest.py files (tests/conftest.py +
+# tests/gui/conftest.py) and no __init__.py. Give mypy explicit bases so those
+# resolve to distinct modules (tests.conftest / tests.gui.conftest) instead of
+# colliding on the bare name "conftest"; mypy_path=src keeps the package as
+# myocard_egm_studio.* (not src.myocard_egm_studio.*).
+explicit_package_bases = true
+mypy_path = "src"
 
 # matplotlib + scipy + pandas ship without complete py.typed support;
 # ignore-missing silences these third-party hops without losing strict
