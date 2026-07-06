@@ -18,7 +18,7 @@ from myocard_egm_data.phases import (
     load_figure_spec,
     load_observation,
 )
-from PySide6 import QtWidgets
+from PySide6 import QtGui, QtWidgets
 from pytestqt.qtbot import QtBot
 
 from myocard_egm_studio.gui.shell import MainWindow
@@ -476,3 +476,156 @@ def test_save_observation_to_phase_pulls_a_scratch_bank(qtbot: QtBot, tmp_path: 
     assert observation_id("Note") in phase  # the observation...
     assert "lpred_a_2026-06-27" in phase  # ...and the bank it references, pulled from scratch
     assert "lpred_a_2026-06-27" not in _scratch_ids(window)
+
+
+# -- B10g: manual add (model) + remove-from-phase --------------------------------------
+
+
+def test_open_model_and_noise_menus_offer_both_targets(qtbot: QtBot, tmp_path: Path) -> None:
+    window = _window(qtbot, tmp_path)
+    for key in ("openModel", "openNoiseBank"):
+        assert window.findChild(QtWidgets.QMenu, key) is not None
+        assert window.findChild(QtGui.QAction, f"{key}ToScratch") is not None
+        assert window.findChild(QtGui.QAction, f"{key}ToPhase") is not None
+
+
+def _pick_files(monkeypatch: pytest.MonkeyPatch, *paths: Path) -> None:
+    monkeypatch.setattr(
+        QtWidgets.QFileDialog, "getOpenFileNames", lambda *a, **k: ([str(p) for p in paths], "")
+    )
+
+
+def test_load_model_indexes_a_pointer_into_the_phase(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = _window(qtbot, tmp_path)
+    _open_phase(window, tmp_path)
+    model_file = tmp_path / "best.model_metadata.json"
+    model_file.write_text(
+        '{"model_id": "model_studio_fixture_2026-06-26", '
+        '"training_provenance": {"run_id": "run_studio_2026-06-25"}}'
+    )
+    _pick_files(monkeypatch, model_file)
+
+    window._load_models("phase")
+
+    assert window._phase_manifest is not None
+    assert "model_studio_fixture_2026-06-26" in entries_by_id(window._phase_manifest)
+
+
+def test_load_noise_bank_indexes_the_record_into_the_phase(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = _window(qtbot, tmp_path)
+    _open_phase(window, tmp_path)
+    record = tmp_path / "noise_run.json"
+    record.write_text('{"bank_id": "nbank_studio_fixture_2026-06-15"}')
+    _pick_files(monkeypatch, record)
+
+    window._load_noise_banks("phase")
+
+    assert window._phase_manifest is not None
+    assert "nbank_studio_fixture_2026-06-15" in entries_by_id(window._phase_manifest)
+
+
+def test_indexing_an_id_less_file_warns_and_indexes_nothing(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An id-less (e.g. pre-stable-id) file surfaces a visible warning, not a quiet status line."""
+    window = _window(qtbot, tmp_path)
+    _open_phase(window, tmp_path)
+    assert window._phase_manifest is not None
+    before = set(entries_by_id(window._phase_manifest))
+    old_model = tmp_path / "old.model_metadata.json"
+    old_model.write_text('{"schema_version": "1.1"}')  # no model_id (an old export)
+    warned: list[str] = []
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox, "warning", lambda _self, _title, text, *a, **k: warned.append(text)
+    )
+
+    window._index_producer(str(old_model), kind="model", target="phase")
+
+    assert warned and "no model_id" in warned[0]  # the reason is shown in the dialog
+    assert set(entries_by_id(window._phase_manifest)) == before  # nothing indexed
+
+
+def _confirm(monkeypatch: pytest.MonkeyPatch, *, yes: bool) -> None:
+    button = (
+        QtWidgets.QMessageBox.StandardButton.Yes if yes else QtWidgets.QMessageBox.StandardButton.No
+    )
+    monkeypatch.setattr(QtWidgets.QMessageBox, "question", lambda *a, **k: button)
+
+
+def test_remove_observation_from_phase_deletes_the_file(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = _window(qtbot, tmp_path)
+    phase = _open_phase(window, tmp_path)
+    window._explore_df = _explore_frame()
+    window._write_observation("Removable", "prose", target="phase")
+    obs_id = observation_id("Removable")
+    obs_file = phase / "observations" / f"{obs_id}.json"
+    assert obs_file.exists()
+
+    _confirm(monkeypatch, yes=True)
+    window._remove_from_phase(obs_id)
+
+    assert window._phase_manifest is not None
+    assert obs_id not in entries_by_id(window._phase_manifest)  # unindexed...
+    assert not obs_file.exists()  # ...and its authored file deleted
+    assert "Removed" in window.statusBar().currentMessage()
+
+
+def test_remove_producer_from_phase_keeps_its_file(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tiny_classifier_bank: ClassifierBank,
+) -> None:
+    window = _window(qtbot, tmp_path)
+    _open_phase(window, tmp_path)
+    path = _bank_file(tiny_classifier_bank, tmp_path, "tbank_keep_2026-06-27")
+    window._index_producer(str(path), kind="bank", target="phase")
+    assert window._phase_manifest is not None
+    assert "tbank_keep_2026-06-27" in entries_by_id(window._phase_manifest)
+
+    _confirm(monkeypatch, yes=True)
+    window._remove_from_phase("tbank_keep_2026-06-27")
+
+    assert "tbank_keep_2026-06-27" not in entries_by_id(window._phase_manifest)  # unindexed...
+    assert path.exists()  # ...but a producer pointer's file is left in place (ADR-021)
+
+
+def test_remove_cancelled_leaves_everything(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = _window(qtbot, tmp_path)
+    phase = _open_phase(window, tmp_path)
+    window._explore_df = _explore_frame()
+    window._write_observation("Keep me", "prose", target="phase")
+    obs_id = observation_id("Keep me")
+
+    _confirm(monkeypatch, yes=False)
+    window._remove_from_phase(obs_id)
+
+    assert (phase / "observations" / f"{obs_id}.json").exists()  # nothing removed on cancel
+    assert window._phase_manifest is not None
+    assert obs_id in entries_by_id(window._phase_manifest)
+
+
+def test_remove_is_on_the_phase_tree_but_scratch_uses_delete(qtbot: QtBot, tmp_path: Path) -> None:
+    window = _window(qtbot, tmp_path)
+    _open_phase(window, tmp_path)
+    window._explore_df = _explore_frame()
+    window._write_observation("Phase note", "prose", target="phase")
+    phase_labels = [
+        a.text() for a in window._phase_tree._artifact_menu(observation_id("Phase note")).actions()
+    ]
+    assert "Remove from phase" in phase_labels  # the phase tree's curator remove
+    window._write_observation("Scratch note", "prose", target="scratch")
+    scratch_labels = [
+        a.text()
+        for a in window._scratch_tree._artifact_menu(observation_id("Scratch note")).actions()
+    ]
+    assert "Remove from phase" not in scratch_labels  # scratch never offers it...
+    assert "Delete from scratch" in scratch_labels  # ...it has Delete instead

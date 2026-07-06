@@ -127,6 +127,7 @@ def test_bank_menu_lists_viewers_then_info(qtbot: QtBot) -> None:
         "Show metadata",
         "Reveal file",
         "Copy id",
+        "Remove from phase",  # the curator action closes a phase-tree menu (B10g)
     ]
     assert any(action.isSeparator() for action in menu.actions())  # divider before the info group
 
@@ -161,7 +162,7 @@ def test_model_menu_has_no_show_metadata(qtbot: QtBot) -> None:
     labels = _menu_labels(tree._artifact_menu(_child(_top(tree, 6), 0).text(0)))  # a model
     assert "Go to training run" in labels
     assert "Show metadata" not in labels  # .pt checkpoints have no cheap file view
-    assert labels[-2:] == ["Reveal file", "Copy id"]
+    assert labels[-3:] == ["Reveal file", "Copy id", "Remove from phase"]  # + curator (B10g)
 
 
 def test_triggering_action_emits_signal(qtbot: QtBot) -> None:

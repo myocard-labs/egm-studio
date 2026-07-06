@@ -19,6 +19,13 @@ from myocard_egm_studio.view_model.phase_actions import (
 _UNIVERSAL_IDS = ("reveal_file", "copy_id")
 
 
+def test_management_action_is_remove_from_phase() -> None:
+    (remove,) = phase_actions.management_actions()
+    assert remove.id == "remove_artifact"
+    assert remove.label == "Remove from phase"
+    assert remove.available
+
+
 def test_input_bank_viewers() -> None:
     explore, feature_dist = type_actions(Role.training_bank)
     assert [explore.id, feature_dist.id] == ["explore_signal", "view_feature_distributions"]
