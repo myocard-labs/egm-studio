@@ -104,8 +104,7 @@ def test_open_bank_populates_result_list(
     qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
 ) -> None:
     window = _open(qtbot, tiny_classifier_bank, tmp_path)
-    table = window._explore_view.result_list._table
-    assert table.rowCount() == len(tiny_classifier_bank.traces)
+    assert window._explore_view.result_list.row_count() == len(tiny_classifier_bank.traces)
     assert "Loaded" in window.statusBar().currentMessage()
 
 
@@ -148,11 +147,11 @@ def test_add_bank_combines_then_remove(
     window._open_bank_explore(str(b), focus=None, replace=False)  # add
     total = len(tiny_classifier_bank.traces) + len(tiny_unlabeled_bank.traces)
     assert len(window._loaded_banks) == 2
-    assert window._explore_view.result_list._table.rowCount() == total
+    assert window._explore_view.result_list.row_count() == total
 
     window._remove_bank(str(a))
     assert [bank.path for bank in window._loaded_banks] == [str(b)]
-    assert window._explore_view.result_list._table.rowCount() == len(tiny_unlabeled_bank.traces)
+    assert window._explore_view.result_list.row_count() == len(tiny_unlabeled_bank.traces)
 
 
 def test_open_action_relabels_to_add_when_loaded(
@@ -182,9 +181,9 @@ def test_recalculate_narrows_the_result_list(
     qtbot: QtBot, tiny_classifier_bank: ClassifierBank, tmp_path: Path
 ) -> None:
     window = _open(qtbot, tiny_classifier_bank, tmp_path)
-    total = window._explore_view.result_list._table.rowCount()
+    total = window._explore_view.result_list.row_count()
     window._on_recalculate(FilterSpec((Condition("label_name", "==", "fibrotic"),)))
-    kept = window._explore_view.result_list._table.rowCount()
+    kept = window._explore_view.result_list.row_count()
     assert 0 < kept < total
     assert "match" in window.statusBar().currentMessage()
     # the summary grid + stats reflect the filtered set too (point 3), not the full bank
@@ -207,7 +206,7 @@ def test_opening_an_evaluated_bank_populates_flow_b(
     """One Open-bank load also feeds ML diagnostics when the bank carries predictions."""
     window = _open(qtbot, tiny_predictions_bank, tmp_path)  # the single Open-bank path
     diagnostics = window._diagnostics_view
-    assert diagnostics.result_list._table.rowCount() == tiny_predictions_bank.n_traces
+    assert diagnostics.result_list.row_count() == tiny_predictions_bank.n_traces
     assert "full diagnostics" in diagnostics._header.text()
 
 
@@ -217,7 +216,7 @@ def test_opening_a_raw_bank_leaves_flow_b_in_the_landing_state(
     """A bank with no predictions opens in signal exploration; ML diagnostics stays empty."""
     window = _open(qtbot, tiny_classifier_bank, tmp_path)
     diagnostics = window._diagnostics_view
-    assert diagnostics.result_list._table.rowCount() == 0
+    assert diagnostics.result_list.row_count() == 0
     assert "Open a bank with model predictions" in diagnostics._header.text()
 
 
@@ -236,9 +235,9 @@ def test_recalculate_drives_flow_b_explore_from_the_shared_filter(
 ) -> None:
     """The one Banks-&-filter panel narrows the Flow B Explore list too (B8g-r1)."""
     window = _open(qtbot, tiny_predictions_bank, tmp_path)
-    total = window._diagnostics_view.result_list._table.rowCount()
+    total = window._diagnostics_view.result_list.row_count()
     window._on_recalculate(FilterSpec((Condition("correctness_bucket", "==", "TP"),)))
-    assert window._diagnostics_view.result_list._table.rowCount() < total  # Flow B list narrowed
+    assert window._diagnostics_view.result_list.row_count() < total  # Flow B list narrowed
 
 
 def _training_record() -> TrainingRunRecord:

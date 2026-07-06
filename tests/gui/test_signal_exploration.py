@@ -32,7 +32,7 @@ def _top(view: SignalExplorationView, index: int) -> QtWidgets.QTreeWidgetItem:
 
 def test_results_populate_the_list(qtbot: QtBot, tiny_classifier_bank: ClassifierBank) -> None:
     view = _view(qtbot, tiny_classifier_bank)
-    assert view.result_list._table.rowCount() == len(tiny_classifier_bank.traces)
+    assert view.result_list.row_count() == len(tiny_classifier_bank.traces)
 
 
 def test_selecting_rows_shows_waveforms_and_detail(

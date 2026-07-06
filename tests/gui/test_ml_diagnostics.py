@@ -66,7 +66,7 @@ def test_set_evaluated_populates_the_list_and_header(
     qtbot.addWidget(view)
     frame = build_view_model(tiny_predictions_bank, source="v1.5")
     view.set_evaluated(frame, "full")
-    assert view.result_list._table.rowCount() == tiny_predictions_bank.n_traces
+    assert view.result_list.row_count() == tiny_predictions_bank.n_traces
     assert "v1.5" in view._header.text()
     assert "full diagnostics" in view._header.text()
     assert view._tabs.currentIndex() == 0  # lands on the Output overlay (the headline)
@@ -168,10 +168,10 @@ def test_set_explore_results_narrows_the_result_list(
     qtbot.addWidget(view)
     frame = build_view_model(tiny_predictions_bank, source="v1")
     view.set_evaluated(frame, "full")
-    total = view.result_list._table.rowCount()
+    total = view.result_list.row_count()
     spec = FilterSpec((Condition("correctness_bucket", "==", "TP"),))
     view.set_explore_results(frame[apply_filter(frame, spec)], spec)
-    assert 0 < view.result_list._table.rowCount() < total  # dropped the non-TP traces
+    assert 0 < view.result_list.row_count() < total  # dropped the non-TP traces
 
 
 def test_nearest_correct_button_only_shown_for_a_misclassification(qtbot: QtBot) -> None:
@@ -194,7 +194,7 @@ def test_nearest_correct_searches_past_the_correctness_filter(qtbot: QtBot) -> N
     view.set_evaluated(full, "full", traces=_traces(4))
     spec = FilterSpec((Condition("correctness_bucket", "==", "FP"),))
     view.set_explore_results(full[apply_filter(full, spec)], spec)
-    assert view.result_list._table.rowCount() == 1  # the list shows only the FP
+    assert view.result_list.row_count() == 1  # the list shows only the FP
     view._detail.on_selection([0])  # select it
     view._detail._buttons[0].click()  # find nearest correct
     assert view._detail._detail_table.columnCount() == 1 + 2  # FP + its nearest-correct match
@@ -208,6 +208,6 @@ def test_clear_returns_to_the_landing_state(
     qtbot.addWidget(view)
     view.set_evaluated(build_view_model(tiny_predictions_bank, source="v1.5"), "full")
     view.clear()
-    assert view.result_list._table.rowCount() == 0
+    assert view.result_list.row_count() == 0
     assert "Open a bank with model predictions" in view._header.text()
     assert view._tabs.currentIndex() == 0
