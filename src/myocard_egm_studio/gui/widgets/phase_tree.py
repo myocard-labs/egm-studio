@@ -143,6 +143,10 @@ class PhaseTree(QtWidgets.QTreeWidget):
             menu.addSeparator()
         for action in phase_actions.info_actions(role):
             self._add_action(menu, action, artifact_id)
+        if not self._scratch:  # a loaded phase gets the curator Remove; scratch has Delete
+            menu.addSeparator()
+            for action in phase_actions.management_actions():
+                self._add_action(menu, action, artifact_id)
         return menu
 
     def _add_action(

@@ -78,6 +78,8 @@ from myocard_egm_studio.save import (
     figure_entry,
     load_scratch,
     manifest_section,
+    model_entry,
+    noise_bank_entry,
     observation_entry,
     parse_filter,
     references_from,
@@ -327,12 +329,30 @@ class MainWindow(QtWidgets.QMainWindow):
             scratch_text="Load to &scratch…",
             phase_text="Load to &phase…",
         )
+        noise_menu = file_menu.addMenu("Open &noise bank")
+        noise_menu.setObjectName("openNoiseBank")
+        self._add_target_actions(
+            noise_menu,
+            "openNoiseBank",
+            self._load_noise_banks,
+            scratch_text="Load to &scratch…",
+            phase_text="Load to &phase…",
+        )
         run_menu = file_menu.addMenu("Open &training run")
         run_menu.setObjectName("openTrainingRun")
         self._add_target_actions(
             run_menu,
             "openTrainingRun",
             self._load_runs,
+            scratch_text="Load to &scratch…",
+            phase_text="Load to &phase…",
+        )
+        model_menu = file_menu.addMenu("Open &model")
+        model_menu.setObjectName("openModel")
+        self._add_target_actions(
+            model_menu,
+            "openModel",
+            self._load_models,
             scratch_text="Load to &scratch…",
             phase_text="Load to &phase…",
         )
@@ -787,12 +807,47 @@ class MainWindow(QtWidgets.QMainWindow):
         for path in paths:
             self._index_producer(path, kind="run", target=target)
 
-    def _index_producer(self, path: str, *, kind: Literal["bank", "run"], target: _Target) -> None:
-        """Index a loaded producer artifact (a path pointer) into scratch or the loaded phase."""
+    def _load_models(self, target: _Target) -> None:
+        """File > Open model ▸ Load to scratch / phase: index a model-metadata file into
+        ``target``. Models have no in-app viewer yet, so this only curates the manifest
+        pointer — nothing is opened (the phase-tree Add control shares this path, B10g)."""
+        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self, "Open model metadata", "", "Model metadata (*.json);;All files (*)"
+        )
+        for path in paths:
+            self._index_producer(path, kind="model", target=target)
+
+    def _load_noise_banks(self, target: _Target) -> None:
+        """File > Open noise bank ▸ Load to scratch / phase: index a noise-bank **run-record**
+        JSON (its ``bank_id`` is the stable id; the noise-bank ``.h5`` carries none). Index-only
+        — noise banks have no in-app viewer."""
+        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self, "Open noise-bank record", "", "Noise-bank records (*.json);;All files (*)"
+        )
+        for path in paths:
+            self._index_producer(path, kind="noise", target=target)
+
+    def _index_producer(
+        self, path: str, *, kind: Literal["bank", "run", "model", "noise"], target: _Target
+    ) -> None:
+        """Index a producer artifact (a path pointer) into scratch or the loaded phase."""
+        builders = {
+            "bank": bank_entry,
+            "run": run_entry,
+            "model": model_entry,
+            "noise": noise_bank_entry,
+        }
         try:
-            entry = bank_entry(path) if kind == "bank" else run_entry(path)
-        except Exception as exc:  # unreadable / id-less file -> viewed, but not indexed
-            self.statusBar().showMessage(f"Loaded, but could not index {Path(path).name}: {exc}")
+            entry = builders[kind](path)
+        except Exception as exc:  # unreadable / id-less file -> a visible warning, not a quiet line
+            name = Path(path).name
+            self.statusBar().showMessage(f"Could not index {name}: {exc}")
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Could not add to the manifest",
+                f"Could not index {name}:\n\n{exc}\n\nThe file must carry its own stable id — "
+                "if it predates stable ids, re-generate it with the current pipeline.",
+            )
             return
         section = manifest_section(entry.id)
         if target == "phase" and self._phase_manifest is not None:
@@ -1010,11 +1065,41 @@ class MainWindow(QtWidgets.QMainWindow):
         """Execute a Phase-tree right-click action against one artifact (phase scope)."""
         if self._phase_manifest is None:
             return
+        if action_id == "remove_artifact":
+            self._remove_from_phase(artifact_id)
+            return
         entry = entries_by_id(self._phase_manifest).get(artifact_id)
         if entry is not None:
             self._run_artifact_action(
                 action_id, entry, base_dir=self._phase_dir, scope_dirs=[self._phase_dir]
             )
+
+    def _remove_from_phase(self, artifact_id: str) -> None:
+        """Unindex an artifact from the loaded phase (Phase-tree Remove, B10g). An authored
+        artifact (observation / figure) also has its file deleted; a producer pointer is
+        unindexed only, its file left in place (ADR-021). Removes are confirmed first."""
+        if self._phase_manifest is None:
+            return
+        entry = entries_by_id(self._phase_manifest).get(artifact_id)
+        if entry is None:
+            return
+        authored = role_of(artifact_id) in (Role.observation, Role.figure)
+        detail = (
+            "This also deletes its file."
+            if authored
+            else "The file stays on disk; only the manifest pointer is removed."
+        )
+        answer = QtWidgets.QMessageBox.question(
+            self, "Remove from phase", f"Remove {artifact_id} from the phase?\n\n{detail}"
+        )
+        if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        section = manifest_section(artifact_id)
+        if authored:
+            (self._phase_dir / entry.path).unlink(missing_ok=True)  # the authored file goes too
+        save_manifest(remove_entry(self._phase_manifest, section, artifact_id), self._phase_dir)
+        self._reindex_phase_after_write()  # tree drops it; validation preserved
+        self.statusBar().showMessage(f"Removed {artifact_id} from the phase")
 
     def _run_artifact_action(
         self,

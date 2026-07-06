@@ -30,7 +30,12 @@ from myocard_egm_studio.save.observation import (
     save_observation,
     update_observation,
 )
-from myocard_egm_studio.save.producer import bank_entry, run_entry
+from myocard_egm_studio.save.producer import (
+    bank_entry,
+    model_entry,
+    noise_bank_entry,
+    run_entry,
+)
 from myocard_egm_studio.save.scratch import SCRATCH_PHASE, load_scratch, scratch_manifest_path
 
 __all__ = [
@@ -44,6 +49,8 @@ __all__ = [
     "figure_spec_path",
     "load_scratch",
     "manifest_section",
+    "model_entry",
+    "noise_bank_entry",
     "observation_entry",
     "observation_id",
     "observation_path",

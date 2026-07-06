@@ -146,6 +146,20 @@ def scratch_actions() -> tuple[ArtifactAction, ...]:
     return _SCRATCH_ACTIONS
 
 
+#: The loaded-phase curation action, shown after the info group on a *phase* tree (not
+#: scratch, which has Delete instead): unindex the artifact from the phase manifest. For an
+#: egm-studio-authored artifact this also deletes its file; a producer pointer is unindexed
+#: only, its file left in place (ADR-021). [B10g]
+_MANAGEMENT_ACTIONS: tuple[ArtifactAction, ...] = (
+    ArtifactAction("remove_artifact", "Remove from phase"),
+)
+
+
+def management_actions() -> tuple[ArtifactAction, ...]:
+    """Remove from phase — the phase tree's own curation action (shown last)."""
+    return _MANAGEMENT_ACTIONS
+
+
 def type_actions(role: Role) -> tuple[ArtifactAction, ...]:
     """The role-specific viewer actions (may be empty); shown before the divider."""
     return _VIEWERS_BY_ROLE.get(role, ())
