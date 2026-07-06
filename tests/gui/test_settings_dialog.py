@@ -46,6 +46,27 @@ def test_auto_add_deps_reflects_the_passed_state(qtbot: QtBot) -> None:
     assert dialog.auto_add_deps() is False
 
 
+def test_cache_ceiling_reflects_and_reads_back(qtbot: QtBot) -> None:
+    """The cache-ceiling spinbox preselects the passed MB and reads back edits (Block 11)."""
+    dialog = SettingsDialog(theme="dark", themes=_THEMES, cache_ceiling_mb=2048)
+    qtbot.addWidget(dialog)
+    assert dialog.cache_ceiling_mb() == 2048
+    spin = dialog.findChild(QtWidgets.QSpinBox, "cacheCeiling")
+    assert isinstance(spin, QtWidgets.QSpinBox)
+    spin.setValue(4096)
+    assert dialog.cache_ceiling_mb() == 4096
+
+
+def test_flush_button_emits_flush_requested(qtbot: QtBot) -> None:
+    """Clicking Flush emits flushRequested — the shell clears the store (Block 11)."""
+    dialog = SettingsDialog(theme="dark", themes=_THEMES)
+    qtbot.addWidget(dialog)
+    button = dialog.findChild(QtWidgets.QPushButton, "flushCache")
+    assert isinstance(button, QtWidgets.QPushButton)
+    with qtbot.waitSignal(dialog.flushRequested):
+        button.click()
+
+
 def test_browse_sets_the_scratch_field(qtbot: QtBot, monkeypatch: pytest.MonkeyPatch) -> None:
     dialog = SettingsDialog(scratch_dir="/tmp/a", theme="dark", themes=_THEMES)
     qtbot.addWidget(dialog)

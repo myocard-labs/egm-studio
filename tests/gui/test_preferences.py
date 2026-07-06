@@ -107,3 +107,22 @@ def test_auto_add_deps_parses_a_stringified_bool() -> None:
         preferences.APP_NAME,
     ).setValue("save/auto_add_dependencies", "false")  # IniFormat round-trips bools as strings
     assert preferences.load_auto_add_deps(True) is False
+
+
+def test_cache_ceiling_defaults_then_roundtrips() -> None:
+    assert preferences.load_cache_ceiling_mb(1024) == 1024  # unset -> default
+    preferences.save_cache_ceiling_mb(2048)
+    assert preferences.load_cache_ceiling_mb(1024) == 2048
+
+
+def test_cache_ceiling_falls_back_on_nonpositive_or_nonnumeric() -> None:
+    settings = QtCore.QSettings(
+        QtCore.QSettings.Format.IniFormat,
+        QtCore.QSettings.Scope.UserScope,
+        preferences.ORG_NAME,
+        preferences.APP_NAME,
+    )
+    settings.setValue("cache/memory_ceiling_mb", "0")  # non-positive -> default
+    assert preferences.load_cache_ceiling_mb(512) == 512
+    settings.setValue("cache/memory_ceiling_mb", "lots")  # non-numeric -> default
+    assert preferences.load_cache_ceiling_mb(512) == 512
