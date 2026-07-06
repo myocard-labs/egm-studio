@@ -84,6 +84,19 @@ def test_kind_defaults_to_kde_and_toggles(
     assert seen == ["histogram"]
 
 
+def test_set_groups_reports_progress_per_panel(
+    qtbot: QtBot, tiny_classifier_bank: ClassifierBank
+) -> None:
+    """set_groups(progress=cb) ticks once per drawn panel — the Block 11 rebuild pump."""
+    grid = FeatureDistributionGrid()
+    qtbot.addWidget(grid)
+    group = feature_group_from_frame(build_view_model(tiny_classifier_bank, source="Synthetic"))
+    seen: list[tuple[int, int]] = []
+    grid.set_groups([group], progress=lambda done, total: seen.append((done, total)))
+    n = len(FEATURE_COLUMNS)
+    assert seen == [(i + 1, n) for i in range(n)]  # (1,n)…(n,n), one per panel
+
+
 def test_recenter_button_refits_panels(qtbot: QtBot, tiny_classifier_bank: ClassifierBank) -> None:
     grid = _grid(qtbot, tiny_classifier_bank)
     vb = grid.panels[0].getPlotItem().getViewBox()

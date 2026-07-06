@@ -35,6 +35,18 @@ def test_results_populate_the_list(qtbot: QtBot, tiny_classifier_bank: Classifie
     assert view.result_list.row_count() == len(tiny_classifier_bank.traces)
 
 
+def test_set_results_pumps_the_grid(qtbot: QtBot, tiny_classifier_bank: ClassifierBank) -> None:
+    """set_results forwards its progress callback to the KDE grid (Block 11 rebuild pump)."""
+    view = SignalExplorationView(plot_palette("dark"))
+    qtbot.addWidget(view)
+    frame = combine_view_models([build_view_model(tiny_classifier_bank, source="Synthetic")])
+    view.set_traces(traces_from_bank(tiny_classifier_bank))
+    seen: list[tuple[int, int]] = []
+    view.set_results(frame, progress=lambda done, total: seen.append((done, total)))
+    assert len(seen) == len(FEATURE_COLUMNS)  # one tick per KDE panel
+    assert seen[-1] == (len(FEATURE_COLUMNS), len(FEATURE_COLUMNS))
+
+
 def test_selecting_rows_shows_waveforms_and_detail(
     qtbot: QtBot, tiny_classifier_bank: ClassifierBank
 ) -> None:
