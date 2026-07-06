@@ -141,6 +141,16 @@ _LEFT_BANKS, _LEFT_NOISE = 0, 1  # left-sidebar body stack pages
 _LEFT_TITLE = "Banks & filters"
 _LEFT_TITLE_NOISE = "Noise segments"
 
+#: Phase-tree "Add to phase" pickers (index-only, B10g): kind -> (menu label, dialog title,
+#: file filter). One entry per producer type so the file dialog + entry builder stay
+#: unambiguous — unlike the File menu, this only indexes the manifest pointer (no view opens).
+_ADD_TO_PHASE_PICKERS: dict[_ProducerKind, tuple[str, str, str]] = {
+    "bank": ("Bank…", "Add bank to phase", "EGM banks (*.h5 *.hdf5);;All files (*)"),
+    "noise": ("Noise bank…", "Add noise bank to phase", "Noise banks (*.h5 *.hdf5);;All files (*)"),
+    "run": ("Training run…", "Add training run to phase", "Run records (*.json);;All files (*)"),
+    "model": ("Model…", "Add model to phase", "Model metadata (*.json);;All files (*)"),
+}
+
 #: A filter rebuild only shows its progress dialog if it runs longer than this, so a
 #: quick filter applies without flashing a dialog while a slow one still gets a bar.
 _RECALC_DIALOG_DELAY_MS = 300
@@ -148,6 +158,7 @@ _RECALC_DIALOG_DELAY_MS = 300
 _Side = Literal["left", "right"]
 #: Where a loaded producer artifact (or an authored save) is indexed.
 _Target = Literal["scratch", "phase"]
+_ProducerKind = Literal["bank", "run", "model", "noise"]
 
 
 class _ArtifactEntry(Protocol):
@@ -437,10 +448,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._phase_target_actions.append(to_phase)
 
     def _sync_phase_targets(self) -> None:
-        """Enable the "…to phase" actions only while a phase is loaded (menu aboutToShow)."""
+        """Enable the "…to phase" actions + the Phase-tree Add control only while a phase is
+        loaded (File-menu aboutToShow; also called after a phase opens)."""
         has_phase = self._phase_manifest is not None
         for action in self._phase_target_actions:
             action.setEnabled(has_phase)
+        self._phase_add_button.setEnabled(has_phase)
 
     def _sidebar_action(
         self, menu: QtWidgets.QMenu, text: str, object_name: str, side: _Side
@@ -633,6 +646,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._right_sidebar.toggleRequested.connect(lambda: self._toggle_sidebar("right"))
         self._phase_tree = PhaseTree()
         self._phase_tree.actionRequested.connect(self._on_phase_action)
+        self._phase_pane = self._build_phase_pane()
         # Scratch is a staging area rendered as its own phase tree (same organization +
         # actions, plus Promote/Delete). It sits under the phase tree and stays hidden until
         # it holds something, leaving the sidebar unchanged for an empty scratch.
@@ -648,7 +662,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._scratch_pane.setVisible(False)
         right_split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         right_split.setObjectName("rightSplit")
-        right_split.addWidget(self._phase_tree)
+        right_split.addWidget(self._phase_pane)
         right_split.addWidget(self._scratch_pane)
         right_split.setStretchFactor(0, 3)  # the phase tree dominates; scratch takes the rest
         right_split.setStretchFactor(1, 1)
@@ -664,6 +678,69 @@ class MainWindow(QtWidgets.QMainWindow):
         splitter.setSizes([_SIDEBAR_DEFAULT_W, _MAIN_DEFAULT_W, _SIDEBAR_DEFAULT_W])
         self._splitter = splitter
         return splitter
+
+    def _build_phase_pane(self) -> QtWidgets.QWidget:
+        """The phase tree under an "Add to phase" control (B10g): index an existing artifact
+        into the loaded phase without opening it. The button is disabled until a phase is open."""
+        self._phase_add_button = QtWidgets.QToolButton()
+        self._phase_add_button.setObjectName("phaseAddButton")
+        self._phase_add_button.setText("Add to phase")
+        self._phase_add_button.setToolTip(
+            "Index an existing artifact into the phase (no view opens)"
+        )
+        self._phase_add_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        add_menu = QtWidgets.QMenu(self._phase_add_button)
+        for kind, (label, _title, _filt) in _ADD_TO_PHASE_PICKERS.items():
+            action = add_menu.addAction(label)
+            action.triggered.connect(lambda _checked=False, k=kind: self._add_existing_to_phase(k))
+        # A figure is an authored artifact copied into the phase (vs. the producer pointers above),
+        # but that's internal — the menu reads as one flat "add this to the phase" list.
+        add_menu.addAction("Figure…").triggered.connect(
+            lambda _checked=False: self._add_figure_to_phase()
+        )
+        self._phase_add_button.setMenu(add_menu)
+        self._phase_add_button.setEnabled(False)  # enabled once a phase is loaded
+
+        pane = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(pane)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        header = QtWidgets.QHBoxLayout()
+        header.setContentsMargins(0, 0, 4, 0)  # keep the dropdown arrow off the panel edge
+        header.addStretch(1)
+        header.addWidget(self._phase_add_button)
+        layout.addLayout(header)
+        layout.addWidget(self._phase_tree, 1)
+        return pane
+
+    def _add_existing_to_phase(self, kind: _ProducerKind) -> None:
+        """Add-to-phase ▸ <kind>: pick artifact file(s) and index each into the phase only —
+        no view opens (unlike the File-menu producer loaders). Reuses :meth:`_index_producer`,
+        so an id-less / unreadable file surfaces the same visible warning."""
+        _label, title, file_filter = _ADD_TO_PHASE_PICKERS[kind]
+        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(self, title, "", file_filter)
+        for path in paths:
+            self._index_producer(path, kind=kind, target="phase")
+
+    def _add_figure_to_phase(self) -> None:
+        """Add-to-phase ▸ Figure…: copy an existing figure spec into the phase's figures/ folder
+        and index it (with its bank / observation dependencies). Unlike a producer pointer, a
+        figure is an authored artifact that lives inside the phase, so its spec is written in —
+        this reuses the Flow C save path. A bad / unreadable spec surfaces a visible warning."""
+        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self, "Add figure to phase", "", "Figure specs (*.json);;All files (*)"
+        )
+        for path in paths:
+            try:
+                spec = load_figure_spec(path)
+            except Exception as exc:  # not a figure spec / unreadable -> visible warning, no crash
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Could not add to the manifest",
+                    f"Could not read figure spec {Path(path).name}:\n\n{exc}",
+                )
+                continue
+            self._save_figure(spec, target="phase")  # writes it into figures/ + indexes it
 
     def _toggle_sidebar(self, side: _Side) -> None:
         """Collapse/expand a sidebar, resize the splitter, and sync the View checkmark."""
@@ -1057,6 +1134,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._phase_manifest = manifest
         self._phase_dir = Path(folder)
         self._phase_validated = False  # a freshly-loaded phase is existence-checked only
+        self._sync_phase_targets()  # a phase is open now -> enable the Add-to-phase control
         # Flow C resolves a figure spec's bank ids against scratch + this phase, and offers
         # the phase's observations as illustrate-able links.
         self._figure_view.set_bank_paths(self._all_bank_paths())
