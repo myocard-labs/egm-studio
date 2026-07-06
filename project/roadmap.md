@@ -856,6 +856,13 @@ refactor-cleanup):**
 
 ### Block 11 — Performance / optimization
 
+**✓ Shipped 2026-07-06.** The plan below is retained; the per-item
+annotations record what shipped. In order: profiling pass → virtualized
+result table (the freeze) → cooperative-pump the KDE rebuild → tiered
+view-model cache (RAM + write-through disk, ADR-028) → opt-in scatter
+decimation → CI fast/slow split. Deferred items (with triggers) stay
+deferred.
+
 Load + per-bank feature computation are already noticeable on a large
 bank (e.g. IAFDB) and get annoying when switching banks — every switch
 recomputes from scratch. This block makes the exploration loop smooth.
@@ -932,17 +939,17 @@ freeze fix, and the tiered store is re-cast as revisit-latency.
   banks with a stable id are cached (an unidentified bank can't be keyed).
   Frames are ~31 MB, so the default RAM ceiling holds ~30 banks; the disk cap
   (a constant) ~130.
-- **Filter-change cost — measure, likely skip.** When a filter is
-  *narrowed* its result is a subset of the previous one, so in principle
-  you could re-filter only the rows that already passed instead of
+- **Filter-change cost — ✓ resolved (no separate work) 2026-07-06.** When a
+  filter is *narrowed* its result is a subset of the previous one, so in
+  principle you could re-filter only the rows that already passed instead of
   re-scanning the whole frame ("incremental filtering"). In practice the
-  row-masking is already fast — a vectorized pandas mask over even 66k
-  rows is milliseconds; the real cost of a filter change is the
-  **downstream rebuilds** it triggers (the distribution-grid KDEs, the
-  scatter, the result table — B7-filter-A). So if the profiling pass
-  flags filtering at all, the win is *recomputing only the downstream
-  views that actually changed*, not the masking. Demoted from a
-  standalone item to a profiling-pass check.
+  row-masking is already fast — a vectorized pandas mask over even 66k rows is
+  milliseconds; the real cost of a filter change is the **downstream rebuilds**
+  it triggers (the distribution-grid KDEs, the scatter, the result table —
+  B7-filter-A). Those are exactly the `set_results` rebuild the virtualized
+  table + the KDE pump already fixed, so a filter apply rides the same path —
+  nothing separate to build. (Recomputing *only the changed* downstream views
+  stays a future refinement if a filter ever feels slow.)
 - **Scatter at very large N (overplotting) — ✓ shipped 2026-07-06.** The
   B7-scatter-front bring-to-front button only helps when *one* bank buries
   the others; two large banks still overplot each other. Chosen strategy
@@ -1000,9 +1007,9 @@ freeze fix, and the tiered store is re-cast as revisit-latency.
 - Builds on the B7-recalc addendum (manual apply already removed the
   per-keystroke recompute).
 
-**Exit:**
+**Exit:** *(all met — Daniel confirmed the load loop live on the real IAFDB bank.)*
 
-- The large→small freeze is gone: the result table is virtualized
+- ✓ The large→small freeze is gone: the result table is virtualized
   (model/view, no eager per-cell build) and the `set_results` rebuild is
   progress-covered (cooperative pump between KDE panels) — no multi-second
   *unfeedbacked* freeze on add-a-bank, and no ~900 MB table-widget spike.
@@ -1013,9 +1020,13 @@ freeze fix, and the tiered store is re-cast as revisit-latency.
   via the write-through disk tier).
 - ✓ The tiered store is version-keyed (egm-features math + a cache-format
   constant), ceiling-bounded, write-through-disk-backed, and user-flushable.
-- The load / filter loop on a large bank feels responsive.
+- ✓ The load / filter loop on a large bank feels responsive (scatter overplot
+  has an opt-in decimation control; the scatter/table/KDE all ride the fixed
+  rebuild path).
 
-**Estimated effort:** ~1-2 days (spike + implementation).
+**Estimated effort:** ~1-2 days (spike + implementation). **Actual:** shipped
+2026-07-06 across the profiling pass + 5 build items (table, pump, cache,
+scatter, CI split).
 
 ### Block 12 — Design-phase doc updates (capture drift)
 
