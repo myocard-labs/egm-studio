@@ -25,6 +25,7 @@ from myocard_egm_studio.view_model.builder import (
 from myocard_egm_studio.view_model.cache import (
     CACHE_FORMAT,
     CacheKey,
+    DiskCache,
     FrameStore,
     view_model_key,
 )
@@ -63,6 +64,7 @@ __all__ = [
     "CacheKey",
     "Condition",
     "DetailRow",
+    "DiskCache",
     "FilterColumn",
     "FilterSpec",
     "FrameStore",
