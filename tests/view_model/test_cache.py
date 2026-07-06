@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pandas as pd
 
 from myocard_egm_studio.view_model.cache import (
     CACHE_FORMAT,
     CacheKey,
+    DiskCache,
     FrameStore,
     view_model_key,
 )
@@ -104,3 +108,89 @@ def test_set_ceiling_evicts_down_immediately() -> None:
     store.set_ceiling(_bytes(_frame()) + 1)  # room for one
     assert len(store) == 1
     assert keys[2] in store  # the newest survives
+
+
+# --- DiskCache (the write-through cold tier) --------------------------------
+
+
+def test_disk_cache_roundtrips_a_frame(tmp_path: Path) -> None:
+    disk = DiskCache(tmp_path / "cache", ceiling_bytes=50_000_000)
+    key = _key("b_2026-07-06")
+    assert disk.load(key) is None  # a miss before anything is written
+    disk.save(key, _frame())
+    loaded = disk.load(key)
+    assert loaded is not None
+    pd.testing.assert_frame_equal(loaded, _frame())
+
+
+def test_disk_cache_corrupt_file_is_a_miss_and_removed(tmp_path: Path) -> None:
+    disk = DiskCache(tmp_path / "cache", ceiling_bytes=50_000_000)
+    key = _key("b_2026-07-06")
+    disk.save(key, _frame())
+    disk._path(key).write_bytes(b"not a pickle")  # clobber the file
+    assert disk.load(key) is None  # treated as a miss…
+    assert not disk._path(key).exists()  # …and dropped so the next compute rewrites it
+
+
+def test_disk_cache_clear_removes_files(tmp_path: Path) -> None:
+    disk = DiskCache(tmp_path / "cache", ceiling_bytes=50_000_000)
+    key = _key("b_2026-07-06")
+    disk.save(key, _frame())
+    disk.clear()
+    assert disk.load(key) is None
+
+
+def test_disk_cache_evicts_lru_over_ceiling(tmp_path: Path) -> None:
+    frame = _frame()
+    probe = tmp_path / "probe.pkl"
+    frame.to_pickle(probe)
+    size = probe.stat().st_size
+    probe.unlink()
+    disk = DiskCache(tmp_path / "cache", ceiling_bytes=2 * size)  # room for two files
+    keys = [_key(f"b{i}_2026-07-06") for i in range(3)]
+    disk.save(keys[0], frame)
+    os.utime(disk._path(keys[0]), (1000, 1000))  # make it clearly the oldest
+    disk.save(keys[1], frame)
+    os.utime(disk._path(keys[1]), (2000, 2000))
+    disk.save(keys[2], frame)  # the third file overflows -> evict the oldest (keys[0])
+    assert disk.load(keys[0]) is None
+    assert disk.load(keys[1]) is not None
+    assert disk.load(keys[2]) is not None
+
+
+# --- FrameStore over a DiskCache (two-tier, write-through) -------------------
+
+
+def test_frame_store_writes_through_to_disk(tmp_path: Path) -> None:
+    disk = DiskCache(tmp_path / "cache", ceiling_bytes=50_000_000)
+    store = FrameStore(ceiling_bytes=50_000_000, disk=disk)
+    key = _key("b_2026-07-06")
+    store.get_or_compute(key, _frame)
+    assert disk.load(key) is not None  # persisted at compute time, not at exit
+
+
+def test_frame_store_serves_from_disk_after_memory_reset(tmp_path: Path) -> None:
+    """A fresh store (a restart) over the same disk serves the frame without recomputing."""
+    disk = DiskCache(tmp_path / "cache", ceiling_bytes=50_000_000)
+    key = _key("b_2026-07-06")
+    FrameStore(ceiling_bytes=50_000_000, disk=disk).get_or_compute(key, _frame)  # warms disk
+    store = FrameStore(ceiling_bytes=50_000_000, disk=disk)  # cold memory, warm disk
+    calls: list[int] = []
+
+    def compute() -> pd.DataFrame:
+        calls.append(1)
+        return _frame()
+
+    store.get_or_compute(key, compute)
+    assert calls == []  # served from disk — never recomputed
+    assert key in store  # …and promoted into memory
+
+
+def test_frame_store_flush_clears_the_disk_tier(tmp_path: Path) -> None:
+    disk = DiskCache(tmp_path / "cache", ceiling_bytes=50_000_000)
+    store = FrameStore(ceiling_bytes=50_000_000, disk=disk)
+    key = _key("b_2026-07-06")
+    store.get_or_compute(key, _frame)
+    assert disk.load(key) is not None
+    store.flush()
+    assert disk.load(key) is None  # flush clears the disk tier too
