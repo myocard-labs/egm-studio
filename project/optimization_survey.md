@@ -6,10 +6,13 @@ large scientific data, run at the start of **Block 11 (Performance / optimizatio
 we had missed. It defines the menu the profiling spike chooses from, and records which
 ideas we're building now vs. deferring (with the trigger that would revive each).
 
-**Who it's for:** anyone picking up Block 11. Read this before the profiling spike.
+**Who it's for:** anyone picking up Block 11 implementation. Read this — especially the
+[Profiling results](#profiling-results-2026-07-06), which set the build order.
 
-**Status:** literature/tooling survey complete 2026-07-06. Profiling spike + implementation
-pending. This is an *internal investigation*, not user-facing docs.
+**Status:** literature/tooling survey complete 2026-07-06; **profiling spike complete
+2026-07-06** — see [Profiling results](#profiling-results-2026-07-06), which corrected the
+freeze root cause and reordered the plan. Implementation pending. This is an *internal
+investigation*, not user-facing docs.
 
 ---
 
@@ -27,10 +30,13 @@ The observed pain (roadmap Block 11; surfaced again in the B10g review):
   `combine_view_models` re-derives over **all** loaded banks on the main thread (B10g
   review; tracked here).
 
-Note the shape of the problem: **nothing renders all rows today** — performance scales
-with result-set size, not bank size (ADR-011). So the pain is **compute + the whole-view
-rebuild**, not rendering. That focuses the work on caching + threading, with virtualization
-/ decimation as guards for the pathological large-N cases.
+Note the shape of the problem: performance scales with **result-set size**, not raw bank
+size. The pre-profiling reading was that "nothing renders all rows, so the pain is compute
++ the whole-view rebuild, not rendering" — but **profiling (below) corrected this**: the
+result *table* eagerly builds one `QTableWidgetItem` per cell over every result row, so it
+*does* render all rows, and that eager build — not the `combine` rebuild — is the freeze.
+The work is therefore **virtualize the table + thread the rebuild** (freeze), with
+**caching** for revisit latency and decimation as a large-N scatter guard.
 
 ---
 
@@ -85,34 +91,43 @@ This is the joblib.Memory model (transparent, hash-keyed, disk-backed persistenc
 large array/DataFrame results) unified with the Polars/DuckDB spilling model (size-aware
 threshold eviction). It directly answers the "what's held in memory vs on disk" schema
 question we flagged: **one keyed store, one eviction policy, disk is just the cold tier.**
-This is the centerpiece of Block 11.
+It is the **revisit-latency** centerpiece of Block 11 — but note that profiling (below)
+showed the *freeze* is fixed by the table + threading, not by this store; the store's job
+is to avoid recomputing the ~3-min extraction on a re-select, not to unfreeze the window.
 
 ---
 
 ## Block 11 focus (decided 2026-07-06)
 
-Build the **consumer-side** optimizations we already had, centered on the tiered store.
-The **profiling spike runs first** to confirm where the seconds actually go (extraction vs
-the combine-rebuild vs render) and to size the cache + ceiling defaults.
+Build the **consumer-side** optimizations we already had. The **profiling spike has now
+run** ([results below](#profiling-results-2026-07-06)) and reordered these: the
+**virtualized table + threading the rebuild** are the freeze fix (top priority), and the
+**tiered store** is revisit latency (still built, no longer the freeze centerpiece). The
+order below reflects that.
 
-- **Tiered result store.** In-memory cache keyed by (bank id + egm-features version +
-  extraction params), size-aware LRU, spilling the cold tier to a temp/cache dir under a
-  **user-settable memory ceiling** (Settings). Re-selecting a loaded bank is instant; a
-  bank switch never recomputes. An egm-features (math) change invalidates automatically via
-  the version key; the user can also **flush the disk cache** manually.
-- **Background-thread the extraction + the view build.** Fixes the large→small freeze:
-  the `combine_view_models` re-derive runs off the UI thread and/or is served from the
-  cache, so it never blocks.
-- **Virtualized result table — via model/view, only if profiling justifies it.**
-  Correctness beats the GUI optimization: filter / select / match must operate over **all**
-  rows, never just the visible ones. The full frame already lives in memory (ADR-011), so
-  full-set semantics are preserved *for free* if the table is backed by a
-  `QAbstractTableModel` over that frame — the model exposes every row (filter / select /
-  match intact) while the `QTableView` renders only visible rows on demand. That replaces
-  today's eager `QTableWidget` population. The `canFetchMore` / `fetchMore` *streaming*
-  approach is **rejected** (its match / selectRow / filter see only fetched rows). Do the
-  model/view swap only if profiling shows the eager table build is a real cost; otherwise
-  skip it.
+- **Virtualized result table — via model/view (the freeze headline).** Profiling justified
+  this decisively: the eager `QTableWidget` populate is ~11 s + ~900 MB at 66k rows, the
+  dominant freeze cost. Correctness beats the GUI optimization: filter / select / match must
+  operate over **all** rows, never just the visible ones. The full frame already lives in
+  memory (ADR-011, ~31 MB), so full-set semantics are preserved *for free* if the table is
+  backed by a `QAbstractTableModel` over that frame — the model exposes every row (filter /
+  select / match intact) while the `QTableView` renders only visible rows on demand. That
+  replaces today's eager `QTableWidget` population and removes both the freeze *and* the
+  ~900 MB (the frame is ~31 MB; the widget was the hog). The `canFetchMore` / `fetchMore`
+  *streaming* approach is **rejected** (its match / selectRow / filter see only fetched
+  rows). No longer conditional.
+- **Background-thread / progress-cover the `set_results` rebuild.** Even virtualized, the
+  KDE grid is ~4 s, so the rebuild (table + KDE + scatter) runs off the UI thread and/or
+  under a progress dialog. This is what actually unfreezes the large→small add: `combine` is
+  3 ms — the cost was always the un-progress-covered GUI rebuild. Same threading covers the
+  slow extraction.
+- **Tiered result store (revisit latency).** In-memory cache keyed by (bank id +
+  egm-features version + extraction params), size-aware LRU, spilling the cold tier to a
+  temp/cache dir under a **user-settable memory ceiling** (Settings). Re-selecting a loaded
+  bank is instant; a bank switch never recomputes the ~3-min extraction. An egm-features
+  (math) change invalidates automatically via the version key; the user can also **flush the
+  disk cache** manually. Profiling sizes the ceiling generously — frames are ~31 MB, so many
+  IAFDB-scale banks fit in RAM and disk-spill is a rare safety valve.
 - **Filter-change cost — measure, likely skip.** Re-filtering only the rows that already
   passed when a filter *narrows* ("incremental filtering") is a real technique, but the
   row-masking is already fast (a vectorized pandas mask over 66k rows ≈ milliseconds). The
@@ -121,7 +136,57 @@ the combine-rebuild vs render) and to size the cache + ceiling defaults.
   profiling flags filtering at all, is recomputing only the *changed* downstream views, not
   the masking. Demoted from a build item to a profiling-pass check.
 - **Scatter decimation** (LTTB / min-max) for the two-large-banks overplot case that
-  bring-to-front can't fix (roadmap B7-scatter-front note).
+  bring-to-front can't fix (roadmap B7-scatter-front note). Low urgency — the scatter *data
+  prep* is ~18 ms; overplotting is a visual problem, not a timing one.
+
+---
+
+## Profiling results (2026-07-06)
+
+Instrumented the load pipeline at IAFDB scale (66k rows) with `scripts/profile_load.py`
+(`--bank PATH` runs the true read+extract path on a real bank; the default synthesizes a
+66k-row frame to exercise the downstream rebuild without waiting minutes for extraction).
+Measured on an offscreen Qt build in the sandbox.
+
+| Stage | Time | Peak RSS | Progress-covered? |
+|---|---|---|---|
+| `load_classifier_bank` (HDF5 read) | ~33 ms / 4k traces | — | yes |
+| `build_view_model` (feature extract) | ~2.9 ms/trace → **~190 s @ 66k** | — | **yes** (progress dialog) |
+| `combine_view_models` | **3 ms** | — | n/a |
+| `feature_groups_by_source` (KDE prep) | 20 ms | — | — |
+| `scatter_series_by_source` | 18 ms | — | — |
+| **`ResultList.set_frame`** (table populate) | **~11,000 ms** | **+~900 MB** | **NO ← freeze** |
+| **`FeatureDistributionGrid.set_groups`** (KDE render) | **~4,000 ms** | | **NO ← freeze** |
+
+**What it settled:**
+
+1. **The freeze is the eager result table, not `combine`.** `combine_view_models` is 3 ms —
+   exonerated. The large→small freeze is the un-progress-covered `set_results` GUI rebuild:
+   `ResultList.set_frame` allocates one `QTableWidgetItem` per cell (~1.2M items at 66k×18 →
+   ~11 s + ~900 MB), plus the 11-panel KDE grid (~4 s). Confirmed in code at
+   `result_list.py:115-119` (`setRowCount` then a nested per-cell `setItem`).
+2. **"Nothing renders all rows" was wrong** (the ADR-011 premise applied to the plots, not
+   the table). The table *does* eagerly render every row — which is why the virtualized
+   table jumps from "maybe, if justified" to the headline fix.
+3. **Extraction is the slow load step, not a freeze.** ~2.9 ms/trace at T=1000 → ~3 min at
+   66k, matching the "couple of minutes" field estimate — but progress-covered. It scales
+   linearly in trace *count*; at these lengths it is sub-quadratic in trace length (the
+   other 10 features dominate, not sampen's O(T²)), so the real per-trace rate scales with
+   the actual trace length. This is exactly what the tiered store avoids recomputing.
+4. **The frame is cheap; the widget was the hog.** 66k rows ≈ 31 MB in memory; the 900 MB
+   was the table widget. So virtualizing the table also removes the memory blowup, and the
+   cache memory-ceiling default can be generous (many IAFDB-scale frames fit in RAM).
+5. **Read + `combine` + data-prep are all negligible** (tens of ms) — no work needed there.
+
+**Reprioritization (folded into `roadmap.md` Block 11):** (1) virtualized result table,
+(2) thread / progress-cover the `set_results` rebuild, (3) tiered store (revisit latency),
+(4) scatter decimation. The survey's original "tiered store is *the* centerpiece" was about
+compute latency; the *freeze* centerpiece is the table + threading.
+
+**Caveat:** `--bank` against the on-disk sample banks hit a schema-version gap (they are
+`schema_version 0.1`; current egm-data wants `0.2`), so exact real-IAFDB numbers need a
+freshly-written bank. The synthetic numbers above are what drive the conclusions, and the
+extraction rate matches the field estimate.
 
 ---
 

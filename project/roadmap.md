@@ -842,9 +842,12 @@ refactor-cleanup):**
 **Follow-ups surfaced by the B10g review:**
 
 - **Large-bank → small-bank freeze.** Loading a small bank while a large
-  one is already loaded freezes the window (the view-model re-derives over
-  *all* loaded banks on the main thread after the progress-covered
-  extraction). Tracked for **Block 11** — see its scope.
+  one is already loaded freezes the window — the un-progress-covered
+  `set_results` GUI rebuild re-runs over *all* loaded rows on the main
+  thread. Block 11 profiling (2026-07-06) pinned the cost to the **eager
+  result table** (~11 s + ~900 MB at 66k rows) + the KDE grid (~4 s), not
+  `combine_view_models` (3 ms). Fixed in **Block 11** by virtualizing the
+  table + threading the rebuild — see its scope.
 - **Deeper noise analysis (Phase 1.5).** The Noise view today is a
   segment browser; if Phase 1.5 pursues rigorous signal analysis of the
   noise itself (spectra, statistics), the view gains feature panels then.
@@ -859,16 +862,56 @@ recomputes from scratch. This block makes the exploration loop smooth.
 The research half of the opening spike is **done** — see
 [`project/optimization_survey.md`](optimization_survey.md) for the
 technique survey, the our-ideas validation, the "one tiered store"
-design decision, and the deferred techniques (with triggers). What
-remains is a short profiling pass, then the implementation.
+design decision, and the deferred techniques (with triggers). The
+**profiling pass is now done too** (results below) — and it *reordered
+the block*: the freeze is the eager result table, not the `combine`
+rebuild, so the virtualized table + threading the rebuild are the
+freeze fix, and the tiered store is re-cast as revisit-latency.
 
 **Scope:**
 
-- **Profiling pass (first implementation task).** Instrument an IAFDB
-  load and measure where the seconds go — extraction vs the
-  `combine_view_models` rebuild vs render — to confirm the freeze is the
-  combine path and to size the cache + memory-ceiling defaults.
-- **Tiered result store (the centerpiece).** One keyed store for the
+- **Profiling pass — ✓ done 2026-07-06.** Instrumented the load pipeline
+  at IAFDB scale (66k rows). Harness: `scripts/profile_load.py`
+  (`--bank PATH` runs the true read+extract path on a real bank). What it
+  found:
+  - **The freeze is *not* `combine_view_models`** (3 ms) — it is the
+    un-progress-covered `set_results` GUI rebuild: `ResultList.set_frame`
+    eagerly allocates one `QTableWidgetItem` per cell (~1.2M items at
+    66k×18 → **~11 s + ~900 MB**), plus the 11-panel KDE grid
+    (`FeatureDistributionGrid.set_groups`, **~4 s**).
+  - **Extraction** is the slow *load* step — ~2.9 ms/trace at T=1000 →
+    **~3 min at 66k** (matches the "couple of minutes" field estimate) —
+    but it is progress-covered, so it never froze anything. It is exactly
+    what the tiered store exists to avoid recomputing.
+  - **Read** (HDF5, ~33 ms/4k), **`combine`** (3 ms), and the data-prep
+    (`feature_groups_by_source` 20 ms, `scatter_series_by_source` 18 ms)
+    are all negligible.
+  - The frame itself is only **~31 MB** at 66k rows; the 900 MB is the
+    *table widget*, so virtualizing the table also removes the memory
+    blowup. This overturns the survey's "nothing renders all rows"
+    premise — the table *does*.
+- **Virtualized result table (model/view) — the freeze headline.**
+  Profiling makes this the single highest-value fix: it removes both the
+  ~11 s populate freeze *and* the ~900 MB. Correctness wins — filter /
+  select / match must run over **all** rows, never just the visible ones.
+  The full frame is already in memory (ADR-011, ~31 MB), so back the table
+  with a `QAbstractTableModel` over that frame (every row visible to
+  filter / select / match) and let the `QTableView` render lazily —
+  replacing today's eager `QTableWidget` build. The `fetchMore`
+  *streaming* approach is **rejected** (it sees only fetched rows). No
+  longer conditional: profiling justified it.
+- **Background-thread / progress-cover the `set_results` rebuild.** Even
+  with the table virtualized, the KDE grid is ~4 s, so the rebuild (table
+  + KDE + scatter) must run off the UI thread and/or under a progress
+  dialog. This is what actually kills the **large→small freeze** (B10g
+  review): adding a *small* bank while a *large* one is loaded re-runs
+  `set_results` over all rows on the main thread — `combine` is cheap, the
+  GUI rebuild is not. Same threading keeps the GUI responsive during the
+  slow extraction.
+- **Tiered result store (revisit latency, not the freeze).** Re-cast from
+  "centerpiece": the freeze is fixed by the table + threading above; the
+  store's job is to avoid recomputing the ~3-min extraction when you
+  re-select or re-add a bank. Still worth building. One keyed store for the
   per-bank computed view-model — *not* a separate in-memory cache + disk
   cache (see the survey). Keyed by **(bank id + egm-features version +
   extraction params)**; a size-aware **LRU** keeps the hot set in RAM
@@ -878,25 +921,9 @@ remains is a short profiling pass, then the implementation.
   *feature math* (egm-features + a small egm-studio cache-format
   constant), never egm-studio's release version, so a math change never
   reuses stale results; a **Flush cache** action clears it manually.
-  (This settles the old session-vs-persistent question: persistent,
-  version-keyed, ceiling-bounded.)
-  - **Specific freeze to fix (B10g review):** loading a *small* bank
-    while a *large* one is already loaded freezes the window — after the
-    progress-covered extraction, `combine_view_models` re-derives over
-    **all** loaded banks on the main thread. Serving from the store
-    removes the recompute; the background-thread item covers the rest.
-- **Background-thread the extraction + view build.** Keep the GUI
-  responsive during the slow extraction *and* the combine rebuild (the
-  freeze above), served from the store when cached.
-- **Virtualized result table — model/view only, if profiling justifies
-  it.** Correctness wins: filter / select / match must run over **all**
-  rows, never just the visible ones. The full frame is already in memory
-  (ADR-011), so back the table with a `QAbstractTableModel` over that
-  frame (every row visible to filter / select / match) and let the
-  `QTableView` render lazily — replacing today's eager `QTableWidget`
-  build. The `fetchMore` *streaming* approach is **rejected** (it sees
-  only fetched rows). Skip entirely if the table build isn't a measured
-  cost.
+  (Persistent, version-keyed, ceiling-bounded.) Profiling sizes the
+  default ceiling generously — frames are ~31 MB, so many IAFDB-scale
+  banks fit in RAM and disk-spill is a rare safety valve.
 - **Filter-change cost — measure, likely skip.** When a filter is
   *narrowed* its result is a subset of the previous one, so in principle
   you could re-filter only the rows that already passed instead of
@@ -945,12 +972,15 @@ remains is a short profiling pass, then the implementation.
 
 **Exit:**
 
-- Switching between two already-loaded banks does not recompute features
-  (served from the tiered store); the large→small freeze is gone.
+- The large→small freeze is gone: the result table is virtualized
+  (model/view, no eager per-cell build) and the `set_results` rebuild is
+  off the UI thread / progress-covered — no multi-second unfeedbacked
+  freeze on add-a-bank, and no ~900 MB table-widget spike.
+- Switching between (or re-adding) two already-loaded banks does not
+  recompute features — served from the tiered store.
 - The tiered store is version-keyed (egm-features), ceiling-bounded,
   disk-spilling, and user-flushable.
-- The load / filter loop on a large bank feels responsive — no
-  multi-second unfeedbacked freezes (target set by the profiling pass).
+- The load / filter loop on a large bank feels responsive.
 
 **Estimated effort:** ~1-2 days (spike + implementation).
 
