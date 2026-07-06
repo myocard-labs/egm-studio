@@ -169,6 +169,15 @@ ignore = [
 "tests/**/*.py" = ["B011"]
 "__init__.py"   = ["F401"]
 
+[tool.ruff.lint.flake8-bugbear]
+# Qt model/view overrides idiomatically default `parent` to a fresh QModelIndex()
+# (an empty index == "the root"), so B008 (function call in an argument default) is a
+# false positive for these immutable Qt handles. Treat them as immutable.
+extend-immutable-calls = [
+  "PySide6.QtCore.QModelIndex",
+  "PySide6.QtCore.QPersistentModelIndex",
+]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
