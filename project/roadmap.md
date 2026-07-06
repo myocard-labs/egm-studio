@@ -856,32 +856,58 @@ refactor-cleanup):**
 Load + per-bank feature computation are already noticeable on a large
 bank (e.g. IAFDB) and get annoying when switching banks — every switch
 recomputes from scratch. This block makes the exploration loop smooth.
-It opens with a short research/profiling spike to inventory the wins,
-then implements them.
+The research half of the opening spike is **done** — see
+[`project/optimization_survey.md`](optimization_survey.md) for the
+technique survey, the our-ideas validation, the "one tiered store"
+design decision, and the deferred techniques (with triggers). What
+remains is a short profiling pass, then the implementation.
 
 **Scope:**
 
-- **Research + profiling spike (first).** Profile the load → summary →
-  filter → switch loop on a large bank; inventory the concrete wins and
-  their cost/benefit before committing (candidates below).
-- **In-memory result cache.** Cache the per-bank computed view-model
-  (features) keyed by bank id, so re-selecting an already-loaded bank is
-  instant and a bank switch doesn't recompute. Bounded (LRU / by count).
+- **Profiling pass (first implementation task).** Instrument an IAFDB
+  load and measure where the seconds go — extraction vs the
+  `combine_view_models` rebuild vs render — to confirm the freeze is the
+  combine path and to size the cache + memory-ceiling defaults.
+- **Tiered result store (the centerpiece).** One keyed store for the
+  per-bank computed view-model — *not* a separate in-memory cache + disk
+  cache (see the survey). Keyed by **(bank id + egm-features version +
+  extraction params)**; a size-aware **LRU** keeps the hot set in RAM
+  under a **user-settable memory ceiling** (Settings), and eviction
+  **spills the cold tier to a disk cache** (joblib-style) rather than
+  dropping it, so a result survives a restart. The version key is the
+  *feature math* (egm-features + a small egm-studio cache-format
+  constant), never egm-studio's release version, so a math change never
+  reuses stale results; a **Flush cache** action clears it manually.
+  (This settles the old session-vs-persistent question: persistent,
+  version-keyed, ceiling-bounded.)
   - **Specific freeze to fix (B10g review):** loading a *small* bank
-    while a *large* one is already loaded freezes the window. Root cause:
-    after the progress-covered extraction, `combine_view_models`
-    re-derives over **all** loaded banks on the main thread (unfeedbacked).
-    The per-bank cache above removes the recompute; verify this exact
-    large→small switch no longer freezes.
-- **Disk-backed cache (decided by the spike).** Persist computed results
-  to a cache dir keyed by bank id + a content/version hash, so the
-  computation survives an egm-studio restart. Open question carried from
-  the backlog: session-scoped (cleared on exit) vs persistent — decide
-  here.
-- **Candidates to weigh in the spike:** background-thread feature
-  extraction (keep the GUI responsive without a modal dialog);
-  virtualized / lazy result table (build rows on demand, not all up
-  front); incremental filtering.
+    while a *large* one is already loaded freezes the window — after the
+    progress-covered extraction, `combine_view_models` re-derives over
+    **all** loaded banks on the main thread. Serving from the store
+    removes the recompute; the background-thread item covers the rest.
+- **Background-thread the extraction + view build.** Keep the GUI
+  responsive during the slow extraction *and* the combine rebuild (the
+  freeze above), served from the store when cached.
+- **Virtualized result table — model/view only, if profiling justifies
+  it.** Correctness wins: filter / select / match must run over **all**
+  rows, never just the visible ones. The full frame is already in memory
+  (ADR-011), so back the table with a `QAbstractTableModel` over that
+  frame (every row visible to filter / select / match) and let the
+  `QTableView` render lazily — replacing today's eager `QTableWidget`
+  build. The `fetchMore` *streaming* approach is **rejected** (it sees
+  only fetched rows). Skip entirely if the table build isn't a measured
+  cost.
+- **Filter-change cost — measure, likely skip.** When a filter is
+  *narrowed* its result is a subset of the previous one, so in principle
+  you could re-filter only the rows that already passed instead of
+  re-scanning the whole frame ("incremental filtering"). In practice the
+  row-masking is already fast — a vectorized pandas mask over even 66k
+  rows is milliseconds; the real cost of a filter change is the
+  **downstream rebuilds** it triggers (the distribution-grid KDEs, the
+  scatter, the result table — B7-filter-A). So if the profiling pass
+  flags filtering at all, the win is *recomputing only the downstream
+  views that actually changed*, not the masking. Demoted from a
+  standalone item to a profiling-pass check.
 - **Scatter at very large N (overplotting).** The B7-scatter-front
   bring-to-front button is the short-term fix for *one* huge bank burying
   the others; when *two* banks are both very large it can't help (whichever
@@ -897,6 +923,19 @@ then implements them.
   so CI can run the fast set on `development` pushes (`-m "not gui"` or
   `--ignore=tests/gui`) and the full set on PRs into `release`. Weigh against
   keeping full coverage on every push; decide + wire `ci.yml` here.
+- **Deferred (with triggers), from the survey.** Standard techniques we
+  are *not* building now — each revived only when its trigger fires (full
+  detail in `project/optimization_survey.md`):
+  - *Memory-map the source (egm-data) + approximate stats (t-digest /
+    reservoir)* — trigger: we need to process *truly huge* banks (IAFDB
+    fits today).
+  - *Accelerate the O(T²) entropy kernel (Numba / Cython, egm-features)* —
+    trigger: the feature math grows in complexity, or we regularly use
+    multiple IAFDB-sized banks (IAFDB alone takes a couple of minutes —
+    acceptable).
+  - *Shrink the frame (dtype + categorical) + copy-on-write* — trigger:
+    we regularly overflow the memory ceiling and disk thrash slows things
+    down.
 
 **Deps:**
 
@@ -907,11 +946,11 @@ then implements them.
 **Exit:**
 
 - Switching between two already-loaded banks does not recompute features
-  (served from cache).
-- The chosen disk-cache policy (session vs persistent) is decided,
-  implemented, and documented.
+  (served from the tiered store); the large→small freeze is gone.
+- The tiered store is version-keyed (egm-features), ceiling-bounded,
+  disk-spilling, and user-flushable.
 - The load / filter loop on a large bank feels responsive — no
-  multi-second unfeedbacked freezes (target set by the spike).
+  multi-second unfeedbacked freezes (target set by the profiling pass).
 
 **Estimated effort:** ~1-2 days (spike + implementation).
 
