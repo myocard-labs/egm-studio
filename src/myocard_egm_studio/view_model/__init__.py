@@ -22,6 +22,12 @@ from myocard_egm_studio.view_model.builder import (
     build_view_model,
     feature_units,
 )
+from myocard_egm_studio.view_model.cache import (
+    CACHE_FORMAT,
+    CacheKey,
+    FrameStore,
+    view_model_key,
+)
 from myocard_egm_studio.view_model.combine import ROW_ID, combine_view_models
 from myocard_egm_studio.view_model.filtering import (
     Condition,
@@ -46,6 +52,7 @@ from myocard_egm_studio.view_model.summary import BankSummary, bank_summary
 from myocard_egm_studio.view_model.trace_detail import DetailRow, TraceDetail, trace_detail
 
 __all__ = [
+    "CACHE_FORMAT",
     "FEATURE_COLUMNS",
     "IDENTITY_COLUMNS",
     "ML_COLUMNS",
@@ -53,10 +60,12 @@ __all__ = [
     "ArtifactGroup",
     "ArtifactRow",
     "BankSummary",
+    "CacheKey",
     "Condition",
     "DetailRow",
     "FilterColumn",
     "FilterSpec",
+    "FrameStore",
     "ProgressFn",
     "TraceDetail",
     "apply_filter",
@@ -71,5 +80,6 @@ __all__ = [
     "phase_artifact_groups",
     "similar_in_other_sources",
     "trace_detail",
+    "view_model_key",
     "within_class_neighborhood",
 ]
