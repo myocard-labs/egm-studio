@@ -32,10 +32,6 @@ class ArtifactAction:
     note: str = ""  # tooltip: why it is disabled / which block delivers it
 
 
-# Where the not-yet-built viewers land (egm-studio roadmap blocks).
-_B7 = "Arrives with Signal exploration (Block 7)"
-_B8 = "Arrives with ML diagnostics (Block 8)"
-
 # Info actions every artifact ends with (Show metadata is added per-role below).
 SHOW_METADATA = ArtifactAction("show_metadata", "Show metadata")
 UNIVERSAL_ACTIONS: tuple[ArtifactAction, ...] = (
@@ -97,8 +93,8 @@ _VIEWERS_BY_ROLE: dict[Role, tuple[ArtifactAction, ...]] = {
     Role.labeled_prediction_bank: _PREDICTION_BANK,
     Role.unlabeled_prediction_bank: _PREDICTION_BANK,
     Role.noise_bank: (
-        ArtifactAction("view_noise", "View noise segments", available=False, note=_B7),
-        ArtifactAction("view_curation_summary", "View curation summary", available=False, note=_B8),
+        ArtifactAction("view_noise", "View noise segments"),  # wired B10g — reads the .h5
+        # ("View curation summary" removed until its run-record link is designed — B10g.)
     ),
     Role.training_run: (
         ArtifactAction("view_curves", "View training curves"),  # wired in B8f (Flow B Training)

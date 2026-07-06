@@ -99,13 +99,25 @@ def model_entry(path: Path | str) -> ModelEntry:
     return ModelEntry.model_validate(base)
 
 
+#: How the noise-bank exporter names the run-record sidecar (iafdb convention): the ``.h5``'s
+#: stem + this suffix, in the same folder — e.g. ``foo_noise.h5`` -> ``foo_noise_run_record.json``.
+_NOISE_RECORD_SUFFIX = "_run_record.json"
+
+
 def noise_bank_entry(path: Path | str) -> NoiseBankEntry:
-    """A manifest entry for a noise-bank **run-record** JSON — its stable id is the record's
-    ``bank_id``. The noise-bank ``.h5`` itself carries no id, so a curator points at the record
-    (as a training run points at its ``run.json``). A missing ``bank_id`` is an error.
+    """A manifest entry for a noise-bank ``.h5`` (its segments). The ``.h5`` carries no id, so the
+    stable ``bank_id`` is read from its **sibling run record** — ``<stem>_run_record.json`` next to
+    it (the iafdb export convention). The entry points at the ``.h5`` (matching produced entries),
+    so the segment / metadata viewers, which read the ``.h5``, work. A missing sibling record or
+    ``bank_id`` is an error.
     """
-    data = _read_json(path)
-    bank_id = data.get("bank_id")
+    h5 = Path(path)
+    record = h5.with_name(h5.stem + _NOISE_RECORD_SUFFIX)
+    if not record.exists():
+        raise ValueError(
+            f"noise bank {h5.name} has no sibling run record ({record.name}); cannot read its id"
+        )
+    bank_id = _read_json(record).get("bank_id")
     if not bank_id:
-        raise ValueError(f"noise-bank record at {path} has no bank_id; cannot index it")
-    return NoiseBankEntry.model_validate(_base(str(bank_id), path))
+        raise ValueError(f"noise-bank record {record.name} has no bank_id; cannot index it")
+    return NoiseBankEntry.model_validate(_base(str(bank_id), h5))  # entry points at the .h5

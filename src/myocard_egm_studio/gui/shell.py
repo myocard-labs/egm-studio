@@ -54,6 +54,8 @@ from myocard_egm_studio.gui.theme import (
 )
 from myocard_egm_studio.gui.views import (
     MlDiagnosticsView,
+    NoiseControls,
+    NoiseExplorationView,
     PaperFigurePrepView,
     SignalExplorationView,
 )
@@ -108,6 +110,7 @@ from myocard_egm_studio.view_model.dependencies import (
 )
 from myocard_egm_studio.view_model.figure_output import figure_output_exists_map, figure_output_path
 from myocard_egm_studio.view_model.filtering import FilterSpec
+from myocard_egm_studio.view_model.noise import load_noise_bank
 from myocard_egm_studio.view_model.phase_actions import reveal_target
 from myocard_egm_studio.view_model.phase_status import (
     ArtifactStatus,
@@ -127,7 +130,16 @@ _UNCONSTRAINED_W = 16777215  # Qt's QWIDGETSIZE_MAX — undoes a fixed width
 # Child order within the horizontal work-area splitter.
 _COL_LEFT, _COL_MAIN, _COL_RIGHT = 0, 1, 2
 
-_MODES = ("Signal exploration", "ML diagnostics", "Paper figures")
+#: Top-level modes, left-to-right; the index is the modes-stack page. Noise sits next to
+#: signal exploration (both are raw-signal views) ahead of the ML / figure workflows.
+_MODE_SIGNAL, _MODE_NOISE, _MODE_ML, _MODE_FIGURE = 0, 1, 2, 3
+_MODES = ("Signal exploration", "Noise", "ML diagnostics", "Paper figures")
+
+#: The left sidebar's heading + body change with the mode: the noise controls replace the
+#: bank filter panel in Noise mode, the bank filter panel elsewhere.
+_LEFT_BANKS, _LEFT_NOISE = 0, 1  # left-sidebar body stack pages
+_LEFT_TITLE = "Banks & filters"
+_LEFT_TITLE_NOISE = "Noise segments"
 
 #: A filter rebuild only shows its progress dialog if it runs longer than this, so a
 #: quick filter applies without flashing a dialog while a slow one still gets a bar.
@@ -195,7 +207,9 @@ class CollapsibleSidebar(QtWidgets.QWidget):
         header = QtWidgets.QHBoxLayout()
         label = QtWidgets.QLabel(title)
         label.setObjectName("sidebarTitle")
+        self._title_label = label
         button = self._toggle_button(_COLLAPSE_GLYPH[side], f"Collapse {title}")
+        self._collapse_button = button
         if side == "left":
             header.addWidget(label)
             header.addStretch(1)
@@ -221,8 +235,15 @@ class CollapsibleSidebar(QtWidgets.QWidget):
         v = QtWidgets.QVBoxLayout(strip)
         v.setContentsMargins(4, 6, 4, 6)
         v.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
-        v.addWidget(self._toggle_button(_EXPAND_GLYPH[side], f"Show {title}"))
+        self._strip_button = self._toggle_button(_EXPAND_GLYPH[side], f"Show {title}")
+        v.addWidget(self._strip_button)
         return strip
+
+    def set_title(self, title: str) -> None:
+        """Retitle the sidebar (heading + toggle tooltips) — the left rail follows the mode."""
+        self._title_label.setText(title)
+        self._collapse_button.setToolTip(f"Collapse {title}")
+        self._strip_button.setToolTip(f"Show {title}")
 
     def _toggle_button(self, glyph: str, tooltip: str) -> QtWidgets.QToolButton:
         button = QtWidgets.QToolButton()
@@ -467,6 +488,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._current_theme = theme
         self._explore_view.restyle(plot_palette(theme), chart_style(theme))
         self._diagnostics_view.restyle(plot_palette(theme), chart_style(theme))
+        self._noise_view.restyle(plot_palette(theme))
         for action in self._theme_group.actions():
             action.setChecked(action.data() == theme)
 
@@ -533,7 +555,18 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_mode_changed(self, index: int) -> None:
         """Switch the main work area to the selected mode's view."""
         self._modes_stack.setCurrentIndex(index)
+        self._sync_left_sidebar(index)
         self.statusBar().showMessage(f"Mode: {_MODES[index]}")
+
+    def _sync_left_sidebar(self, index: int) -> None:
+        """Point the left rail at the mode's controls: noise controls in Noise mode, the
+        bank filter panel otherwise (retitling the heading to match)."""
+        if index == _MODE_NOISE:
+            self._left_body_stack.setCurrentIndex(_LEFT_NOISE)
+            self._left_sidebar.set_title(_LEFT_TITLE_NOISE)
+        else:
+            self._left_body_stack.setCurrentIndex(_LEFT_BANKS)
+            self._left_sidebar.set_title(_LEFT_TITLE)
 
     def _build_columns(self) -> QtWidgets.QSplitter:
         """The draggable left | main | right work area (ADR-025)."""
@@ -553,13 +586,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self._bank_list.bringToFrontRequested.connect(self._on_bring_to_front)
         self._filter_panel = FilterPanel()
         self._filter_panel.recalculateRequested.connect(self._on_recalculate)
-        left_body = QtWidgets.QWidget()
-        left_layout = QtWidgets.QVBoxLayout(left_body)
+        banks_body = QtWidgets.QWidget()
+        left_layout = QtWidgets.QVBoxLayout(banks_body)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(10)
         left_layout.addWidget(self._bank_list)
         left_layout.addWidget(self._filter_panel, 1)
-        self._left_sidebar.set_body(left_body)
+        # The left rail swaps body with the mode: bank filters for the signal / ML / figure
+        # flows, the noise controls for Noise mode (both hosted in one stack so neither rebuilds).
+        self._noise_controls = NoiseControls()
+        self._left_body_stack = QtWidgets.QStackedWidget()
+        self._left_body_stack.insertWidget(_LEFT_BANKS, banks_body)
+        self._left_body_stack.insertWidget(_LEFT_NOISE, self._noise_controls)
+        self._left_sidebar.set_body(self._left_body_stack)
 
         self._explore_view = SignalExplorationView(
             plot_palette(self._current_theme), chart_style(self._current_theme)
@@ -576,11 +615,14 @@ class MainWindow(QtWidgets.QMainWindow):
         # follows the same aboutToShow rule as the File-menu targets).
         self._figure_view.save_menu().aboutToShow.connect(self._sync_phase_targets)
         self._phase_target_actions.append(self._figure_view.phase_save_action())
+        self._noise_view = NoiseExplorationView(plot_palette(self._current_theme))
+        self._noise_controls.segmentChosen.connect(self._noise_view.on_segment)
         self._modes_stack = QtWidgets.QStackedWidget()
         self._modes_stack.setMinimumWidth(_MAIN_MIN_W)
-        self._modes_stack.addWidget(self._explore_view)  # 0 — signal exploration
-        self._modes_stack.addWidget(self._diagnostics_view)  # 1 — ML diagnostics (Flow B)
-        self._modes_stack.addWidget(self._figure_view)  # 2 — paper figure prep (Flow C)
+        self._modes_stack.insertWidget(_MODE_SIGNAL, self._explore_view)  # signal exploration
+        self._modes_stack.insertWidget(_MODE_NOISE, self._noise_view)  # noise-bank segments
+        self._modes_stack.insertWidget(_MODE_ML, self._diagnostics_view)  # ML diagnostics (Flow B)
+        self._modes_stack.insertWidget(_MODE_FIGURE, self._figure_view)  # paper figures (Flow C)
 
         self._right_sidebar = CollapsibleSidebar(
             title="Phase tree",
@@ -818,11 +860,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self._index_producer(path, kind="model", target=target)
 
     def _load_noise_banks(self, target: _Target) -> None:
-        """File > Open noise bank ▸ Load to scratch / phase: index a noise-bank **run-record**
-        JSON (its ``bank_id`` is the stable id; the noise-bank ``.h5`` carries none). Index-only
-        — noise banks have no in-app viewer."""
+        """File > Open noise bank ▸ Load to scratch / phase: index a noise-bank ``.h5`` (the
+        entry points at it, so its segments are viewable). Its stable id comes from the sibling
+        ``<stem>_run_record.json`` next to the ``.h5``. Index-only — no in-app view on load."""
         paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
-            self, "Open noise-bank record", "", "Noise-bank records (*.json);;All files (*)"
+            self, "Open noise bank", "", "Noise banks (*.h5 *.hdf5);;All files (*)"
         )
         for path in paths:
             self._index_producer(path, kind="noise", target=target)
@@ -884,7 +926,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _show_training_runs(self) -> None:
         """Feed the loaded runs to Flow B's Training tab + switch to ML-diagnostics mode."""
         self._diagnostics_view.set_runs(self._loaded_runs)
-        self._show_mode(1)  # ML-diagnostics mode; the view lands on the Training tab
+        self._show_mode(_MODE_ML)  # the view lands on the Training tab
         self.statusBar().showMessage(f"Loaded {len(self._loaded_runs)} training run(s)")
 
     def _remove_training_run(self, label: str) -> None:
@@ -933,7 +975,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._diagnostics_view.set_evaluated(combined, mode, traces=traces)
         else:
             self._diagnostics_view.clear()
-        self._show_mode(0)
+        self._show_mode(_MODE_SIGNAL)
         if focus == "explore":
             self._explore_view.show_explore()
         else:  # "summary" or None (Add / Remove bank) land on the summary overview
@@ -974,8 +1016,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.statusBar().showMessage(f"{kept} of {total} trace(s) match the filter")
 
     def _show_mode(self, index: int) -> None:
-        """Activate a mode: switch the stack page and tick its header button."""
+        """Activate a mode: switch the stack page, the left rail, and tick its header button."""
         self._modes_stack.setCurrentIndex(index)
+        self._sync_left_sidebar(index)
         button = self._mode_group.button(index)
         if button is not None:
             button.setChecked(True)
@@ -1129,19 +1172,21 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_bank_explore(str(resolved), focus="summary", replace=not self._loaded_banks)
         elif action_id == "view_ml_diagnostics":
             self._open_bank_explore(str(resolved), focus=None, replace=not self._loaded_banks)
-            self._show_mode(1)  # ML-diagnostics mode
+            self._show_mode(_MODE_ML)
+        elif action_id == "view_noise":
+            self._open_noise_view(str(resolved), entry.id)
         elif action_id == "view_curves":
             self._load_training_run(str(resolved), entry.id)
             if any(name == entry.id for name, _ in self._loaded_runs):
                 self._show_training_runs()
         elif action_id == "edit_spec":
             self._figure_view.load_spec(str(resolved))  # bank_paths are cross-scope (2c)
-            self._show_mode(2)  # paper-figure-prep mode
+            self._show_mode(_MODE_FIGURE)
         elif action_id == "view_figure":
             self._view_figure(resolved)
         elif action_id == "generate_figure":
             self._figure_view.generate_to_file(str(resolved))
-            self._show_mode(2)
+            self._show_mode(_MODE_FIGURE)
         elif action_id == "open_observation":
             self._open_observation(entry.id, resolved, scope_dirs=scope_dirs)
         elif action_id == "edit_observation":
@@ -1289,7 +1334,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         filter_note = self._restore_filter(view.filter)
         selected = self._restore_selection(list(observation.traces or []))
-        self._show_mode(0)
+        self._show_mode(_MODE_SIGNAL)
         self._explore_view.show_explore()
         banks = f"{loaded} bank(s)" + (f" ({missing} missing)" if missing else "")
         self.statusBar().showMessage(
@@ -1563,11 +1608,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage(f"Deleted {artifact_id} from scratch")
 
     def _current_selection(self) -> list[int]:
-        """The selected trace row_ids in the active flow (empty for Flow C / figure prep)."""
+        """The selected trace row_ids in the active flow (empty for Noise / figure prep)."""
         mode = self._modes_stack.currentIndex()
-        if mode == 0:
+        if mode == _MODE_SIGNAL:
             return self._explore_view.result_list.selected_row_ids()
-        if mode == 1:
+        if mode == _MODE_ML:
             return self._diagnostics_view.result_list.selected_row_ids()
         return []
 
@@ -1605,6 +1650,43 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(buttons)
         self._metadata_dialog = dialog  # keep a reference so it isn't garbage-collected
         dialog.show()  # non-modal: hand control straight back to the app
+
+    def _open_noise_view(self, path: str, bank_id: str) -> None:
+        """Open a noise bank in the Noise view (right-click ▸ View noise segments, B10g).
+
+        Reads the ``.h5`` (the entry's path) into the fourth top-level mode — an overview +
+        filterable segment list over a full-height trace plot. The whole bank is loaded (66k+
+        segments for the IAFDB bank), so the read + the table build run under a progress dialog
+        like the Open-bank path; a read failure shows a friendly message rather than crashing.
+        """
+        dialog = QtWidgets.QProgressDialog("Loading noise bank…", "", 0, 0, self)
+        dialog.setWindowTitle("View noise segments")
+        dialog.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+        dialog.setMinimumDuration(0)  # show at once — the h5 read can stall before progress
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.setCancelButton(None)  # the h5 read can't be interrupted mid-flight
+        dialog.setValue(0)  # force the (min-duration 0) dialog to paint immediately
+        QtWidgets.QApplication.processEvents()
+        try:
+            bank = load_noise_bank(path)
+        except Exception as exc:  # not a noise bank / unreadable -> friendly dialog, no crash
+            dialog.close()
+            QtWidgets.QMessageBox.warning(
+                self,
+                "View noise segments",
+                f"Could not read noise segments:\n\n{exc}\n\n"
+                "If this bank predates the current pipeline, re-generate it.",
+            )
+            return
+        dialog.setLabelText("Building segment table…")  # the O(N) table fill reports progress
+        try:
+            self._noise_controls.set_bank(bank, bank_id=bank_id, progress=self._pump(dialog))
+        finally:
+            dialog.close()
+        self._show_mode(_MODE_NOISE)  # noise mode (also swaps the left rail to the noise controls)
+        self.statusBar().showMessage(f"{len(bank.segments):,} noise segment(s) — {bank_id}")
 
     def _reveal(self, target: Path) -> None:
         """Open ``target`` (the artifact's folder) in the OS file browser."""
