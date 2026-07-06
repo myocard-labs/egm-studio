@@ -655,6 +655,75 @@ def test_add_figure_to_phase_copies_the_spec_in_and_indexes_it(
     assert "fig_demo" in entries_by_id(window._phase_manifest)  # ...and is indexed
 
 
+def test_add_observation_to_phase_copies_it_in_and_indexes_it(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = _window(qtbot, tmp_path)
+    phase = _open_phase(window, tmp_path)
+    obs_file = tmp_path / "obs_demo.json"
+    obs_file.write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "id": "obs_demo_2026-06-27",
+                "date": "2026-06-27",
+                "title": "Demo",
+                "description": "a noticing",
+            }
+        )
+    )
+    _pick_files(monkeypatch, obs_file)
+
+    window._add_observation_to_phase()
+
+    assert (phase / "observations" / "obs_demo_2026-06-27.json").exists()  # lives in the phase...
+    assert window._phase_manifest is not None
+    assert "obs_demo_2026-06-27" in entries_by_id(window._phase_manifest)  # ...and is indexed
+
+
+def _obs_file(tmp_path: Path, obs_id: str) -> Path:
+    """A minimal observation JSON at ``tmp_path/<id>.json``."""
+    path = tmp_path / f"{obs_id}.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "id": obs_id,
+                "date": "2026-06-27",
+                "title": "Demo",
+                "description": "a noticing",
+            }
+        )
+    )
+    return path
+
+
+def test_open_observation_to_phase_indexes_it(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = _window(qtbot, tmp_path)
+    phase = _open_phase(window, tmp_path)
+    _pick_files(monkeypatch, _obs_file(tmp_path, "obs_phase_2026-06-27"))
+
+    window._load_observations("phase")
+
+    assert (phase / "observations" / "obs_phase_2026-06-27.json").exists()
+    assert window._phase_manifest is not None
+    assert "obs_phase_2026-06-27" in entries_by_id(window._phase_manifest)
+
+
+def test_open_observation_to_scratch_indexes_it(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = _window(qtbot, tmp_path)  # no phase open
+    _pick_files(monkeypatch, _obs_file(tmp_path, "obs_scratch_2026-06-27"))
+
+    window._load_observations("scratch")
+
+    assert "obs_scratch_2026-06-27" in _scratch_ids(window)  # indexed in the scratch manifest
+    assert "into scratch" in window.statusBar().currentMessage()
+
+
 def test_indexing_an_id_less_file_warns_and_indexes_nothing(
     qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
