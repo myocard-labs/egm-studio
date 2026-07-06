@@ -22,6 +22,12 @@ from myocard_egm_studio.charts.palette import color_for
 from myocard_egm_studio.charts.pyqtgraph import DEFAULT_STYLE, PgChartStyle, draw_feature_scatter
 from myocard_egm_studio.gui.widgets.legend import SourceLegend
 
+#: Opt-in decimation (off by default): the per-source cap when the user turns it on, and
+#: the spinbox range / step for tuning the level.
+_DEFAULT_MAX_POINTS = 5000
+_MIN_POINTS, _MAX_POINTS = 500, 100_000
+_POINTS_STEP = 500
+
 
 def _resolve(desired: str, features: list[str], fallback: int) -> str:
     """``desired`` if it is a current feature, else the ``fallback``-th feature (or "")."""
@@ -70,6 +76,25 @@ class FeatureScatterView(QtWidgets.QWidget):
         self._recenter_button.setToolTip("Fit the view to the points")
         self._recenter_button.clicked.connect(self.recenter)
 
+        # Opt-in decimation (off by default): thin the display when two big banks overplot.
+        self._decimate_check = QtWidgets.QCheckBox("Decimate")
+        self._decimate_check.setObjectName("scatterDecimate")
+        self._decimate_check.setToolTip(
+            "Plot a uniform random subsample of each source to fight overplotting when banks"
+            " are large. Off shows every point. The result list always lists every trace."
+        )
+        self._decimate_check.toggled.connect(self._on_decimate_toggled)
+
+        self._points_spin = QtWidgets.QSpinBox()
+        self._points_spin.setObjectName("scatterMaxPoints")
+        self._points_spin.setRange(_MIN_POINTS, _MAX_POINTS)
+        self._points_spin.setSingleStep(_POINTS_STEP)
+        self._points_spin.setSuffix(" pts/source")
+        self._points_spin.setValue(_DEFAULT_MAX_POINTS)
+        self._points_spin.setEnabled(False)  # the level only applies while decimation is on
+        self._points_spin.setToolTip("How many points to keep per source when decimating")
+        self._points_spin.valueChanged.connect(self._on_points_changed)
+
         header = QtWidgets.QHBoxLayout()
         header.setContentsMargins(8, 4, 8, 0)
         header.addWidget(QtWidgets.QLabel("X"))
@@ -78,6 +103,8 @@ class FeatureScatterView(QtWidgets.QWidget):
         header.addWidget(QtWidgets.QLabel("Y"))
         header.addWidget(self._y_combo)
         header.addStretch(1)
+        header.addWidget(self._decimate_check)
+        header.addWidget(self._points_spin)
         header.addWidget(self._recenter_button)
 
         self._legend = SourceLegend()
@@ -184,7 +211,12 @@ class FeatureScatterView(QtWidgets.QWidget):
             self._legend.set_entries([])
             return
         self._items = draw_feature_scatter(
-            plot, self._series, x=self._x, y=self._y, style=self._style
+            plot,
+            self._series,
+            x=self._x,
+            y=self._y,
+            style=self._style,
+            max_points=self._max_points(),
         )
         for item in self._items:
             item.sigClicked.connect(self._on_points_clicked)
@@ -197,6 +229,18 @@ class FeatureScatterView(QtWidgets.QWidget):
         self._y = self._y_combo.currentText()
         self._redraw()
         self.axesChanged.emit(self._x, self._y)
+
+    def _on_decimate_toggled(self, on: bool) -> None:
+        self._points_spin.setEnabled(on)  # the level control is live only while decimating
+        self._redraw()
+
+    def _on_points_changed(self, _value: int) -> None:
+        if self._decimate_check.isChecked():  # a level change only matters when decimating
+            self._redraw()
+
+    def _max_points(self) -> int | None:
+        """The per-source cap, or None (plot every point) when decimation is off."""
+        return self._points_spin.value() if self._decimate_check.isChecked() else None
 
     def _on_points_clicked(self, _item: Any, points: Sequence[Any], _ev: Any) -> None:
         """pyqtgraph ScatterPlotItem click -> emit the first hit point's row_id."""
