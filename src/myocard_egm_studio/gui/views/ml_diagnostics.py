@@ -144,8 +144,9 @@ class MlDiagnosticsView(QtWidgets.QWidget):
         page.setObjectName("flowBExploreSplitter")
         page.addWidget(self._result_list)
         page.addWidget(self._detail)
-        page.setStretchFactor(0, 3)
-        page.setStretchFactor(1, 2)
+        # the pair-compare detail is the focus here — give it the height
+        page.setStretchFactor(0, 1)
+        page.setStretchFactor(1, 3)
         return page
 
     def set_evaluated(

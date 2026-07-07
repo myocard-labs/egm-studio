@@ -140,8 +140,8 @@ class ExploreDetail(QtWidgets.QWidget):
         panes = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         panes.addWidget(self._waveforms)
         panes.addWidget(self._detail_table)
-        panes.setStretchFactor(0, 3)
-        panes.setStretchFactor(1, 2)
+        panes.setStretchFactor(0, 4)  # the waveform is the focus — give it the width
+        panes.setStretchFactor(1, 1)
 
         page = QtWidgets.QWidget()
         page_layout = QtWidgets.QVBoxLayout(page)

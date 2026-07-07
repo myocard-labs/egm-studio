@@ -182,7 +182,7 @@ class SignalExplorationView(QtWidgets.QWidget):
         splitter.addWidget(self._result_list)
         splitter.addWidget(self._detail)
         splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
+        splitter.setStretchFactor(1, 4)  # favour the detail (the waveform) over the list
 
         page = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(page)
