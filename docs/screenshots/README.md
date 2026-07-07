@@ -1,21 +1,32 @@
 # docs/screenshots/
 
-Captured GUI screenshots for [`../usage.md`](../usage.md). Each `📸` slot in the
-manual names the file it expects here.
+Images embedded in [`../usage.md`](../usage.md). These are a **regenerable cache**, not
+hand-made assets — both are produced by committed scripts, so they're checked in only so
+the manual renders on GitHub (and in a fresh clone) without a build step. Regenerate any
+time; don't hand-edit.
 
-**Conventions**
+**What's here**
 
-- **Naming:** `NN-mode-view.png` — the number orders them as they appear in the
-  manual (e.g. `03-signal-summary.png`, `09-ml-metrics.png`). Keep the name in the
-  slot and the file identical.
-- **Format:** PNG. Capture at the app's default window size; a light crop to the
-  relevant region is fine. Aim for a consistent width so the manual reads evenly.
-- **Theme:** use the **dark** theme (the default) unless a shot is specifically about
-  the light/vibrant theme.
-- **Data:** use a small synthetic demo bank where possible so the shots are
-  reproducible and carry no real-patient data.
-- **Annotations:** for the shell-overview / annotated shots, add callouts in an image
-  editor after capture; keep them minimal.
+- `NN-mode-view.png` — whole-window GUI screenshots (e.g. `03-signal-summary.png`,
+  `09-ml-metrics.png`). The number orders them as they appear in the manual.
+- `figures/<recipe>-{good,bad}.png` — the good/bad example renders for the figure-reading
+  guide (§4), one pair per matplotlib recipe.
 
-Once a file is dropped here, uncomment the `![...]` line beneath its slot in
-`usage.md`.
+**Regenerate**
+
+```bash
+# GUI screenshots — offscreen Qt, dark theme, 1200x820, demo banks from banks/
+QT_QPA_PLATFORM=offscreen python scripts/capture_screenshots.py        # all groups
+QT_QPA_PLATFORM=offscreen python scripts/capture_screenshots.py signal # just one group
+
+# §4 example figures — matplotlib only, seeded (deterministic)
+python scripts/render_figure_examples.py
+```
+
+Run both from the repo root in an environment with the app + its siblings installed (see
+[getting-started.md](../getting-started.md)). The screenshots pull from small synthetic
+demo banks in `banks/`, so they carry no real-patient data.
+
+**Conventions** (for anyone adding a slot): PNG, dark theme (the default), consistent
+width so the manual reads evenly. Embed in `usage.md` as a click-to-expand thumbnail:
+`<a href="screenshots/NN-....png"><img alt="..." src="screenshots/NN-....png" width="600"></a>`.
