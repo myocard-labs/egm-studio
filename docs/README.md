@@ -6,6 +6,7 @@ External-facing documentation for `myocard-egm-studio`. Start with
 | Doc | What it covers |
 |---|---|
 | [getting-started.md](getting-started.md) | From a clean machine to running the app, the CLI, and the tests, plus the dev loop. **Start here.** |
+| [usage.md](usage.md) | The full user manual — the four modes, reading each figure, saving work, and the CLI. _(In progress — Block 13.)_ |
 | [saving_work.md](saving_work.md) | The save flow — observations, figures, phases, and the scratch area. |
 | [theory.md](theory.md) | The math behind the figures and how to read each plot. |
 
