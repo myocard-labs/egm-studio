@@ -4,7 +4,7 @@ All notable changes to `myocard-egm-studio` are documented here. The format foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project aims to follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] — unreleased
+## [0.1.0] — 2026-07-07
 
 First release: a desktop app for intracardiac-EGM signal exploration, ML-training
 diagnostics, and reproducible paper-figure generation, plus a headless figure CLI. One
