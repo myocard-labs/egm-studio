@@ -296,7 +296,7 @@ library-only extractor (no analysis workflows).
 ```
 
 - Sidebars collapse to a thin Activity-Bar-style icon column
-  (JupyterLab convention from `reference_apps.md`).
+  (a JupyterLab convention).
 - All column / sidebar separators are draggable.
 - Traces always have full window width available (collapse both
   sidebars + use one main column).

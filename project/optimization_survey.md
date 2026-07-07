@@ -9,10 +9,12 @@ ideas we're building now vs. deferring (with the trigger that would revive each)
 **Who it's for:** anyone picking up Block 11 implementation. Read this — especially the
 [Profiling results](#profiling-results-2026-07-06), which set the build order.
 
-**Status:** literature/tooling survey complete 2026-07-06; **profiling spike complete
-2026-07-06** — see [Profiling results](#profiling-results-2026-07-06), which corrected the
-freeze root cause and reordered the plan. Implementation pending. This is an *internal
-investigation*, not user-facing docs.
+**Status:** survey + profiling spike complete 2026-07-06 (see
+[Profiling results](#profiling-results-2026-07-06), which corrected the freeze root cause
+and reordered the plan); **Block 11 shipped** the resulting work — a virtualized result
+table, a tiered view-model cache (ADR-028), a cooperative-pumped rebuild, and opt-in
+scatter decimation. Retained as the investigation record behind those choices; an
+*internal* investigation, not user-facing docs.
 
 ---
 

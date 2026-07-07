@@ -1,18 +1,23 @@
 # egm-studio — paper figure inventory
 
-Enumeration of every figure expected across every paper we anticipate
-writing in the [intracardiac-platform](https://github.com/myocard-labs/intracardiac-platform)
-project. Drives ADR-014 (figure spec format) — the union of distinct
-**recipes** below is what the egm-studio figure module has to support.
+**What this is:** an enumeration of every figure expected across the papers this
+project anticipates, in
+[intracardiac-platform](https://github.com/myocard-labs/intracardiac-platform). The
+union of distinct **recipes** below is what the egm-studio figure module has to
+support — it drives ADR-014 (the figure-spec format).
 
-This is a **living document.** Add entries as new figures get
-identified; mark implementation status as recipes ship. The goal is
-"better to have an inventoried figure and not need it than to scramble
-to retrofit a recipe at paper-writing time."
+**Who it's for:** anyone adding a figure recipe, planning a paper's figures, or
+checking which recipes have shipped.
 
-## Status / scope
+**Status:** a **living inventory** — add entries as figures are identified, mark
+status as recipes ship. The Phase 1.5 (P0) recipes are implemented in egm-studio
+v0.1; later phases are inventoried at varying depth (see [Scope](#scope)). Guiding
+principle: better to inventory a figure and not need it than to retrofit a recipe at
+paper-writing time.
 
-- **Papers covered (per Daniel, 2026-06-24):** Phase 1.5, 2, 3, 4, 5,
+## Scope
+
+- **Papers covered (project scope, 2026-06-24):** Phase 1.5, 2, 3, 4, 5,
   7, 8. Phase 6 (TensorRT deployment) is engineering, not a paper.
   Phase 1 results are not their own paper — the lessons-learned story
   rolls into Phase 1.5.

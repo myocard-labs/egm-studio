@@ -1,11 +1,19 @@
 # egm-studio — design log
 
-Running log of design decisions made during **Block 0 (design phase)**.
-Each entry is an **Architecture Decision Record (ADR)** capturing
-context, options considered, decision, rationale, and consequences.
-The reasoning trail matters as much as the conclusions — six months
-from now, "why did we do it this way?" should be answerable from this
-doc.
+**What this is:** the Architecture Decision Record (ADR) log for egm-studio — one
+entry per decision, each capturing context, options, the decision, rationale, and
+consequences. The reasoning trail matters as much as the conclusions: "why did we do
+it this way?" should be answerable here.
+
+**Who it's for:** anyone about to change or question a design decision.
+`architecture.md` says *what* is built and points here with `[ADR-N]` for the *why*.
+
+**Status:** historical record, 28 ADRs. Most date from Block 0 (design phase, closed
+2026-06-25); later decisions are appended as they're made (e.g. ADR-026 scratch
+model, ADR-027 Noise mode, ADR-028 view-model cache), with `architecture.md` kept in
+sync fix-on-contact. ADR bodies are **not** rewritten when reality moves on — a
+decision is superseded by a new ADR, or its surface deltas are noted in the
+reconciliation below, so the trail stays intact.
 
 > **As-shipped reconciliation (egm-contracts v0.5.0, 2026-06-27).** The
 > cross-artifact-linkage schemas shipped with surface changes from what some
@@ -30,13 +38,8 @@ doc.
 >   (ADR-022 and the linkage design differ on whether to date figure ids; the
 >   schema accepts either — pick one convention at implementation time).
 
-Block 0 closed 2026-06-25; the as-is design synthesis lives at
-`project/architecture.md` and the Block 1+ implementation plan at
-`project/roadmap.md`. This file remains as the **historical
-record** — the full reasoning trail for every decision. New ADRs
-after Block 0 (covering later v0.2.0+ design changes) get appended
-here, with `project/architecture.md` updated in lock-step per its
-living-document commitment.
+The as-built synthesis of these decisions lives at `project/architecture.md`; the
+block-by-block sequencing at `project/roadmap.md`.
 
 ## Conventions
 

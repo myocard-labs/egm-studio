@@ -19,8 +19,6 @@ any decision its `[ADR-N]` pointers reference.
 | [user_flow_walkthroughs.md](user_flow_walkthroughs.md) | As-built click-throughs of each flow (signal exploration, ML diagnostics, paper-figure prep, save). | To learn what the app actually does, screen by screen. |
 | [paper_figure_inventory.md](paper_figure_inventory.md) | The catalog of paper-figure recipes — each figure's purpose, inputs, and status. | When adding or wiring up a figure recipe. |
 | [optimization_survey.md](optimization_survey.md) | The Block 11 performance investigation: profiling findings + the out-of-core / large-data techniques weighed (feeds ADR-028). | When touching load performance or the view-model cache. |
-| [reference_apps.md](reference_apps.md) | Prior-art survey of analysis apps (JupyterLab, etc.) that informed the layout + interaction patterns. | For the provenance of a UI pattern (e.g. the collapsible sidebars). |
-
 ## What belongs here (vs `docs/`)
 
 `project/` is internal: design rationale, roadmaps, and repo-specific

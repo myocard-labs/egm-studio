@@ -1,20 +1,16 @@
 # egm-studio — roadmap
 
-Phased implementation plan for egm-studio, picking up after Block 0
-(design phase) closes. Same conventions as the other myocard-labs
-repos: each block has a scope, dependencies, and exit criteria; the
-block list is kept in sync as work progresses.
+**What this is:** the phased implementation plan — what gets built, in what order,
+with what dependencies and exit criteria. Same block convention as the other
+myocard-labs repos; the block list is kept in sync as work progresses.
 
-> **As-shipped note (egm-contracts v0.5.0):** the linkage formats are **JSON,
-> not YAML** (`manifest.json`, `observations/<id>.json`, figure spec `.json`);
-> the observation prose field is `description`; the manifest stores banks as
-> `egm_banks` + `noise_banks`. Read the YAML / `body` references below
-> accordingly — see the reconciliation note in `project/architecture.md`.
+**Who it's for:** anyone tracking what's shipped vs. next, or picking up the next
+block. For *what* is built see `architecture.md`; for *why* see `design.md` — this
+file is only about **sequencing**.
 
-> Architecture decisions all live in `project/design.md` (full ADRs)
-> and `project/architecture.md` (current-state synthesis). This file
-> is about **sequencing** — what we build, in what order, with what
-> dependencies.
+**Status:** **Blocks 1–11 shipped**; Block 12 (documentation) in progress; Blocks
+13–14 (user docs + the v0.1.0 ship) pending. Per-block Status lines below record
+dates and what shipped.
 
 ## Velocity target
 
@@ -46,7 +42,7 @@ until v0.5.0 is tagged in egm-contracts.
 ### Block 1 — Scaffold + design (done as Block 0.x)
 
 Retroactively marked done; corresponds to Block 0.1 through Block 0.7
-in `design.md`. The scaffold + 25 ADRs + reference_apps +
+in `design.md`. The scaffold + ADRs + reference_apps +
 paper_figure_inventory + user_flow_walkthroughs + architecture +
 roadmap are all in place.
 
@@ -643,7 +639,7 @@ their feature from the spec. Live-preview perf on very large banks is a Post-v0.
 - Export flow: PDF / PNG / SVG with vector text (embedded fonts
   already wired in Block 3).
 - Per-feature similarity dropdown for similarity-pair recipes.
-- Round-trip test: edit spec → save YAML → reopen → same starting
+- Round-trip test: edit spec → save JSON → reopen → same starting
   state.
 - pytest-qt smoke tests; pytest-mpl already covers the headless
   path.
@@ -1031,9 +1027,9 @@ scatter, CI split).
 ### Block 12 — Design-phase doc updates (capture drift)
 
 Sweep the design-phase docs for any drift introduced during
-implementation. Per the living-document commitment in
-`architecture.md`, fix-on-contact is the preferred mode; this block
-is the safety net to catch anything that slipped.
+implementation. Fix-on-contact is the preferred mode (docs update in
+lock-step with the code); this block is the safety net to catch
+anything that slipped.
 
 **Scope:**
 
@@ -1048,8 +1044,9 @@ is the safety net to catch anything that slipped.
   actually shipped in v0.1.0 vs deferred to later versions.
 - `project/user_flow_walkthroughs.md` — annotate any flow steps that
   ended up differently than the walkthrough.
-- `project/reference_apps.md` — likely no changes needed; sanity
-  check.
+- `project/reference_apps.md` — **removed** in Block 12: a one-time
+  design-input study, now superseded by the ADRs it fed (ADR-012 theme,
+  ADR-024 trace widget, ADR-025 layout).
 
 **Deps:**
 
@@ -1222,9 +1219,8 @@ When a block closes:
 1. Mark `[x]` complete with a date.
 2. Re-review the remaining blocks for any drift the closing block
    introduced.
-3. Fix-on-contact any architecture.md drift surfaced by the block
-   (the living-document commitment); flag it for Block 12's sweep
-   pass if a fuller fix isn't trivial.
+3. Fix-on-contact any architecture.md drift surfaced by the block;
+   flag it for Block 12's sweep pass if a fuller fix isn't trivial.
 4. Move to the next pending block.
 
 When a new follow-up emerges:
