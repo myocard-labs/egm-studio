@@ -1,0 +1,94 @@
+{
+  "schema_version": "1",
+  "phase": 1.5,
+  "status": "in_progress",
+  "phase_summary": "Synthetic-data realism for Phase 1.5 (test fixture).",
+  "egm_banks": [
+    {
+      "id": "tbank_synthetic_courtemanche_v1_5_2026-06-25",
+      "path": "banks/tbank_synthetic_courtemanche_v1_5.h5",
+      "produced_by_package": "synthetic-egm-pipeline",
+      "produced_by_version": "v0.3.0"
+    },
+    {
+      "id": "ptbank_synthetic_pretrain_2026-06-20",
+      "path": "banks/ptbank_synthetic_pretrain.h5",
+      "produced_by_package": "synthetic-egm-pipeline",
+      "produced_by_version": "v0.3.0"
+    },
+    {
+      "id": "lpred_synth_val_2026-06-25",
+      "path": "predictions/lpred_synth_val.h5",
+      "produced_by_package": "egm-classifier",
+      "produced_by_version": "v0.4.0",
+      "model": "model_egm_classifier_v1_5_2026-06-25",
+      "source_bank": "tbank_synthetic_courtemanche_v1_5_2026-06-25"
+    },
+    {
+      "id": "upred_iafdb_v1_5_2026-06-25",
+      "path": "predictions/upred_iafdb_v1_5.h5",
+      "produced_by_package": "egm-classifier",
+      "produced_by_version": "v0.4.0",
+      "model": "model_egm_classifier_v1_5_2026-06-25",
+      "source_bank": "tbank_iafdb_v1_2026-06-15"
+    }
+  ],
+  "noise_banks": [
+    {
+      "id": "nbank_iafdb_2026-06-15",
+      "path": "banks/nbank_iafdb.h5",
+      "produced_by_package": "iafdb-pipeline",
+      "produced_by_version": "v0.3.0"
+    }
+  ],
+  "training_runs": [
+    {
+      "id": "run_v1_5_courtemanche_2026-06-25",
+      "path": "runs/run_v1_5_courtemanche.json",
+      "produced_by_package": "egm-classifier",
+      "produced_by_version": "v0.4.0",
+      "trained_on_bank": "tbank_synthetic_courtemanche_v1_5_2026-06-25",
+      "produced_model": "model_egm_classifier_v1_5_2026-06-25"
+    }
+  ],
+  "models": [
+    {
+      "id": "model_egm_classifier_v1_5_2026-06-25",
+      "path": "models/best.pt",
+      "produced_by_package": "egm-classifier",
+      "produced_by_version": "v0.4.0",
+      "trained_from_run": "run_v1_5_courtemanche_2026-06-25"
+    }
+  ],
+  "observations": [
+    {
+      "id": "obs_saturation_iafdb_2026-06-26",
+      "path": "observations/obs_saturation_iafdb.json",
+      "produced_by_package": "egm-studio",
+      "produced_by_version": "v0.1.0",
+      "usage_tag": "informed_paper"
+    }
+  ],
+  "figures": [
+    {
+      "id": "fig_feature_distributions_synth_vs_iafdb",
+      "path": "figure_specs/fig_feature_distributions_synth_vs_iafdb.json",
+      "produced_by_package": "egm-studio",
+      "produced_by_version": "v0.1.0",
+      "consumes_banks": [
+        "tbank_synthetic_courtemanche_v1_5_2026-06-25",
+        "upred_iafdb_v1_5_2026-06-25"
+      ],
+      "usage_tag": "in_paper_main"
+    }
+  ],
+  "papers": [
+    {
+      "id": "paper_phase_1_5_realism",
+      "path": "papers/phase_1_5_realism",
+      "produced_by_package": "intracardiac-papers",
+      "produced_by_version": "latest",
+      "figures": ["fig_feature_distributions_synth_vs_iafdb"]
+    }
+  ]
+}

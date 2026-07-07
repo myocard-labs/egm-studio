@@ -1,0 +1,17 @@
+{
+  "schema_version": "1",
+  "id": "fig_feature_distribution_overlay_curated",
+  "description": "Curated variant of the F-1.5.2 sim-realism diagnostic: the same synthetic-vs-IAFDB per-feature overlay, but restricted via layout.features to a representative spread across the feature families (amplitude, frequency, complexity) so a paper figure shows only the informative panels. The feature list here is illustrative — replace it with whichever features the realism analysis flags as interesting. Renders via the 'feature-distribution-overlay' recipe.",
+  "recipe": "feature-distribution-overlay",
+  "inputs": {
+    "groups": [
+      { "name": "Synthetic", "bank_id": "lpred_v1_baseline_bin_2026-06-29" },
+      { "name": "IAFDB", "bank_id": "upred_v1_baseline_bin_2026-06-29" }
+    ]
+  },
+  "layout": {
+    "features": ["peak_to_peak", "dominant_frequency", "sample_entropy", "higuchi_fractal_dimension"]
+  },
+  "styling": { "kind": "kde", "annotate": "ks" },
+  "output": { "format": "pdf", "path": "out/fig_feature_distribution_overlay_curated.pdf" }
+}

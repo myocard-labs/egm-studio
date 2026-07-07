@@ -1,0 +1,15 @@
+{
+  "schema_version": "1",
+  "id": "fig_block2_render_plumbing_stub",
+  "description": "CLI plumbing stub. The spec validates against the figure_spec schema but names a deliberately-unregistered recipe, so egm-studio-render exercises the full load -> validate -> dispatch path and returns the clear unknown-recipe error. Uses a placeholder recipe name (not a real recipe) so this stays valid as real recipes ship. Not a real paper figure.",
+  "recipe": "unregistered-stub-recipe",
+  "inputs": {
+    "groups": [
+      { "name": "Synthetic v1.5 (Courtemanche)", "bank_id": "tbank_synthetic_courtemanche_v1_5_2026-06-25" },
+      { "name": "IAFDB", "bank_id": "tbank_iafdb_v1_2026-06-15" }
+    ]
+  },
+  "layout": { "grid": [4, 3], "panel_size_in": [1.5, 1.2] },
+  "styling": { "palette": "colorblind", "font_size_pt": 9, "annotate_distance": "ks" },
+  "output": { "format": "pdf", "path": "out/fig_block2_render_plumbing_stub.pdf" }
+}

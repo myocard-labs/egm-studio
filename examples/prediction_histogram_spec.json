@@ -1,0 +1,15 @@
+{
+  "schema_version": "1",
+  "id": "fig_prediction_histogram_synth_vs_iafdb",
+  "description": "Phase-1.5 realism check: distribution of the classifier's P(fibrotic) output on the labeled synthetic validation set (split by truth class) beside its output on unlabeled in-vivo IAFDB traces. The synthetic panel shows the healthy/fibrotic separation the model learned; the IAFDB panel shows whether that separation survives on real signals or collapses toward an over-confident peak. Renders via the 'prediction-histogram' recipe in panels mode.",
+  "recipe": "prediction-histogram",
+  "inputs": {
+    "groups": [
+      { "name": "Synthetic val", "bank_id": "lpred_synth_small_2026-06-27" },
+      { "name": "IAFDB", "bank_id": "upred_iafdb_sanchez_2026-06-27" }
+    ]
+  },
+  "layout": { "mode": "panels" },
+  "styling": { "bins": 30, "density": false, "xlabel": "P(fibrotic)" },
+  "output": { "format": "pdf", "path": "out/fig_prediction_histogram_synth_vs_iafdb.pdf" }
+}

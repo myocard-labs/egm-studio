@@ -1,0 +1,16 @@
+{
+  "schema_version": "1",
+  "id": "fig_iafdb_desaturation_interventions",
+  "description": "Phase-1.5 IAFDB de-saturation check (F-1.5.6): per-intervention overlay of P(fibrotic) on the unlabeled in-vivo IAFDB segments — one step outline per model — asking whether any intervention spread the output distribution away from the Phase-1 pile-up at 1.0. Qualitative / label-free: the observable symptom is 'the model's IAFDB output is less pointy at 1.0', which is meaningful without ground truth (IAFDB has none). Each group's bank is one model's predictions on the SAME IAFDB segments (probs = P(fibrotic)); these are unlabeled upred_ banks, which prediction-histogram handles because overlay mode histograms probs directly and ignores labels. List the Phase-1 baseline first so it reads as the reference outline. Renders via the existing 'prediction-histogram' recipe in overlay mode, density-normalized so models scored on different-sized IAFDB subsets stay comparable. Swap in your own IAFDB predictions banks when wiring real data.",
+  "recipe": "prediction-histogram",
+  "inputs": {
+    "groups": [
+      { "name": "Baseline (v1)", "bank_id": "upred_v1_baseline_2026-06-30" },
+      { "name": "Intervention A", "bank_id": "upred_v1_intervention_a_2026-06-30" },
+      { "name": "Intervention B", "bank_id": "upred_v1_intervention_b_2026-06-30" }
+    ]
+  },
+  "layout": { "mode": "overlay" },
+  "styling": { "bins": 30, "density": true, "xlabel": "P(fibrotic)" },
+  "output": { "format": "pdf", "path": "out/fig_iafdb_desaturation_interventions.pdf" }
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": "1",
+  "id": "fig_bar_chart_sim_realism_distance",
+  "description": "F-1.5.3 sim-realism distance reduction: one bar per synthetic-pipeline variant, height = the aggregate KS distance between that variant's egm-features distribution and the IAFDB reference. The baseline bar is the un-intervened synthetic; each other bar's delta reads out whether that knob moved the synthetic distribution toward real. Until the Phase-1.5 intervention banks exist, the variants are knobs we can already turn (IAFDB-noise on/off, density range) to prove the distance->bar pipeline. inputs.reference names the comparison reference; layout.baseline names the delta reference; styling.metric is 'ks' (unitless) or 'wasserstein'; layout.features optionally restricts which egm-features columns define the distance (default: all). Renders via the 'bar-chart-with-deltas' recipe.",
+  "recipe": "bar-chart-with-deltas",
+  "inputs": {
+    "groups": [
+      { "name": "IAFDB", "bank_id": "upred_v1_baseline_bin_2026-06-29" },
+      { "name": "Synthetic (clean)", "bank_id": "tbank_synthetic_aliev_panfilov_1_2026-06-29" },
+      { "name": "Synthetic (+IAFDB noise)", "bank_id": "tbank_synthetic_aliev_panfilov_noise_mixed_1_2026-06-29" },
+      { "name": "Synthetic (density 0.1-0.3)", "bank_id": "tbank_synthetic_aliev_panfilov_2_2026-06-29" },
+      { "name": "Synthetic (electrode height 0.2-0.5)", "bank_id": "tbank_synthetic_aliev_panfilov_3_2026-06-29" },
+      { "name": "Synthetic (the whole shebang)", "bank_id": "tbank_synthetic_aliev_panfilov_4_2026-06-29" }
+    ],
+    "reference": "IAFDB"
+  },
+  "layout": { "baseline": "Synthetic (clean)" },
+  "styling": { "metric": "ks" },
+  "output": { "format": "pdf", "path": "out/fig_bar_chart_sim_realism_distance.pdf" }
+}

@@ -1,0 +1,16 @@
+{
+  "lpred_v1_baseline_bin_2026-06-29": "banks/lpred_synth_small.classifier.h5",
+  "upred_v1_baseline_bin_2026-06-29": "banks/upred_iafdb_sanchez.classifier.h5",
+  "tbank_synthetic_aliev_panfilov_1_2026-06-29": "banks/synthegm_v1_baseline_1.classifier.h5",
+  "tbank_synthetic_aliev_panfilov_2_2026-06-29": "banks/synthegm_v1_baseline_2.classifier.h5",
+  "tbank_synthetic_aliev_panfilov_3_2026-06-29": "banks/synthegm_v1_baseline_3.classifier.h5",
+  "tbank_synthetic_aliev_panfilov_4_2026-06-29": "banks/synthegm_v1_baseline_4.classifier.h5",
+  "tbank_synthetic_aliev_panfilov_noise_mixed_1_2026-06-29": "banks/synthegm_v1_noise_mixed_1.classifier.h5",
+  "lpred_v1_baseline_1_2026-06-30": "banks/v1_baseline_1_test_pred.classifier.h5",
+  "lpred_v1_baseline_1_noise_2026-06-30": "banks/v1_baseline_1_noise_test_pred.classifier.h5",
+  "lpred_v1_baseline_2_2026-06-30": "banks/v1_baseline_2_test_pred.classifier.h5",
+  "lpred_v1_baseline_3_2026-06-30": "banks/v1_baseline_3_test_pred.classifier.h5",
+  "lpred_v1_baseline_4_2026-06-30": "banks/v1_baseline_4_test_pred.classifier.h5",
+  "nbank_iafdb_2026-06-28": "banks/iafdb_noise_v1_run_record.json",
+  "run_v1_baseline_2026-06-30": "checkpoints/v1_baseline_bin_1/run.json"
+}
