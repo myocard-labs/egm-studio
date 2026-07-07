@@ -32,7 +32,7 @@ phase-organized meta repo as **JSON** — see [Saving work](#saving-work-cross-c
 
 **Scenario.** A user just ran synthetic-egm-pipeline overnight with the
 Courtemanche cell-model swap (a Phase 1.5 intervention), writing
-`synthegm_v1_5_courtemanche.cbank.h5`. Before training, they want to eyeball the
+`synthegm_v1_5_courtemanche.classifier.h5`. Before training, they want to eyeball the
 traces: do they look qualitatively different from the prior Aliev-Panfilov
 synthetic data, and any closer to IAFDB?
 
@@ -40,7 +40,7 @@ synthetic data, and any closer to IAFDB?
 Scatter** tabs over the unified per-trace view-model (`view_model/builder.py` +
 `combine.py`).
 
-1. **Open the bank.** *File ▸ Open bank* → the Courtemanche `.cbank.h5`.
+1. **Open the bank.** *File ▸ Open bank* → the Courtemanche `.classifier.h5`.
    egm-studio reads it through egm-data, extracts the egm-features bundle, and
    lands on the **Summary** tab: trace count, class balance, and an 11-panel grid
    of per-feature distributions (one per bundle feature) over the whole bank. The
