@@ -8,9 +8,9 @@ myocard-labs repos; the block list is kept in sync as work progresses.
 block. For *what* is built see `architecture.md`; for *why* see `design.md` — this
 file is only about **sequencing**.
 
-**Status:** **Blocks 1–11 shipped**; Block 12 (documentation) in progress; Blocks
-13–14 (user docs + the v0.1.0 ship) pending. Per-block Status lines below record
-dates and what shipped.
+**Status:** **Blocks 1–12 shipped**; Block 13 (user documentation) in progress;
+Block 14 (ship v0.1.0) pending. Per-block Status lines below record dates and what
+shipped.
 
 ## Velocity target
 
@@ -1024,7 +1024,16 @@ freeze fix, and the tiered store is re-cast as revisit-latency.
 2026-07-06 across the profiling pass + 5 build items (table, pump, cache,
 scatter, CI split).
 
-### Block 12 — Design-phase doc updates (capture drift)
+### Block 12 — Design-phase doc updates (capture drift) ✓ SHIPPED
+
+> **Shipped 2026-07-06.** Grew from a drift-sweep into a full documentation
+> professionalization pass: the top-level README + a new `docs/getting-started.md`
+> as the onboarding front door; `architecture.md`, `user_flow_walkthroughs.md`,
+> `design.md`, `roadmap.md`, and `paper_figure_inventory.md` reconciled to the
+> as-built v0.1.0 state with consistent What/Who/Status headers;
+> `reference_apps.md` removed (superseded by ADR-012 / ADR-024 / ADR-025); and the
+> Block 7–11 changes flowed up into the intracardiac-platform docs. All five
+> design-phase docs now reflect the as-built state.
 
 Sweep the design-phase docs for any drift introduced during
 implementation. Fix-on-contact is the preferred mode (docs update in
