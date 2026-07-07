@@ -1,43 +1,14 @@
 # egm-studio — architecture
 
-The post-Block-0 "current state" reference for egm-studio. Distilled
-from the 25 ADRs in `project/design.md` — read this for *what we're
-building*; read `design.md` for *why we picked it*. ADR pointers
-(`[ADR-N]`) appear inline so you can drill down on any decision.
+The current-state reference for egm-studio: **what we're building** and how it
+fits together. Read `project/design.md` for **why** each choice was made — its
+28 ADRs are the source of record, and `[ADR-N]` pointers appear inline here so
+you can drill down on any decision. Block-by-block implementation status +
+forward-looking follow-ups live in `project/roadmap.md`.
 
-> Block 1+ implementation work and forward-looking follow-ups live in
-> `project/roadmap.md`.
-
-> **As-shipped reconciliation (egm-contracts v0.5.0, 2026-06-27).** The
-> cross-artifact-linkage formats shipped with surface changes from what this
-> doc describes — the high-level architecture is unaffected, but read these
-> deltas in (full list: `intracardiac-platform/project/cross_artifact_linkage_design.md`
-> → Amendments):
-> - **JSON, not YAML** (`manifest.json`, `observations/<id>.json`,
->   `figure_specs/<id>.json`; the render CLI reads a `.json` spec).
-> - Observation prose field is **`description`** (not `body`); observations +
->   figure specs carry **no `phase` field**.
-> - **`figure_spec`** requires a `description` and dropped `inventory_ref`.
-> - The manifest stores banks as **`egm_banks` + `noise_banks`** (predictions
->   fold into `egm_banks`).
-> - **Figure specs live in the meta repo** at `phases/figure_specs/<id>.json`
->   (decision 2026-06-27); only the rendered image goes to the paper repo. Any
->   "spec in the paper repo" wording below is superseded. Also: `recipe` is a
->   free-form string in the contract (egm-studio owns the recipe vocabulary),
->   not a schema enum.
-
-## Living-document commitment
-
-This file is the as-built reference and stays in lock-step with
-the code. Update it whenever an implementation block surfaces an
-architectural change (new module boundary, dependency shift, pattern
-that didn't exist at design time). Roadmap Block 12
-("Design-phase doc updates") runs late in the v0.1 sequence to do a
-sweep before the tag, but **don't wait** for that block — fix-on-
-contact while building. The final pre-tag pass also fills in the
-deeper detail that's intentionally not in v0.1 of this doc (more
-concrete examples, expanded data-flow diagrams, module-internals
-discussion).
+This file is the as-built reference and stays in lock-step with the code:
+fix-on-contact whenever an implementation block shifts a module boundary, a
+dependency, or a pattern.
 
 ## What egm-studio is
 
@@ -85,8 +56,8 @@ and the architecture changes.
    shared X-axis. Default N=1 at v0.1; scales to N=64+ for later
    phases without rewriting plumbing. [ADR-024]
 7. **Observations + figure specs persist in the meta repo, not in
-   egm-studio.** Unified Save schema writes observation YAMLs into
-   `intracardiac-platform/project/phases/phase_X/observations/` (or
+   egm-studio.** The unified Save schema writes observation JSON files into
+   `intracardiac-platform/project/phases/phase_X/observations/` (or the
    scratch dir when no phase is loaded). [ADR-017, cross-artifact
    linkage design]
 8. **egm-studio is the canonical curator of the per-phase manifest.**
@@ -149,7 +120,8 @@ myocard_egm_studio/
 │   └── render.py         #   `egm-studio-render` entry point
 │                         #   (`egm-studio` GUI script -> gui/app.py:main)
 ├── loaders/              # Data-loading: ids/paths -> in-memory inputs.   [B7]
-│   ├── figure_inputs.py  #   spec + {id: path} -> recipe inputs + LOADERS
+│   ├── figure_inputs.py  #   spec + {id: path} -> recipe inputs + the LOADERS registry
+│   ├── feature_group.py  #   view-model frame -> chart FeatureGroup(s) + ScatterSeries
 │   └── manifest.py       #   phase manifest -> {artifact_id: path} resolution
 ├── save/                 # Authored-artifact + manifest writers; scratch  [ADR-017, ADR-021, ADR-026]
 │   ├── ids.py           #   role-prefixed + date-stamped stable ids       [ADR-022, B10a]
@@ -179,7 +151,7 @@ myocard_egm_studio/
 
 ### The three-layer rendering split
 
-The single most important structural decision after the 25 ADRs:
+The single most important structural decision after the 28 ADRs:
 **no chart logic is duplicated between the GUI and the headless
 renderer.** Three layers make this work:
 
@@ -196,7 +168,7 @@ renderer.** Three layers make this work:
    computation feeds both presentations.
 3. **`figures/`** — thin headless dispatch layer. `render(spec, *, data)`
    dispatches `spec.recipe` to the matching `charts/matplotlib/` recipe,
-   passing the prepared `data` (built by `figures/loaders.py` from the
+   passing the prepared `data` (built by `loaders/figure_inputs.py` from the
    spec's bank ids), and writes the output file — skipping an existing
    one unless `overwrite=True`. The spec is parsed + validated upstream
    by egm-data's `load_figure_spec`, not here.
@@ -229,7 +201,7 @@ There are two registries, one per direction of a render:
   decorates its drawing function, inserting it into `RECIPES` keyed by the
   `figure_spec.recipe` string. `figures/render.py` then does
   `RECIPES[spec.recipe]` — a dict lookup, not an `if/elif` chain.
-- **Loader registry** — `figures/loaders.py` holds
+- **Loader registry** — `loaders/figure_inputs.py` holds
   `LOADERS: dict[str, RecipeLoaderFn]` and `@register_loader("<recipe-name>")`.
   A loader turns a spec's bank ids into the prepared input its recipe draws;
   `resolve_recipe_data(spec, bank_paths)` dispatches on `spec.recipe` the same way.
@@ -258,12 +230,11 @@ loader vocabularies stay open (the contract treats `recipe` as a free-form
 string owned by egm-studio), and recipes remain independent and individually
 snapshot-tested.
 
-> **`figures/loaders.py` vs the top-level `loaders/`:** the figure-data adapters
-> (bank → recipe input) live in `figures/loaders.py`, next to the renderer that
-> consumes them. The planned top-level `loaders/` (Blocks 6–7) is for the
-> GUI's bank-reading wrappers + the phase-manifest reader. Whether the
-> figure-data adapters fold into that package once it exists is an open question
-> tracked in `project/roadmap.md` (Block 7).
+> **Where the loaders live:** the figure-data adapters (bank → recipe input) live
+> in the top-level `loaders/` package (`loaders/figure_inputs.py`), alongside the
+> GUI's bank-reading wrappers, the view-model → chart adapters (`feature_group.py`),
+> and the phase-manifest reader (`manifest.py`) — resolved in Block 7; the earlier
+> `figures/loaders.py` folded in.
 
 ### Import boundaries (hard rules)
 
@@ -285,14 +256,13 @@ a display. [ADR-005, ADR-013]
 | `myocard-egm-contracts` (v0.5.2+) | Schemas: `classifier_bank`, `iafdb_bank`, `noise_bank`, `epoch_record`, `model_metadata`, `predictions`, `observation`, `phase_manifest`, `figure_spec`; the generated `Role` / `role_of` artifact-role vocabulary (v0.5.2) | Runtime dep; all schemas land in v0.5.0 [ADR-014, ADR-017, ADR-021] |
 | `myocard-egm-data` (v0.4.2+) | Bank readers/writers; record + phase-artifact I/O (`phases.load_figure_spec`, `phases.load_phase_dir` added v0.4.2); `ClassifierBank.uniform_fs_hz()` (added v0.4.1) | Runtime dep [ADR-001] |
 | `myocard-egm-features` (v0.1.1+) | `bundle.extract_all` for the unified view-model (v0.1.1 added the py.typed marker) | Runtime dep [ADR-002] |
-| `myocard-egm-signal` (v0.2.0+) | Filter primitives; activation-peak helpers (likely Block 3+) | Runtime dep |
 | `intracardiac-platform` (workspace, not a Python dep) | Reads + writes the phase manifest, observations, and figure specs (JSON) when egm-studio saves | File-system contract via cross-artifact linkage design |
 | `intracardiac-papers` (workspace) | Receives the rendered figure image (gitignored) at `papers/<paper-slug>/figures/`; the figure spec itself lives in the meta repo | File-system contract via figure_spec schema |
 
-egm-studio depends on **all five myocard-labs library repos**. It
-does NOT depend on producers (egm-classifier, synthetic-egm-pipeline,
-iafdb-pipeline) at the Python level — only at the data level, via
-the banks they write.
+egm-studio depends on **three myocard-labs library repos**
+(`myocard-egm-contracts` / `-data` / `-features`). It does NOT depend on the
+producers (egm-classifier, synthetic-egm-pipeline, iafdb-pipeline) at the Python
+level — only at the data level, via the banks they write.
 
 **The egm-features boundary** is extract-vs-analyze: egm-features owns
 per-trace *extraction* (one trace → scalar features); egm-studio's
@@ -339,7 +309,8 @@ implement this shell — draggable `QSplitter` columns, each sidebar folding to 
 header-hosted 4-mode segmented control (Signal exploration · Noise · ML
 diagnostics · Paper figures; ADR-027), and the `View > Theme` toggle.
 `View > Toggle sidebar` and the in-panel buttons share one handler so the menu
-checkmarks stay in sync. Region content stays placeholder until Blocks 5+.
+checkmarks stay in sync. Each mode mounts its view into the main work area; all
+four views shipped across Blocks 5–11.
 
 ### Interaction patterns
 
@@ -379,8 +350,6 @@ checkmarks stay in sync. Region content stays placeholder until Blocks 5+.
   from phase** unindexes (deleting authored files, leaving producer files
   in place). The producer `.h5` for a noise bank carries no id, so its
   `bank_id` is read from the sibling `<stem>_run_record.json`.
-- **Multi-monitor**: views can tear out into separate windows
-  (Qt's `QMdiArea` / detached windows).
 - **Time-axis navigation** on traces: pan + zoom via PyQtGraph mouse
   defaults; time-scale slider as a discoverability aid.
 - **Theme**: dark default + light + vibrant themes via QSS, the choice
@@ -394,8 +363,8 @@ constructs one composite table:
 
 ```
 Per-trace view-model columns
-├── Identity:   bank_id, trace_idx, stable_artifact_id
-├── Metadata:   label, patient_id, sim_id, electrode_pair_id, source, ...
+├── Identity:   source, source_bank_id, trace_idx, row_id (global; stamped on combine)
+├── Metadata:   label, patient_id, sim_id, electrode_pair_id, ...
 ├── Features:   peak_to_peak, zero_crossings, activation_position,
 │               sec_peak_count, spectral_centroid, spectral_entropy,
 │               dominant_frequency, sample_entropy, shannon_entropy,
@@ -492,7 +461,10 @@ font-availability assumptions beyond what pytest-mpl handles.
 ## Documentation [ADR-008, ADR-009]
 
 - No in-app help / tour in v0.1; documentation is external.
-- `docs/usage.md` is the user manual.
+- Two doc trees, split by audience: `docs/` for consumers of the repo
+  (`getting-started`, `saving_work`, `theory`) and `project/` for the design
+  rationale (this file, `design.md`, `roadmap.md`). Each has a `README.md`
+  index; new developers start at `docs/getting-started.md`.
 - Markdown in repo for v0.1; MkDocs Material is the upgrade path
   when content density justifies it.
 
@@ -509,5 +481,9 @@ Concrete open follow-ups with trigger conditions (full text in the
   emerges that the resizable-column layout doesn't accommodate.
 - **Phase 8+ live playback mode** (task #311) — animated time
   cursor sweep; rides on ADR-024's composable trace widget substrate.
+- **Multi-monitor tear-out** — pop a view into its own top-level window
+  (Qt `QMdiArea` / detached windows); trigger: a workflow needs two views
+  on screen at once (e.g. paper-figure prep beside signal exploration). Not
+  in v0.1 — the layout shell is single-window today.
 - **Plugin architecture** [ADR-006] — trigger: external contributors
   want to extend egm-studio with new views / chart types.
