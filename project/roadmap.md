@@ -8,8 +8,8 @@ myocard-labs repos; the block list is kept in sync as work progresses.
 block. For *what* is built see `architecture.md`; for *why* see `design.md` — this
 file is only about **sequencing**.
 
-**Status:** **Blocks 1–13 shipped**; Block 14 (ship v0.1.0) in progress — the
-release cut. Per-block Status lines below record dates and what shipped.
+**Status:** **All 14 blocks shipped — `v0.1.0` tagged 2026-07-07.** Per-block Status
+lines below record dates and what shipped.
 
 ## Velocity target
 
@@ -1121,7 +1121,12 @@ documentation really good." Budget real time here.
 
 **Estimated effort:** ~1.5-2 days.
 
-### Block 14 — Ship v0.1.0
+### Block 14 — Ship v0.1.0 ✓ SHIPPED
+
+> **Shipped 2026-07-07.** Cut the first release: sibling deps already pinned to exact
+> tags, the full suite (709 tests) green + a headless `egm-studio-render` smoke test,
+> `development` → `release` merged, and **`v0.1.0` tagged** on `release` — the repo's
+> first tag. This closes the 14-block roadmap and Refactor Step 6.
 
 Final pin-and-tag.
 

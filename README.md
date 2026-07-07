@@ -174,15 +174,15 @@ runs the fast set and `release` + PRs run the full suite. See
 
 ## Project status
 
-Built as a 14-block roadmap. **Blocks 2–13 have shipped:** the
+Built as a 14-block roadmap, now complete — **`v0.1.0` is tagged.** Blocks 2–13 built the app: the
 headless figure pipeline + eight paper-figure recipes (Blocks 2–3), the Qt shell
 (4), the trace-display widgets + pyqtgraph backend (5), the read-only Phase tree
 (6), the three interactive flows — Signal exploration (7), ML diagnostics (8),
 Paper-figure prep (9) — the save flow (10), a performance pass (11: a
 virtualized result table, a tiered view-model cache, opt-in scatter decimation,
 and a CI fast/slow test split), a documentation professionalization pass (12),
-and the full user manual (13). Block 14 (ship v0.1.0) — the release cut — is in
-progress. Pins `myocard-egm-contracts v0.5.2`, `myocard-egm-data v0.4.2`,
+and the full user manual (13); Block 14 cut the release. Pins
+`myocard-egm-contracts v0.5.2`, `myocard-egm-data v0.4.2`,
 `myocard-egm-features v0.1.1`. See [project/roadmap.md](project/roadmap.md) for
 the full block-by-block history and [project/design.md](project/design.md) for
 the 28 ADRs.
