@@ -43,8 +43,8 @@ three sibling packages, which are **pinned to git tags** in `pyproject.toml`:
 
 | Sibling | Pin | Role |
 |---|---|---|
-| `myocard-egm-contracts` | `v0.5.2` | The schemas + typed models for every cross-component format. |
-| `myocard-egm-data` | `v0.4.2` | All bank + phase-artifact I/O (egm-studio never opens an HDF5 / JSON directly). |
+| `myocard-egm-contracts` | `v0.5.3` | The schemas + typed models for every cross-component format. |
+| `myocard-egm-data` | `v0.5.0` | All bank + phase-artifact I/O (egm-studio never opens an HDF5 / JSON directly). |
 | `myocard-egm-features` | `v0.1.1` | The per-trace feature extractors (`bundle.extract_all`). |
 
 pip fetches those tags from GitHub automatically — no manual step.

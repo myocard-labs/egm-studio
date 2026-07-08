@@ -253,8 +253,8 @@ a display. [ADR-005, ADR-013]
 
 | Repo | What egm-studio uses | Trigger |
 |---|---|---|
-| `myocard-egm-contracts` (v0.5.2+) | Schemas: `classifier_bank`, `iafdb_bank`, `noise_bank`, `epoch_record`, `model_metadata`, `predictions`, `observation`, `phase_manifest`, `figure_spec`; the generated `Role` / `role_of` artifact-role vocabulary (v0.5.2) | Runtime dep; all schemas land in v0.5.0 [ADR-014, ADR-017, ADR-021] |
-| `myocard-egm-data` (v0.4.2+) | Bank readers/writers; record + phase-artifact I/O (`phases.load_figure_spec`, `phases.load_phase_dir` added v0.4.2); `ClassifierBank.uniform_fs_hz()` (added v0.4.1) | Runtime dep [ADR-001] |
+| `myocard-egm-contracts` (v0.5.3+) | Schemas: `classifier_bank`, `iafdb_bank`, `noise_bank`, `epoch_record`, `model_metadata`, `predictions`, `observation`, `phase_manifest`, `figure_spec`; the generated `Role` / `role_of` artifact-role vocabulary (v0.5.2) | Runtime dep; all schemas land in v0.5.0 [ADR-014, ADR-017, ADR-021] |
+| `myocard-egm-data` (v0.5.0+) | Bank readers/writers; record + phase-artifact I/O (`phases.load_figure_spec`, `phases.load_phase_dir` added v0.4.2); `ClassifierBank.uniform_fs_hz()` (added v0.4.1) | Runtime dep [ADR-001] |
 | `myocard-egm-features` (v0.1.1+) | `bundle.extract_all` for the unified view-model (v0.1.1 added the py.typed marker) | Runtime dep [ADR-002] |
 | `intracardiac-platform` (workspace, not a Python dep) | Reads + writes the phase manifest, observations, and figure specs (JSON) when egm-studio saves | File-system contract via cross-artifact linkage design |
 | `intracardiac-papers` (workspace) | Receives the rendered figure image (gitignored) at `papers/<paper-slug>/figures/`; the figure spec itself lives in the meta repo | File-system contract via figure_spec schema |

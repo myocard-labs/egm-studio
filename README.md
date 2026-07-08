@@ -181,8 +181,8 @@ headless figure pipeline + eight paper-figure recipes (Blocks 2–3), the Qt she
 Paper-figure prep (9) — the save flow (10), a performance pass (11: a
 virtualized result table, a tiered view-model cache, opt-in scatter decimation,
 and a CI fast/slow test split), a documentation professionalization pass (12),
-and the full user manual (13); Block 14 cut the release. Pins
-`myocard-egm-contracts v0.5.2`, `myocard-egm-data v0.4.2`,
+and the full user manual (13); Block 14 cut the release. `development` now pins
+`myocard-egm-contracts v0.5.3`, `myocard-egm-data v0.5.0`,
 `myocard-egm-features v0.1.1`. See [project/roadmap.md](project/roadmap.md) for
 the full block-by-block history and [project/design.md](project/design.md) for
 the 28 ADRs.
