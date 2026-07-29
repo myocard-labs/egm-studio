@@ -77,6 +77,32 @@ work. Medium; no v0.1 substrate beyond the static `TraceWidget`.
 
 ## Backlog (unscheduled — promoted into a phase at a planning session)
 
+### Classifier-error ↔ generation-parameter correlation view (FN-vs-θ)
+
+A diagnostics view answering "which generation settings does the model fail on?" — e.g. a cluster of
+false negatives on simulations with fibrotic density < 20 %. A natural extension of the existing
+inspection-tab join (predictions ⋈ bank), now reaching through to θ:
+
+```
+predictions (pred · prob · correct)
+   ⋈  ClassifierBank trace  → simulation_id
+   ⋈  synthetic_bank per-sim config  → θ
+   ⇒  error-rate vs θ  (e.g. FN-rate per fibrosis-density bin)
+```
+
+**egm-data owns the join** (it reads both banks and returns a typed joined view); egm-studio renders
+it. The join key already exists on both sides — `simulation_id` / `pair_index` in the ClassifierBank's
+`trace_metadata`, and the synthetic bank keys its per-sim config by `simulation_id`. The view is
+**synthetic-only**: IAFDB traces have no `simulation_id`, so it shows nothing for real data, which is
+consistent with the source-agnostic ClassifierBank contract.
+
+Deliberately **not** rushed into Phase 1.5 — the phase guarantees the *key* on predictions and both
+banks so the correlation is possible; the view itself is scoped as its own STU issue, 1.5 or later,
+by the project-lead. Design + rationale:
+`intracardiac-platform/project/investigations/synthetic_bank_source_of_truth.md` §12.
+
+> → Placement (1.5 vs later) is the project-lead's call at a planning session.
+
 ### egm-contracts-gated `view_state` / manifest items (refactor-cleanup batch)
 
 Three small egm-studio changes, each blocked on a coordinated egm-contracts bump, batched to
