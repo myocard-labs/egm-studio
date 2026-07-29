@@ -25,7 +25,12 @@ jobs:
           cache: pip
 
       - name: Install ruff
-        run: pip install "ruff>=0.6.0"
+        # Pinned to the fleet version (CL-024 §1). Unpinned, CI resolved the newest
+        # ruff at run time: 0.16 took Markdown formatting out of preview and began
+        # reformatting Python blocks inside docs, so CI failed on files that
+        # pre-commit (pinned to 0.15.17) never touched. Bump this and
+        # .pre-commit-config.yaml together, fleet-wide.
+        run: pip install "ruff==0.15.17"
 
       - name: ruff check
         run: ruff check .
