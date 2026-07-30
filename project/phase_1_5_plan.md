@@ -2,8 +2,8 @@
 
 **Repo:** egm-studio · **Phase:** 1.5
 **Phase design doc:** `intracardiac-platform/phases/phase_1_5/design.md`
-**Status:** planning · **Progress:** 0/38 steps done
-**Repo estimate:** **83–188 h active** (39 pts) — cold-start ranges, see [Estimates](#estimates--complexity).
+**Status:** planning · **Progress:** 0/42 steps done
+**Repo estimate:** **101–228 h active** (44 pts) — cold-start ranges, see [Estimates](#estimates--complexity).
 
 > **Second pass, 2026-07-28.** Every issue now broken to commit-sized steps against the actual code.
 > Three first-pass steps were too big for one commit and split into sub-ids (**S5→S5a–c**,
@@ -30,11 +30,12 @@
 | B17 · B19 | Phase-storage: sentinel removal, relative in-phase paths, copy-into-phase (all types) | S5a–S5d |
 | B20 | Noise bank's `bank_id` from the `.h5` attr, not the sidecar | S6 |
 | STU2 | Noise-bank frequency / statistics / outlier analysis + its Noise-mode read-out | S8–S10 |
-| STU3 (+ B18, P3) | Training-run viewer overhaul — train/val/test series, split-aware inspection | S11a–S11c, S12 |
+| STU3 (+ B18, P3) | Training-run viewer overhaul — train/val/test series, split-aware inspection, seed spread, saturation metrics, paired cross-arm test | S11a–S11e, S12 |
 | STU5 | Sim↔IAFDB feature-distribution comparison (success criterion #2) | S13, S14a–S14b |
 | STU1 | Feature-vs-θ scatter | S15 |
 | **STU7** | Feature-responsiveness / identifiability screening + read-out | S18–S19 |
 | STU4 | Parameter estimator — sub-package, fifth GUI mode, paper recipes | S16–S17, S20–S31 |
+| **STU8** *(new)* | Positional-sensitivity analysis over the SEP13 probe bank | S33–S34 |
 | — | Docs + phase exit | S32 |
 
 ## Design notes
@@ -212,11 +213,17 @@ ClassifierBank's `bank_metadata`.
   Gaussian recovers its RMS; a two-tone signal reports the stronger as dominant.
 - **Depends on:** none.
 
-#### S9 — Noise outlier detection ☐ (2–4 h)
+#### S9 — Noise outlier detection ☐ (3–6 h)
 - **Change:** robust distance from the noise-feature centroid — per-feature MAD-z and Mahalanobis
   over the feature vector — with a flag threshold.
-- **Verify:** an injected outlier segment is flagged; a homogeneous set flags nothing; a singular
-  covariance degrades to MAD-z rather than raising.
+  **Compositional fix (CL-074):** band-power *fractions* sum to 1, so their covariance is singular by
+  construction and Mahalanobis is undefined on them. Apply an **Aitchison log-ratio** transform first.
+  Note **CLR is not sufficient** — it sums to zero and stays rank-deficient; use **ILR** (an
+  orthonormal basis, full rank) or equivalently drop-one **ALR**. Only the compositional block is
+  transformed; RMS / kurtosis / dominant frequency are unconstrained and pass through.
+- **Verify:** an injected outlier segment is flagged; a homogeneous set flags nothing; the covariance
+  of the transformed block is **full rank** (the pre-transform one demonstrably isn't); a zero
+  band-power component doesn't produce `-inf` (zero-replacement applied).
 - **Depends on:** S8.
 
 #### S10 — Noise-mode read-out ☐ (2–4 h)
@@ -236,12 +243,15 @@ ClassifierBank's `bank_metadata`.
   loads with val only, no exception.
 - **Depends on:** S1 + CLF2 emitting train metrics.
 
-#### S11b — Split selector in the training view ☐ (2–5 h)
+#### S11b — Split selector + seed spread in the training view ☐ (3–7 h)
 - **Change:** `gui/widgets/training_view.py` + `charts/pyqtgraph/training.py:training_curves_overlay`
   — render the selected split(s) for the metric panel (loss already draws train + val at L63–71),
-  with a split selector in the view header.
+  with a split selector in the view header. **Seed spread (CL-074 / CL-073):** with multi-seed runs
+  landing in egm-classifier, show the across-seed band (median + min/max or ±1 sd) rather than N
+  indistinguishable overlaid lines, so a metric difference can be read against run-to-run variance.
 - **Verify:** offscreen screenshot with each selector state; a run lacking train metrics disables
-  rather than crashes.
+  rather than crashes; a multi-seed group renders one band per split, and a single-seed run still
+  renders a plain line.
 - **Depends on:** S11a.
 
 #### S11c — Split-aware inspection ☐ (1–2 h) ↓ *mostly already shipped*
@@ -254,6 +264,36 @@ ClassifierBank's `bank_metadata`.
 - **Verify:** an evaluated v2.0 fixture filters to train/val/test; a bank without the columns behaves
   as today.
 - **Depends on:** S11a.
+
+#### S11d — Saturation metrics in the Flow B output view ☐ (2–4 h) *(new, CL-074)*
+- **Change:** the §8.5 saturation read-out — **mean predictive entropy** (threshold-free, so it
+  doesn't inherit an arbitrary cut) plus an **ECDF of P(fibrotic)** with **≥2 marked cuts** — on the
+  IAFDB `upred_` bank.
+  **Homed in Flow B, not STU3** (CL-074 offered either): STU3 is the *training-run* viewer, whereas
+  saturation is a property of a **prediction distribution on an unlabeled bank** — which is precisely
+  what `charts/pyqtgraph/output_distribution.py` and Flow B's qualitative (unlabeled) mode already
+  render. This extends an existing surface instead of adding a stat to a curve view it doesn't belong
+  in.
+- **Verify:** a synthetic all-0.999 fixture gives near-zero mean entropy and a step-shaped ECDF; a
+  spread fixture gives visibly higher entropy; the panel appears for unlabeled banks (no labels
+  required).
+- **Depends on:** S11a.
+
+#### S11e — Paired cross-arm comparison ☐ (2–5 h) *(new, CL-080)*
+- **Change:** the "does arm A beat arm B once seed noise is accounted for" read-out, over the §8.4
+  best-epoch criteria and the §8.5 architecture panel. **Paired by seed** — pairing is what removes
+  seed-level variance and is the whole reason this is tractable at k≈3–5. Reports the per-seed
+  differences, their mean, and an interval; egm-classifier owns the per-arm spread (CLF6), this owns
+  the A-vs-B comparison because it spans *different* training runs.
+- **Three things it must not get wrong** (see CL-082): pairing is only valid if the two arms **share a
+  seed set** — verify against the run records' seed lists and refuse to pair otherwise; at k≈3–5 the
+  honest output is an **effect size + interval + the raw per-seed numbers**, never a p-value dressed as
+  significance; and the panel shows the **full pairwise matrix**, not just the winning pair, so the
+  multiplicity is visible rather than hidden.
+- **Verify:** a fixture where A and B differ by a constant offset recovers that offset exactly with
+  zero spread; mismatched seed sets refuse to pair (and say why); a fixture with within-arm spread
+  larger than the between-arm difference reports an interval spanning zero.
+- **Depends on:** S11b + CLF6's seed lists.
 
 #### S12 — `training-curve` recipe parity ☐ (1–3 h)
 - **Change:** the matplotlib `training-curve` recipe gains the train/test series + a split knob in
@@ -352,12 +392,17 @@ ClassifierBank's `bank_metadata`.
   import is added under `parameter_estimator/`.
 - **Depends on:** none. **Blocks STU7.**
 
-#### S17 — `distances.py` — MMD + energy ☐ (2–5 h)
+#### S17 — `distances.py` — MMD + energy, with uncertainty ☐ (3–7 h)
 - **Change:** MMD² unbiased estimator over an RBF kernel (median-heuristic bandwidth); energy
   distance via `dcor`. Both return `(scalar, per_feature)`, the per-feature half delegating to
   `analysis/distributions`.
+  **Uncertainty (CL-074a):** every `d_m` also returns an **error bar** — bootstrap over the two
+  samples, or the closed-form MMD variance. This is not optional polish: the pre-filtered IAFDB
+  sub-banks are small, so `d_m` is a noisy two-sample estimate, and without a spread there is no way
+  to tell a real minimum from a lucky draw.
 - **Verify:** identical samples ≈ 0 within estimator noise; monotone in a mean shift and a variance
-  shift; MMD and energy rank a fixture family identically.
+  shift; MMD and energy rank a fixture family identically; **the error bar shrinks as ~N^(-1/2)** on
+  a fixture with growing sample size.
 - **Depends on:** S16. **Blocks STU5 (S14a).**
 
 #### S20 — `adapters/feature_extractor.py` ☐ (2–4 h)
@@ -371,16 +416,24 @@ ClassifierBank's `bank_metadata`.
 Consumes the **OAT run** of SEP11's sweep code; its output sets SEP11's design-sweep θ-spec
 membership and STU4's optimiser feature set.
 
-#### S18 — `screening.py` ☐ (2–5 h)
-- **Change:** the responsiveness matrix ρ_{f,p} = |E[φ_f | p=hi] − E[φ_f | p=lo]| / sd(φ_f) over an
-  OAT design, plus the two flags: a feature responding to no knob (drop from the optimiser set) and
+#### S18 — `screening.py` ☐ (3–8 h)
+- **Change:** the responsiveness matrix over an OAT design, plus the two flags: a feature responding
+  to no knob (drop from the optimiser set) and
   a knob moving no feature (not identifiable). **`activation_position` is excluded from the candidate
   pool**, reason recorded in code: screening is what *selects* the optimiser feature set, and a
   coordinate we set from `𝒫` would rank high against its own generating knob and crowd out real
   features. Same decision as excluding it from the optimiser (CL-056), applied where it sticks.
+  **Estimator corrections (CL-074):** ρ's denominator is the **pooled within-level (residual) sd**,
+  not the marginal sd — the marginal one contains the between-level variance the numerator is
+  measuring, so it systematically *shrinks* ρ for exactly the features that respond most. And the
+  design reads **≥3 levels with a rank correlation** (Spearman), not a 2-point hi/lo contrast, which
+  returns ~0 for a genuinely responsive but **non-monotone** feature — a false negative that would
+  silently delete a good comparison coordinate. Plus an explicit "responds" threshold rather than an
+  eyeballed cut.
 - **Verify:** a fixture where feature A responds only to knob 1 recovers exactly that structure; a
-  constant feature is flagged; a zero-variance knob doesn't divide by zero; `activation_position`
-  never reaches the emitted optimiser set even when its ρ is the highest in the matrix. *(Per CL-068
+  constant feature is flagged; a zero-variance knob doesn't divide by zero; **a constructed
+  non-monotone (U-shaped) responder is detected** — the case a 2-level contrast misses;
+  `activation_position` never reaches the emitted optimiser set even when its ρ is the highest. *(Per CL-068
   this is belt-and-suspenders — screening auto-drops it, since it responds to no θ — but the explicit
   exclusion documents the intent and costs nothing.)*
 - **Depends on:** S16 + S20 + SEP11's OAT banks.
@@ -409,18 +462,40 @@ membership and STU4's optimiser feature set.
 
 ### Wave 2 — STU4 · D: core estimation
 
-#### S23 — `emulator.py` — GP surrogate ☐ (3–7 h)
+#### S23 — `emulator.py` — GP surrogate ☐ (5–11 h)
 - **Change:** `GaussianProcessRegressor` over {(θ_m, d_m)}; posterior mean **and** sd at arbitrary θ;
   the active-learning hook returning high-uncertainty candidates near the minimum / boundary.
+  **Nugget (CL-074a):** fit with a noise term (`alpha` / `WhiteKernel`) sized from S17's per-`d_m`
+  error bars, so the GP **absorbs** observation noise instead of interpolating it. Without it the
+  surrogate passes exactly through every noisy `d_m`, and its posterior is confidently wrong in the
+  gaps — the failure mode that matters most near the acceptance boundary, which is where the region
+  is decided.
+  **Validate before it's load-bearing (CL-081):** leave-one-out of `d̂` against held-out `d_m`, plus a
+  check that the fitted nugget matches the bootstrap two-sample noise scale from S17. A misfit GP
+  doesn't fail loudly — it **launders noise into smooth bias**, which then propagates into the region
+  and the marginals looking perfectly plausible.
 - **Verify:** recovers a known smooth analytic function within tolerance; sd grows away from the
-  design points.
+  design points; **on data with injected noise the fit does not interpolate** (residuals ≈ the
+  injected scale, and the posterior sd covers it); LOO error and fitted nugget both report, and a
+  deliberately mis-specified kernel is caught by them.
 - **Depends on:** S17.
 
-#### S24 — `region.py` — ε-acceptance + θ sampling ☐ (3–7 h)
+#### S24 — `region.py` — ε-acceptance + θ sampling ☐ (4–10 h)
 - **Change:** rejection-ABC acceptance R_ε = {θ : d(θ) ≤ ε}, ABC-likelihood posterior weighting,
   per-knob marginals, and sampling θ from the region.
+  **Acceptance runs on the smoothed surface, not raw `d_m`** — a consequence of S17/S23's noise
+  handling worth stating explicitly: thresholding noisy per-cell estimates admits cells that got a
+  lucky draw and rejects ones that didn't, and the error is worst exactly at the boundary where the
+  region is defined. Accept on the GP posterior mean, and expose the boundary's uncertainty rather
+  than drawing it as a hard line.
+  **Soft region (CL-081, research-endorsed — the BOLFI construction):** define the region by the
+  **acceptance probability** Pr[`d̂`(θ) ≤ ε] using the GP's `ŝ`(θ), with the point region (posterior
+  mean ≤ ε) as its hard-cut special case. That carries emulator uncertainty into both the region *and*
+  the identifiability marginals, instead of a hard mean cut that reports a confident boundary the data
+  doesn't support. **ε** is set by an acceptance-rate quantile, not a magic number.
 - **Verify:** on a landscape with a known sublevel set the accepted set matches analytically; a knob
-  absent from the landscape gets a flat marginal.
+  absent from the landscape gets a flat marginal; **injecting noise into `d_m` does not move the
+  accepted set materially** (it would, under raw thresholding — that contrast is the test).
 - **Depends on:** S23.
 
 #### S25 — `orchestrator.py` — the use case ☐ (3–6 h)
@@ -456,10 +531,15 @@ membership and STU4's optimiser feature set.
 - **Verify:** offscreen screenshots in all three themes; the run doesn't block the UI thread.
 - **Depends on:** S26.
 
-#### S29 — Distance landscape + realistic region view ☐ (3–7 h)
+#### S29 — Distance landscape + realistic region view ☐ (4–9 h)
 - **Change:** the 2-D landscape over swept knobs with the accepted region overlaid, plus per-knob
-  identifiability marginals.
-- **Verify:** offscreen screenshot on a fixture region; a 1-D sweep degrades gracefully.
+  identifiability marginals. **Adds (CL-074):** per-cell `d_m` **error bars** surfaced in the view,
+  and **pairwise 2-D posterior joints** — not only the 1-D marginals. The Courtemanche degeneracy is a
+  **ridge between knobs**, and a ridge is invisible in 1-D marginals: two knobs can each look
+  well-constrained while only their *combination* is. The joint view is what shows it.
+- **Verify:** offscreen screenshot on a fixture region; a 1-D sweep degrades gracefully; **a fixture
+  with a deliberate ridge reads as a ridge in the joint panel while both 1-D marginals look tight** —
+  the exact failure the joints exist to catch.
 - **Depends on:** S28.
 
 #### S30 — Per-feature diagnostics + convergence view ☐ (2–5 h)
@@ -468,14 +548,37 @@ membership and STU4's optimiser feature set.
 - **Verify:** offscreen screenshot; the before/after pair reads correctly on a fixture.
 - **Depends on:** S29.
 
-#### S31 — Four paper recipes + inventory ☐ (5–10 h)
+#### S31 — Five paper recipes + inventory ☐ (6–12 h)
 - **Change:** `charts/matplotlib/` recipes for the convergence curve, the before/after per-feature
-  overlay, the distance landscape / region, and the identifiability marginals — each
-  self-registering with a loader, an example spec, and a snapshot. Enumerate them in
+  overlay, the distance landscape / region, the identifiability marginals, and — added by CL-074 —
+  the **2-D pairwise posterior joints**; each self-registering with a loader, an example spec, and a
+  snapshot. The convergence and landscape recipes carry the `d_m` error bars. Enumerate them in
   `project/paper_figure_inventory.md` first (design §8.3 names this as a prerequisite sub-task);
   catalogue S19's screening matrix here too if the paper wants it.
-- **Verify:** four snapshots; all four render headless.
+- **Verify:** five snapshots; all five render headless.
 - **Depends on:** S30.
+
+### Wave 3 — STU8: positional-sensitivity analysis (new §3 issue, CL-074)
+
+T1, not T4. Measures how a trained model's output moves as the activation is shifted within the
+window — the direct test of the position-invariance the T1 augmentation work is *for*. Runs over
+synthetic-egm's new **SEP13 probe bank** (a sweep of controlled offsets), so it can't start until
+that bank exists.
+
+#### S33 — Probe-bank analysis + output-vs-offset ☐ (3–6 h)
+- **Change:** load the SEP13 probe bank, run each §8.9 arm's model over it, and plot **output vs
+  activation offset** per arm — one curve per arm, offset on x, P(fibrotic) on y. A flat curve is
+  position-invariance; a sloped or peaked one localises the shortcut.
+- **Verify:** a synthetic fixture whose "model" is a pure function of offset reproduces that function;
+  a constant-output fixture gives a flat line; arms with differing sensitivity are visually separable.
+- **Depends on:** SEP13's probe bank + S11a's prediction plumbing.
+
+#### S34 — Cross-eval read-out ☐ (2–5 h)
+- **Change:** the cross-evaluation table — each arm's model against each arm's probe set — so
+  train-position ↔ test-position interactions are visible rather than only the diagonal.
+- **Verify:** the diagonal reproduces S33's per-arm numbers; an asymmetric fixture reads asymmetric
+  (the table isn't accidentally symmetrised).
+- **Depends on:** S33.
 
 ### Phase exit
 
@@ -499,18 +602,19 @@ project-lead 2026-07-28).
 | STU6 | S1–S4, S7 | M (3) ↓ | 8–17 h |
 | B17 · B19 | S5a–S5d | **L (5)** ↑ | 10–20 h |
 | B20 | S6 | XS (1) | 1–3 h |
-| STU2 | S8–S10 | M (3) | 6–13 h |
-| STU3 (+B18, P3) | S11a–S11c, S12 | M (3) | 6–14 h |
+| STU2 | S8–S10 | M (3) | 7–15 h |
+| STU3 (+B18, P3) | S11a–S11e, S12 | **L (5)** | 11–25 h |
 | STU5 | S13, S14a–b | M (3) | 6–15 h |
 | STU1 | S15 | S (2) | 2–5 h |
-| STU7 | S18–S19 | M (3) | 4–10 h |
-| STU4 · A foundations | S16–S17 | ↓ | 4–9 h |
+| STU7 | S18–S19 | M (3) | 5–13 h |
+| STU4 · A foundations | S16–S17 | ↓ | 5–11 h |
 | STU4 · C adapters | S20–S22 | ↓ | 6–14 h |
-| STU4 · D estimation core (incl. · A + · C) | S23–S27 | **XL (8)** *(the re-pointed anchor)* | 13–30 h |
-| STU4 · E GUI + figures | S28–S31 | L (5) | 14–31 h |
-| **STU4 composite** | | **13** | **37–84 h** |
+| STU4 · D estimation core (incl. · A + · C) | S23–S27 | **XL (8)** *(the re-pointed anchor)* | 16–37 h |
+| STU4 · E GUI + figures | S28–S31 | L (5) | 16–35 h |
+| **STU4 composite** | | **13** | **43–97 h** |
+| **STU8** *(new, CL-074)* | S33–S34 | M (3) | 5–11 h |
 | Docs + phase exit | S32 | M (3) | 3–7 h |
-| **Repo total** | | **39** | **83–188 h** |
+| **Repo total** | | **44** | **101–228 h** |
 
 *The re-pointed **XL = STU4's estimation core** covers · A and · C too — ports, distances, and the
 adapters are the core's scaffolding, not independently-sized work — which is what makes STU4's
@@ -682,14 +786,15 @@ sentinel), **S5b–S5d** are B17. No change needed; noted so the two records agr
 | STU6 | schema-migration | 8–17 h | | | |
 | B17 · B19 | feature | 10–20 h | | | |
 | B20 | schema-migration | 1–3 h | | | |
-| STU2 | feature | 6–13 h | | | |
-| STU3 | GUI | 6–14 h | | | |
+| STU2 | feature | 7–15 h | | | |
+| STU3 | GUI | 11–25 h | | | |
 | STU5 | feature | 6–15 h | | | |
 | STU1 | GUI | 2–5 h | | | |
-| STU7 | feature | 4–10 h | | | |
-| STU4 · A · C · D · E | feature / GUI | 37–84 h | | | |
+| STU7 | feature | 5–13 h | | | |
+| STU4 · A · C · D · E | feature / GUI | 43–97 h | | | |
+| STU8 | feature | 5–11 h | | | |
 | Docs | docs | 3–7 h | | | |
-| **Repo total** | | **82–186 h** | | | |
+| **Repo total** | | **101–228 h** | | | |
 
 ## Coordination-log items applied
 
