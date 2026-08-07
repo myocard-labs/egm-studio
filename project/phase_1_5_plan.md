@@ -2,8 +2,8 @@
 
 **Repo:** egm-studio · **Phase:** 1.5
 **Phase design doc:** `intracardiac-platform/phases/phase_1_5/design.md`
-**Status:** planning · **Progress:** 0/42 steps done
-**Repo estimate:** **101–228 h active** (44 pts) — cold-start ranges, see [Estimates](#estimates--complexity).
+**Status:** planning · **Progress:** 0/43 steps done
+**Repo estimate:** **103–232 h active** (44 pts) — cold-start ranges, see [Estimates](#estimates--complexity).
 
 > **Second pass, 2026-07-28.** Every issue now broken to commit-sized steps against the actual code.
 > Three first-pass steps were too big for one commit and split into sub-ids (**S5→S5a–c**,
@@ -26,7 +26,7 @@
 
 | Phase item | What it needs from this repo | Steps |
 |---|---|---|
-| STU6 | Adapt to v2.0 **and** consume the typed `SyntheticBank` for T4 (θ + per-sim config) | S1–S4, S7 |
+| STU6 | Adapt to v2.0 **and** consume the typed `SyntheticBank` for T4 (θ + per-sim config) | S0–S4, S7 |
 | B17 · B19 | Phase-storage: sentinel removal, relative in-phase paths, copy-into-phase (all types) | S5a–S5d |
 | B20 | Noise bank's `bank_id` from the `.h5` attr, not the sidecar | S6 |
 | STU2 | Noise-bank frequency / statistics / outlier analysis + its Noise-mode read-out | S8–S10 |
@@ -37,6 +37,34 @@
 | STU4 | Parameter estimator — sub-package, fifth GUI mode, paper recipes | S16–S17, S20–S31 |
 | **STU8** *(new)* | Positional-sensitivity analysis over the SEP13 probe bank | S33–S34 |
 | — | Docs + phase exit | S32 |
+
+## Wave 1 — upstream state as of 2026-08-06
+
+egm-studio is **the last Wave-1 repo** (design §7 step 10); steps 1–9 are ✅. Everything this repo
+consumes is tagged, so nothing here is waiting:
+
+| Dependency | Pin now | Pin to | Why |
+|---|---|---|---|
+| `myocard-egm-contracts` | v0.5.3 | **v0.6.0** | the coordinated schema bump (`synthetic_bank` 2.0, run-record 1.2, `phase_manifest`, `noise_bank`, `iafdb_bank`) |
+| `myocard-egm-data` | v0.5.0 | **v0.6.1** | readers/writers + the **join** this repo needs; `.1` is the CL-136 RootModel-repr fix (non-breaking) |
+| `myocard-egm-features` | v0.1.1 | **v0.2.0** | FEA1 — catch22 behind an optional extra, provider seam, `sets` registry, per-call selection |
+
+**What actually changed under us**, beyond the schema itself:
+
+- **The θ join is shipped, not ours to write.** `egm-data/banks/joins.py` gives
+  `simulation_configs()` and `join_traces_with_simulations()`, returning typed `SimulationConfig` /
+  `TraceWithSimulation`. S4 consumes it.
+- **The ClassifierBank got much thinner** (CL-109). Synthetic-egm de-duplicated per §12: five
+  bank-level keys where v1.1 had 23, three per-trace keys plus three more *only when the mixer ran*.
+  `seed` is gone as well as the five generation fields.
+- **catch22's usable-now subset is now our code, not the library's** (CL-142), and we should request
+  only the features we want (CL-141).
+- **`T` = 192 ms at 1 kHz** is settled (CL-024 §4) — egm-features' reliability analysis is written at
+  that window.
+- **Three of our tests will fail on re-pin**, pre-swept by egm-data: `conftest.py:78`,
+  `test_builder.py:48,58`, `test_artifact_metadata.py:60,77`. S1 fixes them so the step ends green.
+- **Two inbox chores** (CL-085 dev pins + `type: ignore` reasons, CL-099 `.gitignore` anchoring) →
+  new **S0**, landing first as a `[Chore]` the way egm-features cleared theirs in-session.
 
 ## Design notes
 
@@ -96,50 +124,89 @@ ClassifierBank's `bank_metadata`.
 
 ### Wave 1 — schema migration (STU6 · B17 · B19 · B20)
 
-#### S1 — Re-pin to the Wave-1 bump ☐ (1–3 h)
-- **Change:** `pyproject.toml` → egm-contracts v0.6.0 + egm-data v0.5.x once tagged. Open a
-  `CHANGELOG.md` `[Unreleased]` section and backfill the five post-v0.1.0 commits already on
-  `development` (the v0.5.3/v0.5.0 re-pin, the `.classifier.h5` standardization, the doc passes) —
-  there is no `[Unreleased]` today and the PR checklist requires one.
-- **Verify:** `pytest -m "not gui"` green; full suite green on the PR.
-- **Depends on:** egm-contracts v0.6.0 + egm-data v0.5.x tagged.
+#### S0 — Clear the inbox ☐ (1–2 h) *(new — CL-085 · CL-099)*
+- **Change:** three chores, independent of the migration, so they land first as one `[Chore]`.
+  **(a)** pin the dev tools exactly in `[dev]` — `ruff==0.15.17`, `mypy==2.1.0` (currently
+  `ruff>=0.6.0` / `mypy>=1.10`; egm-studio and egm-features were the last two unbounded repos, and
+  egm-features has now shipped theirs). **(b)** give each of the **6 `type: ignore`s** in `src/` a
+  reason comment, per the new fleet convention (CL-085 counted 7 — the seventh grep hit is a docstring
+  mention in `trace.py`, not an ignore). Only two are the pyqtgraph-has-no-`py.typed` case; three are
+  mypy failing to carry a narrowing into a comprehension, and one is a deliberately loose `object`
+  parameter — which is why a generic reason would have been worse than none. **(c)** root-anchor the `.gitignore`
+  output-dir patterns: `data/` `checkpoints/` `runs/` `logs/` `artifacts/` → `/data/` etc. Unanchored,
+  `data/` matches at any depth and would silently swallow a `src/<pkg>/data/` source package — green
+  locally, `ModuleNotFoundError` in CI, which is exactly how egm-classifier went red at Refactor Step 8.
+  **`out/` is the deliberate exception** — every shipped example spec writes a *relative* `out/...`
+  path, so running one from `examples/` creates `examples/out/`; anchoring it to `/out/` would leave
+  that unignored in every clone. So `out/` matches at any depth, paired with `!src/**/out/` to keep the
+  landmine defused.
+- **Verify:** `git check-ignore -v` all three directions — a same-named source package (incl.
+  `src/<pkg>/out/`) is **no longer** ignored, a top-level output dir **still** is, and a nested
+  `examples/out/` **is**; `ruff` + `mypy` run at the pinned versions.
+- **Depends on:** none.
+
+#### S1 — Re-pin to the Wave-1 tags ☐ (2–5 h)
+- **Change:** `pyproject.toml` → **egm-contracts v0.6.0**, **egm-data v0.6.1**, **egm-features
+  v0.2.0** (all three move; egm-data's `.1` is the CL-136 RootModel-repr fix, non-breaking). Open a
+  `CHANGELOG.md` `[Unreleased]` section and backfill the post-v0.1.0 commits already on `development`.
+  Then fix the breakage egm-data pre-swept for us, so the step ends green: `tests/conftest.py:78`
+  (`sim_id` → `simulation_id`), `tests/view_model/test_builder.py:48,58` (asserts a `sim_id` column),
+  `tests/view_model/test_artifact_metadata.py:60,77` (asserts `bank_metadata` carries
+  `fibrosis_density` / `simulator` — both gone). Not taking the `[catch22]` extra yet; that rides S13.
+- **Verify:** `pytest -m "not gui"` green, full suite green on the PR; no test references a removed key.
+- **Depends on:** S0. Upstream is **already tagged** — nothing to wait for.
 
 #### S2 — STU6a: view-model against the v2.0 trace keyset ☐ (2–4 h)
-- **Change:** regenerate the synthetic fixtures under `tests/fixtures/`; update the documented
-  metadata-key contract in `view_model/builder.py` — the five generation fields are **gone with no
-  replacement**, leaving `simulation_id` / `pair_index` (the join key), `snr_db`, `seed`, and the
-  noise provenance; resolve `label` through the per-sim `label_policy`; surface the `LabelPolicy`
-  identity if it rides as bank-level metadata; fix `view_model/filtering.py`'s `electrode_height`
-  docstring example (a removed field). **Fixtures flip `sim_id` → `simulation_id`** (CL-024 §3 — the
-  producer renames at SEP12 so both writer paths and the join use one name). On the re-pin, **omit
-  `label_fn`** and take the bank's own int label (CL-038) — a no-op in practice, since egm-studio has
-  never called the converter, but the fixtures should be built the new way.
-- **Verify:** a v2.0 fixture builds a view-model with the reduced keyset and a resolvable
-  `simulation_id`; the existing Flow A tests pass against the regenerated fixture; no test still
-  asserts a removed column or the old `sim_id` spelling.
-- **Depends on:** S1 + DAT1's plain synthetic→ClassifierBank conversion.
+- **Change:** the documented metadata-key contract in `view_model/builder.py`. The **exact** shipped
+  keyset (CL-109, after synthetic-egm de-duplicated per §12 — narrower than this plan first assumed,
+  and **`seed` is gone too**):
+  - **per trace:** `simulation_id`, `pair_index`, `patient_id` — plus `snr_db` / `noise_record` /
+    `noise_channel` **only when the mixer ran**. A clean bank **omits** them rather than writing NaN:
+    absence means it didn't happen, so missing ≠ unknown.
+  - **bank-level:** `producer`, `producer_version`, `description`, `trace_duration_ms`, `label_policy`
+    (identity only) — five keys, where v1.1 carried 23.
+
+  Resolve `label` through the per-sim `label_policy`; surface the `LabelPolicy` identity; fix
+  `view_model/filtering.py`'s `electrode_height` docstring example (a removed field). **`label_fn`
+  semantics inverted** (CL-102): under 1.1 omitting it meant *unlabeled*; under 2.0 omitting it takes
+  the bank's own labels, and unlabeled means passing a `label_fn` returning `None` — same call,
+  opposite result. egm-studio never calls the converter, so this is a fixture-construction note.
+- **Verify:** a v2.0 bank builds a view-model with the reduced keyset and a resolvable
+  `simulation_id`; a **clean** (unmixed) bank yields no `snr_db` column at all rather than a NaN one;
+  the Flow A tests pass. Real v2.0 banks exist to test against —
+  `synthetic-egm-pipeline/banks/synthegm_test_0*.classifier.h5` with their `*_theta.synthetic.h5`
+  partners — so this needn't rest on hand-built fixtures alone.
+- **Depends on:** S1.
 
 #### S3 — STU6b: recursive per-sim provenance render ☐ (2–4 h)
-- **Change:** `view_model/artifact_metadata.py` — replace the flat `_render` `json.dumps` with an
-  indented recursive render, and walk the typed `SyntheticBank`'s `simulations/` group so each
-  simulation's per-function objects (geometry / cell_model / substrate / activation / electrodes /
-  backend / label_policy) read as a nested block with its variant tag.
+- **Change:** `view_model/artifact_metadata.py`. The premise shifted: the ClassifierBank's
+  `bank_metadata` is now **five thin keys** (CL-109), so little is left to render there — the rich
+  per-function config lives on the parallel `SyntheticBank`, reached through S4's `simulation_configs()`.
+  Replace the flat `_render` `json.dumps` with an indented recursive render and walk each
+  `SimulationConfig`'s per-function objects (geometry / cell_model / substrate / activation /
+  electrodes / backend / label_policy) as nested blocks with their variant tags. Those fields are typed
+  **contracts models**, not dicts — `SimulationConfig` passes them through as-is — so the renderer walks
+  Pydantic models (`model_dump()`), which is what makes this more than reformatting.
 - **Verify:** "Show metadata" on a two-simulation v2.0 fixture names every per-function object and
   its variant, one per line; a ClassifierBank with no paired synthetic bank renders as before.
 - **Depends on:** S2 + S4.
 
 #### S4 — STU6c: θ columns off egm-data's paired `SimulationConfig` ☐ (2–4 h) ♻ *reinstated, then re-scoped*
-- **Change:** consume DAT1's **read-time joined view** — each ClassifierBank trace paired with its
-  typed per-sim `SimulationConfig` on `simulation_id` — and project the tuned knobs into θ columns on
-  the view-model for the T4 views. Reading θ off a typed object, **not** resolving a
-  `TunedParam.path` grammar (CL-024 §2 keeps that grammar out of v0.6.0). Plus a thin
-  `SyntheticBank` signal reader for the operator's swap-to-synthetic source, and the per-sim config
-  passed through to S3's provenance render. **One θ frame, two selectable signal sources**
-  (`classifier` default / `synthetic`).
+- **Change:** consume the join **egm-data already ships** (`banks/joins.py`, in v0.6.0):
+  `simulation_configs(synthetic_bank) -> {simulation_id: SimulationConfig}` and
+  `join_traces_with_simulations(classifier_bank, synthetic_bank) -> [TraceWithSimulation]`. Project the
+  tuned knobs off the typed `SimulationConfig` into θ columns on the view-model. Reading θ off a typed
+  object, **not** resolving a `TunedParam.path` grammar (CL-024 §2 keeps that out of v0.6.0). Plus a
+  thin `SyntheticBank` reader for the operator's swap-to-synthetic signal source, and the config passed
+  through to S3. **One θ frame, two selectable signal sources** (`classifier` default / `synthetic`).
+  The join raises rather than guessing on all three silent-wrong-answer cases — banks that don't
+  correspond, a trace with no `simulation_id`, a trace pointing at an absent simulation — and it is
+  **synthetic-only** (an IAFDB bank is rejected, not silently empty). Surface those as clear GUI errors
+  rather than letting them arrive as an empty table.
 - **Verify:** a swept v2.0 fixture yields one θ column per tuned knob, correctly paired by
   `simulation_id`; both signal sources return the same row count and θ values but different signal
   arrays; a single-simulation bank degenerates to constant θ without special-casing.
-- **Depends on:** S1 + DAT1's joined view.
+- **Depends on:** S1. The join API is **already tagged** — this consumes it rather than waiting on it.
 - **Note:** dropped 2026-07-27 (θ-via-`trace_metadata`), reinstated 2026-07-28 (investigation §12),
   re-scoped 2026-07-29 (CL-024 §2 option 1b — egm-data does the join and returns typed config, so the
   θ-spec resolver and the studio-side join both come out). Surviving three reversals on a stable id is
@@ -305,8 +372,21 @@ ClassifierBank's `bank_metadata`.
 
 #### S13 — catch22 subset in the view-model ☐ (2–4 h)
 - **Change:** extend `view_model/builder.py:FEATURE_COLUMNS` with the ~14-feature usable-now catch22
-  subset once FEA1 lands (skip self-affine scaling; defer the linear-autocorrelation family per
-  design B.3). Extend `feature_units` for any that carry one.
+  subset (skip self-affine scaling; defer the linear-autocorrelation family per design B.3). Extend
+  `feature_units` for any that carry one. Take the **`[catch22]` extra** on `myocard-egm-features`
+  (it's optional — S1 deliberately didn't).
+  **The subset is ours to encode (CL-142).** egm-features shipped and then *removed* a
+  `catch22_usable_now` set: a curated judgement for one study at one window length doesn't belong in a
+  general library, and per-feature `min_length` was rejected rather than deferred because there are no
+  defensible thresholds (`dfa` degrades continuously — it doesn't work at 192 and fail at 191). So we
+  build it with `sets.resolve([...])`, which validates every name and returns canonical order, and read
+  `egm-features/docs/theory.md` §4.1.3 — the per-family reliability analysis at **T = 192**, the
+  measured spread inflation, and the `whiten_timescale` degeneracy — to choose. The knowledge stayed in
+  the library; only the decision moved to us. Bonus: the §8.2 screening's outcome then lands in our
+  config rather than needing an egm-features release.
+  **Ask only for what we want (CL-141):** `catch22_all` is a per-feature loop, not a fused kernel, so
+  there is no bulk discount to give up — the usable-now 14 cost **0.44x** the full 22, one feature
+  ~35x less. Pass `features=` explicitly; don't extract everything and slice.
   **Sample-rate guard (CL-015):** much of catch22 is indexed in *samples / lags*, not Hz, and nothing
   in the call signature carries `fs_hz` — a rate mismatch between the synthetic and IAFDB corpora
   raises no error and silently corrupts the STU5 / STU4 distance. Both sides are 1 kHz today, so this
@@ -315,7 +395,7 @@ ClassifierBank's `bank_metadata`.
 - **Verify:** the ADR-028 tiered cache invalidates on the egm-features math-version bump; extraction
   stays chunked + cancellable (`_extract_features`); the distribution grid still renders; **comparing
   two corpora at different sample rates raises** rather than returning a number.
-- **Depends on:** S2 + FEA1 tagged.
+- **Depends on:** S2. FEA1 shipped as **egm-features v0.2.0** — already tagged.
 
 #### S14a — Joint-distance comparison in `analysis/` ☐ (1–3 h)
 - **Change:** a thin `analysis/` entry that takes two view-model frames + a feature list and returns
@@ -599,7 +679,7 @@ project-lead 2026-07-28).
 
 | Issue / group | Steps | Cx | Estimate (active) |
 |---|---|---|---|
-| STU6 | S1–S4, S7 | M (3) ↓ | 8–17 h |
+| STU6 | S0–S4, S7 | M (3) | 10–21 h |
 | B17 · B19 | S5a–S5d | **L (5)** ↑ | 10–20 h |
 | B20 | S6 | XS (1) | 1–3 h |
 | STU2 | S8–S10 | M (3) | 7–15 h |
@@ -614,7 +694,7 @@ project-lead 2026-07-28).
 | **STU4 composite** | | **13** | **43–97 h** |
 | **STU8** *(new, CL-074)* | S33–S34 | M (3) | 5–11 h |
 | Docs + phase exit | S32 | M (3) | 3–7 h |
-| **Repo total** | | **44** | **101–228 h** |
+| **Repo total** | | **44** | **103–232 h** |
 
 *The re-pointed **XL = STU4's estimation core** covers · A and · C too — ports, distances, and the
 adapters are the core's scaffolding, not independently-sized work — which is what makes STU4's
@@ -783,7 +863,7 @@ sentinel), **S5b–S5d** are B17. No change needed; noted so the two records agr
 
 | Issue | Task-type | Estimate | Active | Elapsed | Sessions |
 |---|---|---|---|---|---|
-| STU6 | schema-migration | 8–17 h | | | |
+| STU6 | schema-migration | 10–21 h | | | |
 | B17 · B19 | feature | 10–20 h | | | |
 | B20 | schema-migration | 1–3 h | | | |
 | STU2 | feature | 7–15 h | | | |
@@ -794,7 +874,7 @@ sentinel), **S5b–S5d** are B17. No change needed; noted so the two records agr
 | STU4 · A · C · D · E | feature / GUI | 43–97 h | | | |
 | STU8 | feature | 5–11 h | | | |
 | Docs | docs | 3–7 h | | | |
-| **Repo total** | | **101–228 h** | | | |
+| **Repo total** | | **103–232 h** | | | |
 
 ## Coordination-log items applied
 
