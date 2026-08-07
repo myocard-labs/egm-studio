@@ -7,10 +7,49 @@ trace — joining:
   source bank's stable id + type, the integer ``label`` and its human-readable
   ``label_name``, amplitude unit, split tag.
 - **Bank metadata**: every key in each trace's ``trace_metadata`` dict becomes
-  a column (patient_id, sim_id, electrode_pair_id, fibrosis_density, ...). The
-  exact keys vary by producer; a single bank is internally consistent.
+  a column. The exact keys vary by producer; a single bank is internally
+  consistent. See *What a synthetic bank carries* below.
 - **Features** (:data:`FEATURE_COLUMNS`): the 11 egm-features bundle columns
   via ``bundle.extract_all``.
+
+**What a synthetic bank carries (``synthetic_bank`` 2.0).** The restructure made
+the ClassifierBank a *source-agnostic ML compression* — signal, label, and the
+keys to join back to where a trace came from. Generation parameters are the raw
+material of the realism / parameter-estimation work, not of classification, so
+they live on the parallel ``synthetic_bank`` and are reached through
+``simulation_id``. Per trace you get:
+
+- ``patient_id`` — the grouping key for a patient-aware split; one simulation is
+  one "patient".
+- ``simulation_id`` + ``pair_index`` — the **join key** back to the per-simulation
+  config (egm-data's ``join_traces_with_simulations``).
+- ``snr_db`` / ``noise_record`` / ``noise_channel`` — noise-mixing provenance.
+
+**Gone, not relocated:** ``fibrosis_density``, ``fibrosis_density_realized``,
+``electrode_row``, ``electrode_height_mm``, ``stim_edge``, ``seed``. Filtering or
+plotting by one of those now means joining to the ``synthetic_bank``. Note the
+older spellings too: ``sim_id`` became ``simulation_id`` so both writer paths and
+the join agree on one name, and ``electrode_pair_id`` became ``pair_index``.
+
+**The two writers do not agree yet, so don't assume either shape.** A synthetic
+ClassifierBank can be written by egm-data's converter *or* directly by
+synthetic-egm-pipeline, and as of egm-data v0.6.1 they differ:
+
+- *Noise fields.* The direct writer **omits** ``snr_db`` / ``noise_record`` /
+  ``noise_channel`` on a clean (unmixed) bank, so absence means the mixer never
+  ran. The converter always writes them, NaN / ``""`` on a clean bank. Treat a
+  **missing** noise column and a **NaN** one as the same fact; do not read NaN as
+  "mixed, SNR unknown". Converging the two is deferred (FB-25).
+- *Bank-level keys.* Only ``description``, ``trace_duration_ms`` and
+  ``label_policy`` are common. The direct writer adds ``producer`` /
+  ``producer_version``; the converter adds ``schema_version`` / ``created_utc`` /
+  ``noise_bank_source``.
+
+``label_policy`` is the one generation-derived bank-level key, and deliberately
+just an identity string — it says what the classification task *is*. The label
+*vocabulary* is already resolved for us: egm-data merges each simulation's
+``label_names`` into ``ClassifierBank.labels`` and raises if two simulations
+disagree about what class ``1`` means, so ``label_name`` below is a plain lookup.
 
 Per ADR-001, this consumes an already-loaded typed ``ClassifierBank`` (the
 GUI's ``loaders/`` layer, Block 7, does the file I/O) and returns a frame; it

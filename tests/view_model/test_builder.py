@@ -56,6 +56,53 @@ def test_columns_and_shape(tiny_classifier_bank: ClassifierBank) -> None:
     assert bool((vm["source"] == "Synthetic").all())
     assert "patient_id" in vm.columns
     assert "simulation_id" in vm.columns
+    assert "pair_index" in vm.columns
+    # The v1.1 generation columns were dropped, not relocated: they are per-simulation
+    # facts reachable through simulation_id, so a stale reference should fail loudly
+    # rather than silently produce an all-NaN column.
+    for gone in ("fibrosis_density", "electrode_row", "electrode_height_mm", "stim_edge", "seed"):
+        assert gone not in vm.columns
+
+
+def test_a_clean_bank_omits_the_noise_columns(tiny_classifier_bank: ClassifierBank) -> None:
+    """A clean (unmixed) bank has no snr_db column at all — absence is the signal.
+
+    synthetic-egm-pipeline's direct writer omits the three noise-provenance keys when
+    the mixer never ran, because a present ``snr_db`` of NaN reads as "this was mixed
+    and the SNR is unknown", which is the opposite of the truth.
+    """
+    vm = build_view_model(tiny_classifier_bank, with_features=False)
+    for absent in ("snr_db", "noise_record", "noise_channel"):
+        assert absent not in vm.columns
+
+
+def test_a_noise_mixed_bank_carries_the_noise_columns(
+    tiny_classifier_bank: ClassifierBank,
+) -> None:
+    """The mixed shape flattens through unchanged, whichever writer produced it.
+
+    egm-data's converter always emits the three keys (NaN / "" when clean), while the
+    direct writer omits them; the view-model must not care which it is handed. Treat a
+    missing column and a NaN one as the same fact — converging the writers is FB-25.
+    """
+    mixed = dataclasses.replace(
+        tiny_classifier_bank,
+        traces=[
+            dataclasses.replace(
+                t,
+                trace_metadata={
+                    **t.trace_metadata,
+                    "snr_db": 12.5,
+                    "noise_record": "iaf3",
+                    "noise_channel": "II",
+                },
+            )
+            for t in tiny_classifier_bank.traces
+        ],
+    )
+    vm = build_view_model(mixed, with_features=False)
+    assert bool((vm["snr_db"] == 12.5).all())
+    assert bool((vm["noise_record"] == "iaf3").all())
 
 
 def test_identity_values(tiny_classifier_bank: ClassifierBank) -> None:

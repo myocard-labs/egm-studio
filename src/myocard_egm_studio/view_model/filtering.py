@@ -100,8 +100,9 @@ def apply_filter(df: pd.DataFrame, spec: FilterSpec) -> pd.Series[bool]:
     (treated as satisfied) for rows whose value is missing. Under ``"and"`` / ``"or"`` a
     missing value never matches (a NaN feature or an unlabeled row fails any condition
     on that column); ``"and_present"`` instead keeps such rows, so filtering a field
-    that only some banks carry (e.g. a synthetic-only ``electrode_height``) narrows the
-    banks that have it while keeping every row of the banks that don't.
+    that only some banks carry (e.g. a synthetic-only ``simulation_id``, or ``snr_db``
+    on a noise-mixed bank beside a clean one) narrows the banks that have it while
+    keeping every row of the banks that don't.
     """
     if not spec.conditions:
         return pd.Series(True, index=df.index)

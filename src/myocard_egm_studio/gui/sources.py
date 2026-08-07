@@ -20,7 +20,10 @@ from myocard_egm_studio.gui.widgets import TraceData
 from myocard_egm_studio.view_model import FrameStore, ProgressFn, build_view_model, view_model_key
 
 # Electrode-ish metadata keys (preference order) + how they read in a plot title.
-_ELECTRODE_PREFIX = {"source_channel": "ch", "pair_index": "pair", "electrode_pair_id": "pair"}
+# ``source_channel`` is IAFDB's; ``pair_index`` is synthetic's. The v1.1 spelling
+# ``electrode_pair_id`` was dropped with synthetic_bank 2.0 — egm-data refuses to read a
+# 1.1 bank at all, so no artifact can carry it and a lookup for it would only mislead.
+_ELECTRODE_PREFIX = {"source_channel": "ch", "pair_index": "pair"}
 
 #: Flow B diagnostic mode for an evaluated bank: the full metric suite (labelled) or
 #: output-only qualitative analysis (unlabelled, the IAFDB shape).

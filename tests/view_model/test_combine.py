@@ -38,9 +38,9 @@ def test_single_frame_gains_row_id() -> None:
 def test_differing_metadata_columns_union() -> None:
     """Banks with different metadata keys union their columns; missing cells NaN."""
     a = _frame("A", [0, 1], extra={"patient_id": ["P0", "P1"]})
-    b = _frame("B", [0], extra={"electrode_pair_id": [5]})
+    b = _frame("B", [0], extra={"pair_index": [5]})
     combined = combine_view_models([a, b])
-    assert {"patient_id", "electrode_pair_id"}.issubset(combined.columns)
+    assert {"patient_id", "pair_index"}.issubset(combined.columns)
     assert pd.isna(combined.loc[combined[ROW_ID] == 2, "patient_id"]).all()  # B lacks patient_id
 
 

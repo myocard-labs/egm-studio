@@ -2,7 +2,7 @@
 
 **Repo:** egm-studio · **Phase:** 1.5
 **Phase design doc:** `intracardiac-platform/phases/phase_1_5/design.md`
-**Status:** in progress · **Progress:** 2/43 steps done
+**Status:** in progress · **Progress:** 3/43 steps done
 **Repo estimate:** **103–232 h active** (44 pts) — cold-start ranges, see [Estimates](#estimates--complexity).
 
 > **Second pass, 2026-07-28.** Every issue now broken to commit-sized steps against the actual code.
@@ -156,7 +156,7 @@ ClassifierBank's `bank_metadata`.
 - **Verify:** `pytest -m "not gui"` green, full suite green on the PR; no test references a removed key.
 - **Depends on:** S0. Upstream is **already tagged** — nothing to wait for.
 
-#### S2 — STU6a: view-model against the v2.0 trace keyset ☐ (2–4 h)
+#### S2 — STU6a: view-model against the v2.0 trace keyset ✅ (2–4 h)
 - **Change:** the documented metadata-key contract in `view_model/builder.py`. The **exact** shipped
   keyset (CL-109, after synthetic-egm de-duplicated per §12 — narrower than this plan first assumed,
   and **`seed` is gone too**):
@@ -896,6 +896,38 @@ from 6 entries to 38 while this plan was being written).
 
 **`T` = 192 ms at 1 kHz** is now a fixed input to this repo, not an open variable: it sets the trace
 length the T4 comparison and the estimator's feature extraction operate on.
+
+## Step-size calibration — a running note for cleanup
+
+Daniel flagged (2026-08-07) that this plan has far more steps than its siblings, and that
+S2 landing as near-zero production code suggests **over-splitting**, not just breadth.
+Recording the evidence while it is fresh, since effort tracking is off for 1.5 and this is
+the other calibration signal still available.
+
+**Step counts across the fleet:** egm-studio **43**, synthetic-egm ~45, egm-classifier 19,
+egm-contracts 13, egm-signal 13, egm-data 12, egm-features 9, iafdb-pipeline 9. egm-studio
+also carries the most work items (7 §3 issues + 4 backlog vs 1–3 for most repos), so a
+higher count is expected — but not 3–4× the median.
+
+**The likely rule, from S1/S2.** They are two phases of *one* job (adopt the v2.0 keyset):
+S1 re-pinned and fixed what broke; S2 documented the contract and pinned the new shape in
+tests. That is a split by **phase of work** ("make it green, then write it down"), and it
+is what produced a step whose diff is mostly prose. The good splits in this plan look
+different: S5a–S5d are four distinct **deliverables** (sentinel removal / relative paths /
+copy-into-phase / large-file UX), each independently reviewable and revertible.
+
+**Proposed heuristic for the next plan:** split by deliverable, not by phase of work. The
+tell is that a step's description begins with *document* or *verify what the previous step
+did* — that belongs in the step it describes.
+
+**Steps still ahead with the same smell** (flagged now so cleanup has data, not memory —
+deliberately *not* restructured mid-wave, since their ids are already referenced):
+
+- **S7** — "Change: none — a test." A Wave-1 regression gate over S2/S3's work; verification,
+  not a deliverable.
+- **S11c** — already shrunk to "a regression test pinning the behaviour across the re-pin"
+  once CL-037 showed the columns already ship.
+- **S12** — the `training-curve` recipe parity, arguably the second half of S11b.
 
 ## Notes / decisions log
 
