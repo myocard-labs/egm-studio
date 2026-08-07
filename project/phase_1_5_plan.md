@@ -2,8 +2,8 @@
 
 **Repo:** egm-studio · **Phase:** 1.5
 **Phase design doc:** `intracardiac-platform/phases/phase_1_5/design.md`
-**Status:** in progress · **Progress:** 3/43 steps done
-**Repo estimate:** **103–232 h active** (44 pts) — cold-start ranges, see [Estimates](#estimates--complexity).
+**Status:** in progress · **Progress:** 3/40 steps done
+**Repo estimate:** **101–228 h active** (44 pts) — cold-start ranges, see [Estimates](#estimates--complexity).
 
 > **Second pass, 2026-07-28.** Every issue now broken to commit-sized steps against the actual code.
 > Three first-pass steps were too big for one commit and split into sub-ids (**S5→S5a–c**,
@@ -26,8 +26,8 @@
 
 | Phase item | What it needs from this repo | Steps |
 |---|---|---|
-| STU6 | Adapt to v2.0 **and** consume the typed `SyntheticBank` for T4 (θ + per-sim config) | S0–S4, S7 |
-| B17 · B19 | Phase-storage: sentinel removal, relative in-phase paths, copy-into-phase (all types) | S5a–S5d |
+| STU6 | Adapt to v2.0 **and** consume the typed `SyntheticBank` for T4 (θ + per-sim config) | S0–S2, S4 |
+| B17 · B19 | Phase-storage: sentinel removal, relative in-phase paths, copy-into-phase (all types) | S5b–S5d |
 | B20 | Noise bank's `bank_id` from the `.h5` attr, not the sidecar | S6 |
 | STU2 | Noise-bank frequency / statistics / outlier analysis + its Noise-mode read-out | S8–S10 |
 | STU3 (+ B18, P3) | Training-run viewer overhaul — train/val/test series, split-aware inspection, seed spread, saturation metrics, paired cross-arm test | S11a–S11e, S12 |
@@ -178,20 +178,16 @@ ClassifierBank's `bank_metadata`.
   partners — so this needn't rest on hand-built fixtures alone.
 - **Depends on:** S1.
 
-#### S3 — STU6b: recursive per-sim provenance render ☐ (2–4 h)
-- **Change:** `view_model/artifact_metadata.py`. The premise shifted: the ClassifierBank's
-  `bank_metadata` is now **five thin keys** (CL-109), so little is left to render there — the rich
-  per-function config lives on the parallel `SyntheticBank`, reached through S4's `simulation_configs()`.
-  Replace the flat `_render` `json.dumps` with an indented recursive render and walk each
-  `SimulationConfig`'s per-function objects (geometry / cell_model / substrate / activation /
-  electrodes / backend / label_policy) as nested blocks with their variant tags. Those fields are typed
-  **contracts models**, not dicts — `SimulationConfig` passes them through as-is — so the renderer walks
-  Pydantic models (`model_dump()`), which is what makes this more than reformatting.
-- **Verify:** "Show metadata" on a two-simulation v2.0 fixture names every per-function object and
-  its variant, one per line; a ClassifierBank with no paired synthetic bank renders as before.
-- **Depends on:** S2 + S4.
+#### S3 — ⊘ **merged into S4 (2026-08-07)**
+Was "recursive per-sim provenance render". **Its stated premise turned out to be false.** It assumed
+v2.0 would make `bank_metadata` a nested polymorphic blob that `_render`'s `json.dumps` would flatten
+unreadably. A real v2.0 ClassifierBank (`synthegm_test_02_clean.classifier.h5`) carries **five flat
+scalars** — `description`, `label_policy`, `producer`, `producer_version`, `trace_duration_ms` — and
+no nesting at all. The only nested structure is the `SimulationConfig`, which arrives through S4's
+loader, so this step could produce nothing on its own and is the display half of S4's deliverable.
+Number parked, not renumbered.
 
-#### S4 — STU6c: θ columns off egm-data's paired `SimulationConfig` ☐ (2–4 h) ♻ *reinstated, then re-scoped*
+#### S4 — STU6c: θ columns + per-sim provenance off the paired `SimulationConfig` ☐ (4–7 h) ♻ *reinstated, re-scoped, then absorbed S3*
 - **Change:** consume the join **egm-data already ships** (`banks/joins.py`, in v0.6.0):
   `simulation_configs(synthetic_bank) -> {simulation_id: SimulationConfig}` and
   `join_traces_with_simulations(classifier_bank, synthetic_bank) -> [TraceWithSimulation]`. Project the
@@ -203,25 +199,33 @@ ClassifierBank's `bank_metadata`.
   correspond, a trace with no `simulation_id`, a trace pointing at an absent simulation — and it is
   **synthetic-only** (an IAFDB bank is rejected, not silently empty). Surface those as clear GUI errors
   rather than letting them arrive as an empty table.
+  **Plus the provenance render (was S3).** `view_model/artifact_metadata.py` walks each
+  `SimulationConfig`'s per-function objects (geometry / cell_model / substrate / activation /
+  electrodes / backend / label_policy) as indented nested blocks with their variant tags. These are
+  typed **contracts models**, not dicts — `SimulationConfig` passes them through as-is — so the
+  renderer walks Pydantic models (`model_dump()`). The ClassifierBank's own `bank_metadata` needs no
+  new rendering: it is five flat scalars.
 - **Verify:** a swept v2.0 fixture yields one θ column per tuned knob, correctly paired by
   `simulation_id`; both signal sources return the same row count and θ values but different signal
-  arrays; a single-simulation bank degenerates to constant θ without special-casing.
+  arrays; a single-simulation bank degenerates to constant θ without special-casing; "Show metadata"
+  on a two-simulation bank names every per-function object and its variant, and a ClassifierBank with
+  no paired synthetic bank renders as before.
 - **Depends on:** S1. The join API is **already tagged** — this consumes it rather than waiting on it.
 - **Note:** dropped 2026-07-27 (θ-via-`trace_metadata`), reinstated 2026-07-28 (investigation §12),
   re-scoped 2026-07-29 (CL-024 §2 option 1b — egm-data does the join and returns typed config, so the
   θ-spec resolver and the studio-side join both come out). Surviving three reversals on a stable id is
   why it was parked rather than renumbered.
 
-#### S5a — B19: drop the curator provenance sentinel ☐ (1–2 h)
-- **Change:** `save/producer.py:37–44` — remove the `UNKNOWN_PRODUCER` / `UNKNOWN_VERSION`
-  (`"unknown"` / `"0"`) stamp from `_base` now that P4 makes `produced_by_*` optional; delete both
-  constants and their `__all__` entries.
-- **Verify:** an indexed producer entry validates with the fields absent; the phase-status view
-  doesn't regress on an entry lacking provenance.
-- **Depends on:** S1.
+#### S5a — ⊘ **merged into S5b (2026-08-07)**
+Was "drop the curator provenance sentinel" (B19). Measured surface: two constants, their two
+`__all__` entries, one usage in `_base`, and four test assertions — under half an hour, and §6
+already tracks B17 · B19 as a single row. Folded into S5b rather than shipped as its own commit.
 
-#### S5b — B17: relative in-phase paths ☐ (3–6 h)
-- **Change:** write manifest `path`s relative to the manifest for in-phase artifacts
+#### S5b — B19 sentinel + B17 relative in-phase paths ☐ (3–7 h) *(absorbed S5a)*
+- **Change (was S5a, B19):** `save/producer.py` — remove the `UNKNOWN_PRODUCER` / `UNKNOWN_VERSION`
+  (`"unknown"` / `"0"`) stamp from `_base` now that P4 makes `produced_by_*` optional; delete both
+  constants, their `__all__` entries, and the four test assertions that pin the sentinel.
+- **Change (B17):** write manifest `path`s relative to the manifest for in-phase artifacts
   (`save/artifacts.py:authored_path`, `save/figure.py`, `save/observation.py`), and resolve them
   back against the phase dir on read (`loaders/manifest.py:bank_paths_from_phase`,
   `view_model/phase_status.py`, `view_model/dependencies.py`, `view_model/figure_output.py`).
@@ -229,7 +233,7 @@ ClassifierBank's `bank_metadata`.
 - **Verify:** a phase folder moved to a different parent directory still resolves every in-phase
   artifact; `manifest.json` contains no absolute path for an in-phase entry; ADR-026 cross-scope
   resolution tests stay green.
-- **Depends on:** S5a.
+- **Depends on:** S1.
 
 #### S5c — B17: copy-into-phase on index + promote ☐ (3–6 h)
 - **Change:** *Add to phase* copies the artifact into `phases/phase_1_5/<type>/` instead of
@@ -265,11 +269,14 @@ ClassifierBank's `bank_metadata`.
   id read from the `.h5`.
 - **Depends on:** S1.
 
-#### S7 — Wave-1 gate: no-behavior-change regression ☐ (1–2 h)
-- **Change:** none — a test asserting a v2.0 fixture yields the same traces, labels, and feature
-  values as its v1.1 predecessor.
-- **Verify:** the assertion passes; this is egm-studio's half of §7's Wave-1 gate.
-- **Depends on:** S2–S3.
+#### S7 — ⊘ **dropped (2026-08-07)**
+Was "a test asserting a v2.0 fixture yields the same traces, labels and feature values as its v1.1
+predecessor". **Not merely thin — not executable.** egm-data v0.6.0 *refuses to read a 1.1 bank*, by
+design and with no migration path, so there is no v1.1 side to compare against and the assertion
+cannot be constructed in this repo at all. Design §7's Wave-1 gate names two things: a regenerated
+bank round-tripping to the same traces + labels, which only **synthetic-egm-pipeline** can run since
+it owns both producers, and *every repo's suite is green*, which is egm-studio's half and is already
+S1's and S2's exit criterion. Nothing is lost by dropping it.
 
 ### Wave 2 — STU2 (independent; runs while Wave 1 waits on contracts)
 
@@ -679,8 +686,8 @@ project-lead 2026-07-28).
 
 | Issue / group | Steps | Cx | Estimate (active) |
 |---|---|---|---|
-| STU6 | S0–S4, S7 | M (3) | 10–21 h |
-| B17 · B19 | S5a–S5d | **L (5)** ↑ | 10–20 h |
+| STU6 | S0–S2, S4 | M (3) | 9–18 h |
+| B17 · B19 | S5b–S5d | **L (5)** ↑ | 9–19 h |
 | B20 | S6 | XS (1) | 1–3 h |
 | STU2 | S8–S10 | M (3) | 7–15 h |
 | STU3 (+B18, P3) | S11a–S11e, S12 | **L (5)** | 11–25 h |
@@ -694,7 +701,7 @@ project-lead 2026-07-28).
 | **STU4 composite** | | **13** | **43–97 h** |
 | **STU8** *(new, CL-074)* | S33–S34 | M (3) | 5–11 h |
 | Docs + phase exit | S32 | M (3) | 3–7 h |
-| **Repo total** | | **44** | **103–232 h** |
+| **Repo total** | | **44** | **101–228 h** |
 
 *The re-pointed **XL = STU4's estimation core** covers · A and · C too — ports, distances, and the
 adapters are the core's scaffolding, not independently-sized work — which is what makes STU4's
@@ -863,8 +870,8 @@ sentinel), **S5b–S5d** are B17. No change needed; noted so the two records agr
 
 | Issue | Task-type | Estimate | Active | Elapsed | Sessions |
 |---|---|---|---|---|---|
-| STU6 | schema-migration | 10–21 h | | | |
-| B17 · B19 | feature | 10–20 h | | | |
+| STU6 | schema-migration | 9–18 h | | | |
+| B17 · B19 | feature | 9–19 h | | | |
 | B20 | schema-migration | 1–3 h | | | |
 | STU2 | feature | 7–15 h | | | |
 | STU3 | GUI | 11–25 h | | | |
@@ -874,7 +881,7 @@ sentinel), **S5b–S5d** are B17. No change needed; noted so the two records agr
 | STU4 · A · C · D · E | feature / GUI | 43–97 h | | | |
 | STU8 | feature | 5–11 h | | | |
 | Docs | docs | 3–7 h | | | |
-| **Repo total** | | **103–232 h** | | | |
+| **Repo total** | | **101–228 h** | | | |
 
 ## Coordination-log items applied
 
@@ -920,13 +927,27 @@ copy-into-phase / large-file UX), each independently reviewable and revertible.
 tell is that a step's description begins with *document* or *verify what the previous step
 did* — that belongs in the step it describes.
 
-**Steps still ahead with the same smell** (flagged now so cleanup has data, not memory —
-deliberately *not* restructured mid-wave, since their ids are already referenced):
+**Wave-1 sweep, 2026-08-07 (Daniel).** Reviewed every remaining Wave-1 step against the
+heuristic. Three went, **43 → 40 steps**, 103–232 h → 101–228 h:
 
-- **S7** — "Change: none — a test." A Wave-1 regression gate over S2/S3's work; verification,
-  not a deliverable.
-- **S11c** — already shrunk to "a regression test pinning the behaviour across the re-pin"
-  once CL-037 showed the columns already ship.
+- **S3 → merged into S4.** Its premise was false, not just thin: it assumed v2.0 turned
+  `bank_metadata` into a nested blob, but a real bank carries five flat scalars. The only nested
+  structure is the `SimulationConfig` that S4 loads, so S3 could produce nothing alone.
+- **S5a → merged into S5b.** Two constants, one usage, four assertions — under half an hour, and
+  §6 already tracks B17 · B19 as one row.
+- **S7 → dropped.** Not executable: it compared a v2.0 bank against a v1.1 predecessor, and
+  egm-data refuses to read 1.1 banks at all. The round-trip half of §7's gate is
+  synthetic-egm-pipeline's; egm-studio's half ("suite green") is already S1/S2's exit criterion.
+
+**Kept as genuine deliverables:** S4 (the join + θ + provenance), S5b/S5c/S5d (relative paths /
+copy-into-phase / large-file UX — three distinct behaviours), S6 (B20, a real behaviour change with
+its own backlog id).
+
+**Still ahead with the same smell**, flagged for cleanup rather than restructured now, since Wave 2/3
+scope may change them anyway:
+
+- **S11c** — shrunk to "a regression test pinning the behaviour across the re-pin" once CL-037
+  showed the columns already ship.
 - **S12** — the `training-curve` recipe parity, arguably the second half of S11b.
 
 ## Notes / decisions log
