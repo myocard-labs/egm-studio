@@ -289,9 +289,9 @@ def _bar_spec(
         "recipe": "bar-chart-with-deltas",
         "inputs": {
             "groups": [
-                {"name": "IAFDB", "bank_id": "upred_iafdb_2026-06-29"},
-                {"name": "Synthetic (clean)", "bank_id": "tbank_clean_2026-06-29"},
-                {"name": "Synthetic (+noise)", "bank_id": "tbank_noise_2026-06-29"},
+                {"name": "IAFDB", "bank_id": "ptbank_iafdb_2026-06-29"},
+                {"name": "Synthetic (clean)", "bank_id": "ptbank_clean_2026-06-29"},
+                {"name": "Synthetic (+noise)", "bank_id": "ptbank_noise_2026-06-29"},
             ],
             "reference": reference,
         },
@@ -312,9 +312,9 @@ def test_load_bar_chart_distances(tmp_path: Path) -> None:
     """The loader excludes the reference group and emits one bar per other group,
     with the aggregate distance as the height + the named baseline index."""
     banks = {
-        "upred_iafdb_2026-06-29": _feature_bank("upred_iafdb_2026-06-29", scale=1.5, seed=1),
-        "tbank_clean_2026-06-29": _feature_bank("tbank_clean_2026-06-29", scale=1.0, seed=2),
-        "tbank_noise_2026-06-29": _feature_bank("tbank_noise_2026-06-29", scale=1.4, seed=3),
+        "ptbank_iafdb_2026-06-29": _feature_bank("ptbank_iafdb_2026-06-29", scale=1.5, seed=1),
+        "ptbank_clean_2026-06-29": _feature_bank("ptbank_clean_2026-06-29", scale=1.0, seed=2),
+        "ptbank_noise_2026-06-29": _feature_bank("ptbank_noise_2026-06-29", scale=1.4, seed=3),
     }
     paths: dict[str, str] = {}
     for bank_id, bank in banks.items():
@@ -344,7 +344,7 @@ def test_bar_chart_missing_reference_raises() -> None:
             "id": "fig_bar_no_ref",
             "description": "no reference",
             "recipe": "bar-chart-with-deltas",
-            "inputs": {"groups": [{"name": "A", "bank_id": "tbank_x_2026-06-29"}]},
+            "inputs": {"groups": [{"name": "A", "bank_id": "ptbank_x_2026-06-29"}]},
             "output": {"format": "png", "path": "out.png"},
         }
     )
@@ -354,7 +354,7 @@ def test_bar_chart_missing_reference_raises() -> None:
 
 def test_bar_chart_reference_not_in_groups_raises(tmp_path: Path) -> None:
     """inputs.reference must name one of the groups."""
-    bank = _feature_bank("tbank_x_2026-06-29", scale=1.0, seed=1)
+    bank = _feature_bank("ptbank_x_2026-06-29", scale=1.0, seed=1)
     path = tmp_path / "x.h5"
     write_classifier_bank(bank, path)
     spec = FigureSpec.model_validate(
@@ -364,14 +364,14 @@ def test_bar_chart_reference_not_in_groups_raises(tmp_path: Path) -> None:
             "description": "bad reference",
             "recipe": "bar-chart-with-deltas",
             "inputs": {
-                "groups": [{"name": "A", "bank_id": "tbank_x_2026-06-29"}],
+                "groups": [{"name": "A", "bank_id": "ptbank_x_2026-06-29"}],
                 "reference": "NOPE",
             },
             "output": {"format": "png", "path": "out.png"},
         }
     )
     with pytest.raises(ValueError, match="not among the groups"):
-        resolve_recipe_data(spec, {"tbank_x_2026-06-29": str(path)})
+        resolve_recipe_data(spec, {"ptbank_x_2026-06-29": str(path)})
 
 
 # --- trace-pair-gallery loader -------------------------------------------- #
@@ -404,8 +404,8 @@ def _tpg_spec(
 def test_load_trace_pair_gallery(tmp_path: Path) -> None:
     """Two banks -> an N-row gallery: source/pool titles, fs, and 1-D signal pairs."""
     banks = {
-        "tbank_src_2026-06-29": _feature_bank("tbank_src_2026-06-29", scale=1.0, seed=1),
-        "upred_pool_2026-06-29": _feature_bank("upred_pool_2026-06-29", scale=1.3, seed=2),
+        "ptbank_src_2026-06-29": _feature_bank("ptbank_src_2026-06-29", scale=1.0, seed=1),
+        "ptbank_pool_2026-06-29": _feature_bank("ptbank_pool_2026-06-29", scale=1.3, seed=2),
     }
     paths: dict[str, str] = {}
     for bank_id, bank in banks.items():
@@ -415,8 +415,8 @@ def test_load_trace_pair_gallery(tmp_path: Path) -> None:
 
     gallery = resolve_recipe_data(
         _tpg_spec(
-            ("Synthetic", "tbank_src_2026-06-29"),
-            ("IAFDB", "upred_pool_2026-06-29"),
+            ("Synthetic", "ptbank_src_2026-06-29"),
+            ("IAFDB", "ptbank_pool_2026-06-29"),
             feature="peak_to_peak",
             n_pairs=3,
         ),
@@ -435,7 +435,7 @@ def test_load_trace_pair_gallery(tmp_path: Path) -> None:
 
 def test_trace_pair_gallery_feature_required() -> None:
     """styling.feature is required — the similarity axis is the open question."""
-    spec = _tpg_spec(("S", "tbank_src_2026-06-29"), ("P", "upred_pool_2026-06-29"), feature=None)
+    spec = _tpg_spec(("S", "ptbank_src_2026-06-29"), ("P", "ptbank_pool_2026-06-29"), feature=None)
     with pytest.raises(ValueError, match=r"styling\.feature"):
         resolve_recipe_data(spec, {})
 
@@ -443,7 +443,7 @@ def test_trace_pair_gallery_feature_required() -> None:
 def test_trace_pair_gallery_bad_feature() -> None:
     """styling.feature must name a real egm-features column."""
     spec = _tpg_spec(
-        ("S", "tbank_src_2026-06-29"), ("P", "upred_pool_2026-06-29"), feature="not_a_feature"
+        ("S", "ptbank_src_2026-06-29"), ("P", "ptbank_pool_2026-06-29"), feature="not_a_feature"
     )
     with pytest.raises(ValueError, match="not an egm-features column"):
         resolve_recipe_data(spec, {})
@@ -451,7 +451,7 @@ def test_trace_pair_gallery_bad_feature() -> None:
 
 def test_trace_pair_gallery_needs_two_groups() -> None:
     """Exactly two groups (source, pool) are required."""
-    spec = _tpg_spec(("only", "tbank_src_2026-06-29"), feature="peak_to_peak")
+    spec = _tpg_spec(("only", "ptbank_src_2026-06-29"), feature="peak_to_peak")
     with pytest.raises(ValueError, match="exactly 2"):
         resolve_recipe_data(spec, {})
 
@@ -545,7 +545,7 @@ def _training_record(metric: str = "auroc") -> TrainingRunRecord:
     """A 3-epoch training run record (rising metric, falling loss)."""
     return TrainingRunRecord.model_validate(
         {
-            "schema_version": "1.1",
+            "schema_version": "1.2",
             "created_utc": "2026-06-30T00:00:00Z",
             "run": {},
             "config": {},

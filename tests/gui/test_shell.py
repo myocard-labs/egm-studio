@@ -275,7 +275,7 @@ def _training_record() -> TrainingRunRecord:
     """A 3-epoch training run record (falling loss, rising AUROC)."""
     return TrainingRunRecord.model_validate(
         {
-            "schema_version": "1.1",
+            "schema_version": "1.2",
             "created_utc": "2026-06-30T00:00:00Z",
             "run": {},
             "config": {},

@@ -169,12 +169,12 @@ def test_observation_ok_once_its_bank_is_indexed(tmp_path: Path) -> None:
 def test_derived_bank_unresolved_without_its_source(tmp_path: Path) -> None:
     (tmp_path / "d.h5").write_bytes(b"")  # present; banks have no schema validator
     entry = EgmBankEntry.model_validate(
-        {**_base_bank("lpred_a_2026-06-27"), "path": "d.h5", "source_bank": "lbank_src_2026-06-01"}
+        {**_base_bank("lpred_a_2026-06-27"), "path": "d.h5", "source_bank": "tbank_src_2026-06-01"}
     )
     manifest = with_entry(empty_manifest(1.0), "egm_banks", entry)
     report = phase_status_report(manifest, tmp_path, validate=True)["lpred_a_2026-06-27"]
     assert report.status is ArtifactStatus.UNRESOLVED
-    assert "lbank_src_2026-06-01" in report.detail
+    assert "tbank_src_2026-06-01" in report.detail
 
 
 def _base_bank(bank_id: str) -> dict[str, str]:

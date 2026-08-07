@@ -4,6 +4,36 @@ All notable changes to `myocard-egm-studio` are documented here. The format foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project aims to follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Predictions banks standardize on the `.classifier.h5` extension**, so a predictions
+  bank and the source bank it was evaluated against are named the same way.
+- **A synthetic bank's per-trace metadata no longer carries generation parameters.**
+  Following the `synthetic_bank` 2.0 restructure, `fibrosis_density`,
+  `fibrosis_density_realized`, `electrode_row`, `electrode_height_mm`, `stim_edge` and
+  `seed` are gone from the ClassifierBank; it keeps identity plus the `simulation_id`
+  join key. The generation config lives on the parallel `synthetic_bank` and is reached
+  through egm-data's join. Filtering or plotting a synthetic bank by one of those fields
+  is no longer possible from the ClassifierBank alone.
+- **Banks written against `synthetic_bank` 1.1 are refused, not partially read.** There is
+  no migration path by design — regenerate them with a current producer.
+
+### Fixed
+
+- **`.gitignore` output-dir patterns are root-anchored**, so a source package named
+  `data/`, `artifacts/`, `runs/` … is no longer silently untracked (green locally,
+  `ModuleNotFoundError` in CI). `out/` deliberately still matches at any depth, because
+  every shipped example spec writes a relative `out/…` path.
+
+### Dependencies
+
+Re-pinned to the Phase-1.5 Wave-1 tags: `myocard-egm-contracts` **v0.6.0**,
+`myocard-egm-data` **v0.6.1**, `myocard-egm-features` **v0.2.0** (from v0.5.3 / v0.5.0 /
+v0.1.1). The catch22 extra is not taken yet. Dev tooling is now pinned exactly
+(`ruff==0.15.17`, `mypy==2.1.0`) so a contributor run, the pre-commit hook and CI agree.
+
 ## [0.1.0] — 2026-07-07
 
 First release: a desktop app for intracardiac-EGM signal exploration, ML-training

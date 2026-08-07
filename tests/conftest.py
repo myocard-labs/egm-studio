@@ -74,9 +74,14 @@ def tiny_classifier_bank() -> ClassifierBank:
                     label_truth=label,
                     prediction=None,
                     trace_metadata={
+                        # The synthetic ClassifierBank keyset as of synthetic_bank 2.0
+                        # (CL-109): identity + the simulation_id join key, nothing from
+                        # generation. Noise fields are absent because this fixture is a
+                        # clean bank — absence means the mixer never ran, so writing NaN
+                        # would assert the opposite.
                         "patient_id": f"P{p:02d}",
-                        "sim_id": p,
-                        "electrode_pair_id": k,
+                        "simulation_id": p,
+                        "pair_index": k,
                     },
                 )
             )

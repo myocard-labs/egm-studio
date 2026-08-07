@@ -11,7 +11,7 @@ from myocard_egm_data.banks import ClassifierBank, write_classifier_bank
 from myocard_egm_data.phases import EgmBankEntry, NoiseBankEntry, TrainingRunEntry
 from myocard_egm_data.records import TrainingRunRecord, write_training_run_record
 
-from myocard_egm_studio.save import bank_entry, model_entry, noise_bank_entry, run_entry
+from myocard_egm_studio.save import bank_entry, model_entry, noise_bank_entry, producer, run_entry
 from myocard_egm_studio.save.producer import UNKNOWN_PRODUCER
 
 
@@ -26,11 +26,22 @@ def test_bank_entry_for_an_egm_bank(tiny_classifier_bank: ClassifierBank, tmp_pa
     assert entry.produced_by_package == UNKNOWN_PRODUCER  # sentinel provenance
 
 
-def test_bank_entry_for_a_noise_bank(tiny_classifier_bank: ClassifierBank, tmp_path: Path) -> None:
-    noise = dataclasses.replace(tiny_classifier_bank, id="nbank_studio_fixture_2026-06-15")
+def test_bank_entry_routes_an_nbank_id_to_the_noise_section(
+    tiny_classifier_bank: ClassifierBank, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``bank_entry`` sends an ``nbank_`` id to NoiseBankEntry rather than EgmBankEntry.
+
+    The bank is built in memory and the loader patched, because egm-data v0.6.0's
+    id-content check now refuses to *write* a ClassifierBank carrying an ``nbank_`` id —
+    ``nbank_`` is not one of the four ClassifierBank roles. That check is right, and it
+    makes this branch of ``bank_entry`` unreachable through any legal artifact; see the
+    note in the S1 hand-off about removing it.
+    """
     path = tmp_path / "noise.h5"
-    write_classifier_bank(noise, path)
-    assert isinstance(bank_entry(path), NoiseBankEntry)  # nbank_ -> the noise section
+    write_classifier_bank(dataclasses.replace(tiny_classifier_bank, id=None), path)
+    noise = dataclasses.replace(tiny_classifier_bank, id="nbank_studio_fixture_2026-06-15")
+    monkeypatch.setattr(producer, "load_classifier_bank", lambda _path: noise)
+    assert isinstance(bank_entry(path), NoiseBankEntry)
 
 
 def test_bank_entry_needs_a_stable_id(tiny_classifier_bank: ClassifierBank, tmp_path: Path) -> None:
@@ -43,7 +54,7 @@ def test_bank_entry_needs_a_stable_id(tiny_classifier_bank: ClassifierBank, tmp_
 def _run_record() -> TrainingRunRecord:
     return TrainingRunRecord.model_validate(
         {
-            "schema_version": "1.1",
+            "schema_version": "1.2",
             "created_utc": "2026-06-30T00:00:00Z",
             "run_id": "run_studio_fixture_2026-06-25",
             "trained_on_bank_id": "tbank_studio_fixture_2026-06-27",

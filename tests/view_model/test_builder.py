@@ -45,7 +45,7 @@ def test_feature_units_zscore_drops_amplitude_unit() -> None:
 def test_columns_and_shape(tiny_classifier_bank: ClassifierBank) -> None:
     """The view-model has one row per trace and carries every identity + feature
     column, plus the explicit ``source`` group label and the producer's
-    per-trace metadata flattened into columns (patient_id, sim_id)."""
+    per-trace metadata flattened into columns (patient_id, simulation_id)."""
     vm = build_view_model(tiny_classifier_bank, source="Synthetic")
     assert len(vm) == tiny_classifier_bank.n_traces
     for col in IDENTITY_COLUMNS:
@@ -55,7 +55,7 @@ def test_columns_and_shape(tiny_classifier_bank: ClassifierBank) -> None:
     assert "source" in vm.columns
     assert bool((vm["source"] == "Synthetic").all())
     assert "patient_id" in vm.columns
-    assert "sim_id" in vm.columns
+    assert "simulation_id" in vm.columns
 
 
 def test_identity_values(tiny_classifier_bank: ClassifierBank) -> None:

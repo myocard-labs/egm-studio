@@ -36,11 +36,11 @@ def test_derived_bank_depends_on_source_and_model() -> None:
     entry = EgmBankEntry.model_validate(
         {
             **_base("lpred_a_2026-06-27"),
-            "source_bank": "lbank_src_2026-06-01",
+            "source_bank": "tbank_src_2026-06-01",
             "model": "model_m_2026-06-10",
         }
     )
-    assert entry_dependency_ids(entry) == ["lbank_src_2026-06-01", "model_m_2026-06-10"]
+    assert entry_dependency_ids(entry) == ["tbank_src_2026-06-01", "model_m_2026-06-10"]
 
 
 def test_run_depends_on_its_bank_not_its_output_model() -> None:
@@ -85,7 +85,7 @@ def test_paper_depends_on_its_figures() -> None:
 
 
 def test_noise_bank_and_observation_entry_have_no_entry_level_deps() -> None:
-    noise = NoiseBankEntry.model_validate(_base("noise_n_2026-06-15"))
+    noise = NoiseBankEntry.model_validate(_base("nbank_n_2026-06-15"))
     obs_entry = ObservationEntry.model_validate(
         {**_base("obs_note_2026-07-05"), "usage_tag": "exploratory"}
     )
@@ -132,13 +132,13 @@ def test_dependency_ids_dispatches_on_entry_kind() -> None:
 
 
 def test_dependency_closure_gathers_present_transitive_deps() -> None:
-    graph = {"fig_a": ["lpred_b_2026-06-27"], "lpred_b_2026-06-27": ["lbank_c_2026-06-01"]}
+    graph = {"fig_a": ["lpred_b_2026-06-27"], "lpred_b_2026-06-27": ["tbank_c_2026-06-01"]}
     result = dependency_closure(
         graph["fig_a"],
         direct_deps=lambda i: graph.get(i, []),
-        present={"lpred_b_2026-06-27", "lbank_c_2026-06-01"},
+        present={"lpred_b_2026-06-27", "tbank_c_2026-06-01"},
     )
-    assert result == ["lpred_b_2026-06-27", "lbank_c_2026-06-01"]  # the derived bank + its source
+    assert result == ["lpred_b_2026-06-27", "tbank_c_2026-06-01"]  # the derived bank + its source
 
 
 def test_dependency_closure_keeps_only_present_ids() -> None:

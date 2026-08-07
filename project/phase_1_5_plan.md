@@ -2,7 +2,7 @@
 
 **Repo:** egm-studio · **Phase:** 1.5
 **Phase design doc:** `intracardiac-platform/phases/phase_1_5/design.md`
-**Status:** planning · **Progress:** 0/43 steps done
+**Status:** in progress · **Progress:** 2/43 steps done
 **Repo estimate:** **103–232 h active** (44 pts) — cold-start ranges, see [Estimates](#estimates--complexity).
 
 > **Second pass, 2026-07-28.** Every issue now broken to commit-sized steps against the actual code.
@@ -120,11 +120,11 @@ ClassifierBank's `bank_metadata`.
 
 ## Steps
 
-☐ todo · 🔨 wip · ✅ done · ⊘ dropped. Waves follow design §7.
+☐ todo · 🔨 wip · ✅ done · ⊘ dropped. Waves follow design §7. **Mark a step ✅ here as it lands.**
 
 ### Wave 1 — schema migration (STU6 · B17 · B19 · B20)
 
-#### S0 — Clear the inbox ☐ (1–2 h) *(new — CL-085 · CL-099)*
+#### S0 — Clear the inbox ✅ (1–2 h) *(new — CL-085 · CL-099)*
 - **Change:** three chores, independent of the migration, so they land first as one `[Chore]`.
   **(a)** pin the dev tools exactly in `[dev]` — `ruff==0.15.17`, `mypy==2.1.0` (currently
   `ruff>=0.6.0` / `mypy>=1.10`; egm-studio and egm-features were the last two unbounded repos, and
@@ -145,7 +145,7 @@ ClassifierBank's `bank_metadata`.
   `examples/out/` **is**; `ruff` + `mypy` run at the pinned versions.
 - **Depends on:** none.
 
-#### S1 — Re-pin to the Wave-1 tags ☐ (2–5 h)
+#### S1 — Re-pin to the Wave-1 tags ✅ (2–5 h)
 - **Change:** `pyproject.toml` → **egm-contracts v0.6.0**, **egm-data v0.6.1**, **egm-features
   v0.2.0** (all three move; egm-data's `.1` is the CL-136 RootModel-repr fix, non-breaking). Open a
   `CHANGELOG.md` `[Unreleased]` section and backfill the post-v0.1.0 commits already on `development`.
@@ -898,6 +898,18 @@ from 6 entries to 38 while this plan was being written).
 length the T4 comparison and the estimator's feature extraction operate on.
 
 ## Notes / decisions log
+
+- 2026-08-07 — **S1's re-pin broke 13 tests, not the 3 egm-data pre-swept.** Three classes, all
+  mine to have caught: (a) six banks whose id role contradicted their content — `_feature_bank`
+  builds unlabeled/unpredicted banks, which are **`ptbank_`**, but they carried `tbank_` / `upred_`
+  ids used as readability hints; (b) four `TrainingRunRecord` fixtures still at `schema_version`
+  1.1, which CON3 bumped to an exact-enum 1.2 — the bump is named in this plan's own dependency
+  table; (c) three legacy id prefixes (`lbank_`, `noise_`) that predate the role vocabulary and the
+  tightened `ArtifactId` pattern now rejects. **Why the pre-check missed them:** I grepped a narrow
+  `id="..."` literal pattern, checked three of ~40 write sites, and generalised to "all other ids
+  match their content". Banks built through helpers taking an id *parameter* were invisible to that
+  grep. The fix that works is enumerating **every** id literal in the tests and reasoning about each
+  one's content, which is what the second pass did.
 
 - 2026-07-28 — Plan written. Read `parameter_estimator_design.md` in full first; STU4 to
   commit-sized steps, other issues at issue level.

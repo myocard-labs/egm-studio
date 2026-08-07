@@ -118,8 +118,8 @@ def _phase_with_bank(tmp_path: Path, *, entry_id: str, bank_id: str) -> Path:
 
 def test_resolve_bank_paths_matches_the_entry_id(tmp_path: Path) -> None:
     """The invariant case (bank.id == entry.id) resolves directly from the manifest map."""
-    phase = _phase_with_bank(tmp_path, entry_id="lpred_a_2026-06-27", bank_id="lpred_a_2026-06-27")
-    paths, missing = resolve_bank_paths(phase, ["lpred_a_2026-06-27"])
+    phase = _phase_with_bank(tmp_path, entry_id="tbank_a_2026-06-27", bank_id="tbank_a_2026-06-27")
+    paths, missing = resolve_bank_paths(phase, ["tbank_a_2026-06-27"])
     assert [p.name for p in paths] == ["a.h5"]
     assert missing == []
 
@@ -128,15 +128,15 @@ def test_resolve_bank_paths_falls_back_to_the_stamped_id(tmp_path: Path) -> None
     """When a saved observation's id is the bank's stamped id and it has drifted from the
     manifest entry id, resolution falls back to reading the bank's own id."""
     phase = _phase_with_bank(
-        tmp_path, entry_id="lpred_entry_2026-06-27", bank_id="lpred_stamped_2026-06-27"
+        tmp_path, entry_id="tbank_entry_2026-06-27", bank_id="tbank_stamped_2026-06-27"
     )
-    paths, missing = resolve_bank_paths(phase, ["lpred_stamped_2026-06-27"])
+    paths, missing = resolve_bank_paths(phase, ["tbank_stamped_2026-06-27"])
     assert [p.name for p in paths] == ["a.h5"]  # resolved despite the id drift
     assert missing == []
 
 
 def test_resolve_bank_paths_reports_the_unresolvable(tmp_path: Path) -> None:
-    phase = _phase_with_bank(tmp_path, entry_id="lpred_a_2026-06-27", bank_id="lpred_a_2026-06-27")
-    paths, missing = resolve_bank_paths(phase, ["lpred_a_2026-06-27", "lpred_ghost_2026-06-27"])
+    phase = _phase_with_bank(tmp_path, entry_id="tbank_a_2026-06-27", bank_id="tbank_a_2026-06-27")
+    paths, missing = resolve_bank_paths(phase, ["tbank_a_2026-06-27", "tbank_ghost_2026-06-27"])
     assert [p.name for p in paths] == ["a.h5"]
-    assert missing == ["lpred_ghost_2026-06-27"]  # not in the phase at all
+    assert missing == ["tbank_ghost_2026-06-27"]  # not in the phase at all

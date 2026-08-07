@@ -57,7 +57,18 @@ def _write_bank(path: Path) -> None:
                 bank_id=_BANK_ID,
                 bank_type="synthetic",
                 bank_path="src.h5",
-                bank_metadata={"fibrosis_density": 0.3, "simulator": "finitewave"},
+                # The bank-level keyset a synthetic ClassifierBank carries under
+                # synthetic_bank 2.0 (CL-109): five keys, where v1.1 had 23. The
+                # generation physics moved to the parallel synthetic_bank; what stays
+                # is provenance (which code wrote this) plus the label policy's
+                # identity, because that defines what the classification task *is*.
+                bank_metadata={
+                    "producer": "synthetic-egm-pipeline",
+                    "producer_version": "0.4.0",
+                    "description": "artifact-metadata fixture",
+                    "trace_duration_ms": 64.0,  # matches the 64-sample signals at 1 kHz
+                    "label_policy": "global_density",
+                },
             )
         ],
         traces=[_trace("train", 1), _trace("val", 0)],
@@ -74,7 +85,10 @@ def test_classifier_bank_summary_reads_the_file(tmp_path: Path) -> None:
     assert "1000 Hz" in text  # sample rate
     assert "fibrotic" in text  # label name from the labels map
     assert "[synthetic]" in text  # source bank type
-    assert "fibrosis_density" in text  # source-specific bank_metadata (synthetic vs IAFDB)
+    # Source-specific bank_metadata still reaches the summary. label_policy is the key
+    # that distinguishes a synthetic bank now: both producers keep producer /
+    # producer_version (CL-109), but only synthetic carries a label policy.
+    assert "label_policy" in text
 
 
 def test_has_metadata_view_matches_roles() -> None:
