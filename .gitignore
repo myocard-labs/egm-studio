@@ -69,15 +69,26 @@ coverage.xml
 *.ckpt
 *.safetensors
 
-data/
-banks/
-checkpoints/
-runs/
-logs/
-mlruns/
-wandb/
-artifacts/
+# Root-anchored on purpose (CL-099). Without the leading slash these match at ANY
+# depth, so a source package named src/myocard_egm_studio/data/ (or artifacts/, out/,
+# ...) would be silently untracked — green locally, ModuleNotFoundError in CI. That
+# is exactly how egm-classifier went red at Refactor Step 8.
+/data/
+/banks/
+/checkpoints/
+/runs/
+/logs/
+/mlruns/
+/wandb/
+/artifacts/
+
+# `out/` is the exception to the anchoring above: it must match at ANY depth, because
+# every shipped example spec writes a *relative* `out/...` path, so running one from
+# examples/ produces examples/out/. The negation keeps CL-099's landmine defused — a
+# source package src/<pkg>/out/ stays tracked. Verified both ways with git check-ignore.
 out/
+!src/**/out/
+
 tests/charts/baseline
 
 # Allow tiny fixtures committed under tests/fixtures/ if needed:

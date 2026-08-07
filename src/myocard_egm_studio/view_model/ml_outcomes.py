@@ -44,6 +44,8 @@ def ml_outcome_frame(bank: ClassifierBank, *, positive_label: int = 1) -> pd.Dat
     if not traces or any(trace.prediction is None for trace in traces):
         return None
     prob = np.array(
+        # `prediction` is non-None here — the guard above returns early otherwise — but
+        # mypy doesn't carry that narrowing into a comprehension over the same list.
         [positive_prob(trace.prediction.pred_logits, positive_label) for trace in traces],  # type: ignore[union-attr]
         dtype=np.float64,
     )
@@ -54,6 +56,7 @@ def ml_outcome_frame(bank: ClassifierBank, *, positive_label: int = 1) -> pd.Dat
     return pd.DataFrame(
         {
             "predicted_prob": prob,
+            # Same narrowing gap as `prob` above: the early return proves prediction is set.
             "predicted_class": [trace.prediction.label_pred for trace in traces],  # type: ignore[union-attr]
             "correctness_bucket": [_bucket(trace, positive_label) for trace in traces],
             # binary cross-entropy; NaN propagates for an unlabeled (NaN-truth) trace

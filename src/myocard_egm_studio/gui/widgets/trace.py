@@ -46,7 +46,7 @@ def _time_ms(n: int, fs_hz: float) -> NDArray[np.float64]:
     return np.arange(n, dtype=np.float64) / fs_hz * 1000.0
 
 
-class TraceWidget(pg.PlotItem):  # type: ignore[misc]
+class TraceWidget(pg.PlotItem):  # type: ignore[misc]  # pyqtgraph ships no py.typed
     """One trace as a pyqtgraph PlotItem — the ADR-024 composable unit.
 
     X-axis is milliseconds, Y is amplitude (mV); mouse pan / zoom is limited to X
@@ -83,7 +83,7 @@ class TraceWidget(pg.PlotItem):  # type: ignore[misc]
         return self._data
 
 
-class TraceContainer(pg.GraphicsLayoutWidget):  # type: ignore[misc]
+class TraceContainer(pg.GraphicsLayoutWidget):  # type: ignore[misc]  # pyqtgraph, no py.typed
     """Stacks N TraceWidgets as rows with a shared (linked) X-axis (ADR-024)."""
 
     def __init__(self, traces: Sequence[TraceData], *, palette: PlotPalette | None = None) -> None:

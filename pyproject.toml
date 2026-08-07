@@ -99,8 +99,12 @@ dev = [
   # Per-test timeout: a hung Qt modal (an un-stubbed dialog) must fail fast with
   # a traceback, never freeze CI for hours. See the pytest config below.
   "pytest-timeout>=2.3",
-  "ruff>=0.6.0",
-  "mypy>=1.10",
+  # Pinned exactly to the fleet versions (CL-024 / CL-085) so a contributor's
+  # local run, the pre-commit hook, and CI all agree. Unpinned, ruff 0.16 began
+  # reformatting Python blocks inside Markdown and reddened CI on files nobody
+  # touched. Bump these, .pre-commit-config.yaml, and ci.yml together.
+  "ruff==0.15.17",
+  "mypy==2.1.0",
   "pre-commit>=3.7",
   "nbstripout>=0.7",
 ]

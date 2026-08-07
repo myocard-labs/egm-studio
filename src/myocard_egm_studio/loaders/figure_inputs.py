@@ -205,6 +205,8 @@ def prediction_group_from_bank(
     labels: np.ndarray | None
     label_names: dict[int, str] | None
     if all(truth_present):
+        # `all(truth_present)` proves every label_truth is set, but the narrowing lives in a
+        # separate list, so mypy still sees `int | None` on the traces themselves.
         labels = np.array([int(trace.label_truth) for trace in bank.traces], dtype=np.int64)  # type: ignore[arg-type]
         label_names = dict(bank.labels) or None
     elif not any(truth_present):

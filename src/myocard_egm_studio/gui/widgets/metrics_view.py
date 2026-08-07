@@ -158,6 +158,8 @@ class MetricsView(QtWidgets.QWidget):
         """A themed PlotWidget with ``draw`` (draw_roc / draw_calibration) applied."""
         plot = pg.PlotWidget()
         plot.setBackground(self._style.background)
+        # `draw` is typed `object` so one helper takes either draw_roc or draw_calibration,
+        # which share no signature. A Callable/Protocol parameter would drop this ignore.
         draw(plot.getPlotItem(), groups, style=self._style)  # type: ignore[operator]
         return plot
 
