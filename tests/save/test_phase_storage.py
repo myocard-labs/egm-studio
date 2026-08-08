@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from myocard_egm_studio.save.phase_storage import copy_into_phase, phase_relative
+from myocard_egm_studio.save import phase_storage
+from myocard_egm_studio.save.phase_storage import CopyCancelled, copy_into_phase, phase_relative
 
 
 def _file(path: Path, text: str = "x") -> Path:
@@ -112,6 +114,99 @@ def test_an_unknown_role_raises_rather_than_inventing_a_subfolder(tmp_path: Path
     source = _file(tmp_path / "b.h5")
     with pytest.raises(ValueError, match="no phase subfolder"):
         copy_into_phase(source, tmp_path / "phase", "not_a_role")
+
+
+# --- large-artifact copy UX (S5c) ------------------------------------------- #
+# Banks run 100-500 MB in practice. These shrink the block size instead so the chunked
+# path, the cancel poll and the partial-file cleanup are all exercised on a few bytes.
+
+
+@pytest.fixture
+def tiny_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(phase_storage, "_CHUNK_BYTES", 4)
+
+
+def test_progress_reports_cumulative_bytes_across_the_whole_set(
+    tmp_path: Path, tiny_chunks: None
+) -> None:
+    """One scale for the bar: the bank and its sidecar are one transfer, not two."""
+    source = _file(tmp_path / "producer" / "nbank.h5", "0123456789")  # 10 bytes
+    _file(tmp_path / "producer" / "nbank_run_record.json", "ab")  # 2 bytes
+    seen: list[tuple[int, int]] = []
+
+    copy_into_phase(
+        source, tmp_path / "phase", "noise_bank", progress=lambda d, t: seen.append((d, t))
+    )
+
+    assert {total for _done, total in seen} == {12}  # a single total, not one per file
+    assert [done for done, _total in seen] == [4, 8, 10, 12]  # monotonic, ends at the total
+
+
+def test_cancelling_leaves_no_partial_file_and_no_artifact(
+    tmp_path: Path, tiny_chunks: None
+) -> None:
+    """A truncated bank under its real name is worse than no bank: nothing survives a cancel."""
+    source = _file(tmp_path / "producer" / "bank.h5", "0123456789")
+    phase = tmp_path / "phase"
+    calls = iter([False, True])  # cancel arrives partway through the first file
+
+    with pytest.raises(CopyCancelled):
+        copy_into_phase(source, phase, "training_bank", cancelled=lambda: next(calls, True))
+
+    assert list((phase / "banks").iterdir()) == []  # neither the file nor a .partial
+    assert source.read_text(encoding="utf-8") == "0123456789"  # the original is untouched
+
+
+def test_cancelling_during_a_companion_removes_the_artifact_already_copied(
+    tmp_path: Path, tiny_chunks: None
+) -> None:
+    """Half a set is not a usable artifact — the bank goes back too, not just the sidecar."""
+    source = _file(tmp_path / "producer" / "bank.h5", "0123")  # one block: completes
+    companion = _file(tmp_path / "producer" / "bank_theta.h5", "456789")
+    phase = tmp_path / "phase"
+    calls = iter([False, False, True])
+
+    with pytest.raises(CopyCancelled):
+        copy_into_phase(
+            source,
+            phase,
+            "training_bank",
+            companions=[companion],
+            cancelled=lambda: next(calls, True),
+        )
+
+    assert list((phase / "banks").iterdir()) == []
+
+
+def test_a_volume_too_small_refuses_before_writing_anything(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Discovering this 400 MB in is a wasted transfer; the size is knowable up front."""
+    source = _file(tmp_path / "producer" / "bank.h5", "0123456789")
+    phase = tmp_path / "phase"
+    # Patched on shutil itself: phase_storage calls shutil.disk_usage through the module, and
+    # reaching for it as phase_storage.shutil is a re-export mypy (rightly) refuses.
+    monkeypatch.setattr(
+        shutil,
+        "disk_usage",
+        lambda _p: SimpleNamespace(total=1024, used=0, free=1024),  # 1 KB free, well under
+    )
+
+    with pytest.raises(OSError, match="not enough free space"):
+        copy_into_phase(source, phase, "training_bank")
+
+    assert list((phase / "banks").iterdir()) == []
+
+
+def test_a_completed_copy_leaves_no_partial_behind(tmp_path: Path, tiny_chunks: None) -> None:
+    """The destination name only ever appears once every byte is there."""
+    source = _file(tmp_path / "producer" / "bank.h5", "0123456789")
+    phase = tmp_path / "phase"
+
+    copy = copy_into_phase(source, phase, "training_bank")
+
+    assert [path.name for path in copy.parent.iterdir()] == ["bank.h5"]
+    assert copy.read_text(encoding="utf-8") == "0123456789"
 
 
 def test_a_phase_folder_still_resolves_after_being_moved(tmp_path: Path) -> None:

@@ -9,11 +9,13 @@ header carries the three-mode segmented control. The theme (ADR-012) persists vi
 
 from __future__ import annotations
 
+import threading
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal, Protocol, TypeVar, cast
 
 import pandas as pd
 from myocard_egm_contracts import Role, role_of
@@ -96,7 +98,7 @@ from myocard_egm_studio.save import (
     update_observation,
     with_entry,
 )
-from myocard_egm_studio.save.phase_storage import copy_into_phase, phase_relative
+from myocard_egm_studio.save.phase_storage import CopyCancelled, copy_into_phase, phase_relative
 from myocard_egm_studio.view_model import (
     DiskCache,
     FrameStore,
@@ -171,6 +173,12 @@ _ADD_TO_PHASE_PICKERS: dict[_ProducerKind, tuple[str, str, str]] = {
 #: quick filter applies without flashing a dialog while a slow one still gets a bar.
 _RECALC_DIALOG_DELAY_MS = 300
 
+#: Same idea for indexing: a run-record JSON is indexed in milliseconds and should not
+#: flash a dialog, while a 500 MB bank copy shows one and stays cancellable.
+_INDEX_DIALOG_DELAY_MS = 400
+
+_Result = TypeVar("_Result")
+
 _Side = Literal["left", "right"]
 #: Where a loaded producer artifact (or an authored save) is indexed.
 _Target = Literal["scratch", "phase"]
@@ -192,6 +200,46 @@ _EXPAND_GLYPH: dict[_Side, str] = {"left": "▸", "right": "◂"}
 
 class _LoadCancelled(Exception):
     """Raised by the load progress callback when the user hits Cancel mid-load."""
+
+
+class _IndexSignals(QtCore.QObject):
+    """Main-thread signals for :class:`_IndexTask` — progress, then exactly one outcome."""
+
+    progressed = QtCore.Signal(int, int)  # (bytes copied, bytes total)
+    done = QtCore.Signal(object)  # the manifest entry / copy result
+    failed = QtCore.Signal(object)  # the exception it raised, cancellation included
+
+
+class _IndexTask(QtCore.QRunnable):
+    """Run one index-or-promote off the UI thread.
+
+    Both halves are heavy for a 100-500 MB bank: egm-data reads the whole file to get its
+    id, then B17 copies it into the phase. Neither touches Qt — h5py, pydantic and file
+    I/O only — so both are safe on the pool, and moving them off the UI thread is what
+    keeps the window painting and the Cancel button live while a bank copies.
+
+    Cancellation is a :class:`threading.Event` rather than a Qt query: the worker polls it
+    once per block, and reading it off-thread is safe where touching the dialog would not
+    be.
+    """
+
+    def __init__(
+        self,
+        work: Callable[[Callable[[int, int], None], Callable[[], bool]], object],
+        cancel: threading.Event,
+    ) -> None:
+        super().__init__()
+        self._work = work
+        self._cancel = cancel
+        self.signals = _IndexSignals()
+
+    def run(self) -> None:
+        try:
+            result = self._work(self.signals.progressed.emit, self._cancel.is_set)
+        except Exception as exc:  # thread boundary: report every failure, never crash the pool
+            self.signals.failed.emit(exc)
+            return
+        self.signals.done.emit(result)
 
 
 @dataclass
@@ -1039,6 +1087,84 @@ class MainWindow(QtWidgets.QMainWindow):
                 f"Loaded observation {observation.id} into {where}{self._dep_suffix(added)}"
             )
 
+    def _run_indexing(
+        self,
+        label: str,
+        work: Callable[[Callable[[int, int], None], Callable[[], bool]], _Result],
+    ) -> _Result:
+        """Run ``work`` on the thread pool behind a modal progress dialog; return its result.
+
+        The call stays **synchronous** — callers index a multi-file selection in a plain
+        loop, and promote walks a dependency closure — while the work itself runs off the UI
+        thread. A nested event loop bridges the two: it keeps this frame waiting without
+        blocking painting, so the progress bar advances and Cancel responds during a
+        half-gigabyte copy.
+
+        The dialog is **application-modal**, which is what makes the nested loop safe: input
+        goes only to the dialog, so no menu action can re-enter the shell while a copy is in
+        flight. The task's outcome signals are queued (they cross a thread boundary), so they
+        can only be delivered *inside* ``exec()`` — the loop cannot be quit before it starts.
+
+        Raises whatever ``work`` raised, on this thread, so callers keep ordinary
+        ``try / except`` control flow — :class:`CopyCancelled` included.
+        """
+        cancel = threading.Event()
+        dialog = QtWidgets.QProgressDialog(label, "Cancel", 0, 0, self)
+        dialog.setWindowTitle(_WINDOW_TITLE)
+        dialog.setWindowModality(QtCore.Qt.WindowModality.ApplicationModal)
+        dialog.setMinimumDuration(_INDEX_DIALOG_DELAY_MS)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.canceled.connect(cancel.set)
+
+        loop = QtCore.QEventLoop()
+        result: _Result | None = None
+        error: Exception | None = None
+
+        def on_progress(done: int, total: int) -> None:
+            if dialog.maximum() != total:
+                dialog.setMaximum(total)  # 0 -> total: the busy spinner becomes a real bar
+            dialog.setValue(done)
+
+        def on_done(value: object) -> None:
+            nonlocal result
+            result = cast(_Result, value)
+            loop.quit()
+
+        def on_failed(exc: object) -> None:
+            nonlocal error
+            error = cast(Exception, exc)
+            loop.quit()
+
+        task = _IndexTask(work, cancel)
+        queued = QtCore.Qt.ConnectionType.QueuedConnection
+        task.signals.progressed.connect(on_progress, queued)
+        task.signals.done.connect(on_done, queued)
+        task.signals.failed.connect(on_failed, queued)
+        dialog.setValue(0)  # starts the minimum-duration timer
+        QtCore.QThreadPool.globalInstance().start(task)
+        loop.exec()
+        dialog.close()
+        if error is not None:
+            raise error
+        return cast(_Result, result)
+
+    def _copy_producer_in(
+        self,
+        source: Path,
+        role_name: str,
+        progress: Callable[[int, int], None],
+        cancelled: Callable[[], bool],
+    ) -> Path:
+        """Copy one scratch producer file into the phase — the promote half of B17.
+
+        A named method rather than a closure so :meth:`_promote_entries` can bind its loop's
+        source and role with ``partial`` instead of capturing them.
+        """
+        return copy_into_phase(
+            source, self._phase_dir, role_name, progress=progress, cancelled=cancelled
+        )
+
     def _index_producer(
         self, path: str, *, kind: Literal["bank", "run", "model", "noise"], target: _Target
     ) -> None:
@@ -1053,12 +1179,19 @@ class MainWindow(QtWidgets.QMainWindow):
         # self-contained. Into scratch: leave it where it is — scratch is a working area.
         # Bound to a local rather than re-tested below, so the manifest stays narrowed.
         phase_manifest = self._phase_manifest if target == "phase" else None
+        phase_dir = self._phase_dir if phase_manifest is not None else None
+        name = Path(path).name
         try:
-            entry = builders[kind](
-                path, phase_dir=self._phase_dir if phase_manifest is not None else None
+            entry = self._run_indexing(
+                f"Copying {name} into the phase…" if phase_dir else f"Reading {name}…",
+                lambda progress, cancelled: builders[kind](
+                    path, phase_dir=phase_dir, progress=progress, cancelled=cancelled
+                ),
             )
+        except CopyCancelled:  # a choice, not a failure: say so and leave nothing behind
+            self.statusBar().showMessage(f"Cancelled — {name} was not added")
+            return
         except Exception as exc:  # unreadable / id-less file -> a visible warning, not a quiet line
-            name = Path(path).name
             self.statusBar().showMessage(f"Could not index {name}: {exc}")
             QtWidgets.QMessageBox.warning(
                 self,
@@ -1746,13 +1879,20 @@ class MainWindow(QtWidgets.QMainWindow):
                     phase = with_entry(phase, section, figure_entry(spec))
                     authored_files.append(src)
                 else:  # a producer file — copy it into the phase and record it relatively (B17)
-                    stored = copy_into_phase(
-                        Path(self._scratch_dir) / entry.path, self._phase_dir, role.name
+                    source = Path(self._scratch_dir) / entry.path
+                    stored = self._run_indexing(
+                        f"Copying {source.name} into the phase…",
+                        # partial, not a closure: it binds this iteration's source and role
+                        # eagerly, so there is no loop-variable capture to get wrong.
+                        partial(self._copy_producer_in, source, role.name),
                     )
                     relocated = entry.model_copy(
                         update={"path": phase_relative(stored, Path(self._phase_dir))}
                     )
                     phase = with_entry(phase, section, relocated)
+            except CopyCancelled:  # cancelling one artifact leaves it in scratch, unharmed
+                self.statusBar().showMessage(f"Cancelled — {artifact_id} stayed in scratch")
+                continue
             except Exception as exc:  # unreadable / invalid file -> status, keep it in scratch
                 self.statusBar().showMessage(f"Could not promote {artifact_id}: {exc}")
                 continue

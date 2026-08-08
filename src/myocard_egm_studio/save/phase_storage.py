@@ -28,15 +28,39 @@ never needed:
 
 from __future__ import annotations
 
+import os
 import shutil
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
+
+from myocard_egm_studio.view_model.builder import ProgressFn
 
 __all__ = [
     "SUBDIR_BY_ROLE",
+    "CopyCancelled",
     "copy_into_phase",
     "phase_relative",
 ]
+
+#: Read/write block size. Large enough that a 500 MB bank is ~125 writes rather than
+#: thousands, small enough that cancel is felt immediately — the cancel flag and the
+#: progress callback are both checked once per block.
+_CHUNK_BYTES = 4 * 1024 * 1024
+
+#: Free space demanded *beyond* the bytes actually being copied. A copy that fills the
+#: volume to the last byte leaves a machine that cannot write the manifest it is about to
+#: write, so the check refuses a little early rather than technically-succeeding.
+_FREE_SPACE_MARGIN_BYTES = 64 * 1024 * 1024
+
+#: Suffix of the in-progress file. The copy writes here and renames on completion, so a
+#: cancelled or failed copy can never be mistaken for a whole artifact — the phase folder
+#: only ever contains complete files under their real names.
+_PARTIAL_SUFFIX = ".partial"
+
+
+class CopyCancelled(Exception):
+    """The user cancelled a copy. Not a failure: callers report it as such, not as an error."""
+
 
 #: Where each artifact role's files live under the phase folder. Authored artifacts keep
 #: the ``figures`` / ``observations`` names ``save.figure`` / ``save.observation`` already
@@ -84,6 +108,8 @@ def copy_into_phase(
     role_name: str,
     *,
     companions: Iterable[Path | str] = (),
+    progress: ProgressFn | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> Path:
     """Copy ``source`` into ``phase_dir``'s subfolder for ``role_name``; return the copy.
 
@@ -97,6 +123,12 @@ def copy_into_phase(
     already unresolvable where it is, and refusing to index the bank over it would be worse
     than carrying the same gap forward.
 
+    Banks run 100-500 MB, so the copy is **chunked**: ``progress`` is called with
+    ``(bytes_done, bytes_total)`` across the whole set, and ``cancelled`` is polled once
+    per block. Space is checked up front and every file lands atomically, so the three ways
+    this can end — done, cancelled, out of space — all leave the phase folder holding
+    whole files or nothing, never a truncated bank under a real name.
+
     Raises
     ------
     FileNotFoundError
@@ -104,6 +136,10 @@ def copy_into_phase(
         file that was never copied.
     ValueError
         If ``role_name`` has no known subfolder, rather than inventing one.
+    OSError
+        If the volume cannot hold the copy. Raised *before* anything is written.
+    CopyCancelled
+        If ``cancelled`` returned true. Partial output is removed first.
     """
     src = Path(source)
     phase = Path(phase_dir)
@@ -117,11 +153,84 @@ def copy_into_phase(
     if _already_inside(src, phase):
         return src
 
+    to_copy = [src, *_siblings(src, companions)]
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, destination)
-    for sibling in _siblings(src, companions):
-        shutil.copy2(sibling, destination.parent / sibling.name)
+    _require_free_space(to_copy, destination.parent)
+
+    total = sum(path.stat().st_size for path in to_copy)
+    done = 0
+    written: list[Path] = []
+    try:
+        for path in to_copy:
+            done = _copy_file(
+                path,
+                destination.parent / path.name,
+                done=done,
+                total=total,
+                progress=progress,
+                cancelled=cancelled,
+            )
+            written.append(destination.parent / path.name)
+    except BaseException:
+        # Cancelled, out of space, or interrupted: an artifact copied only in part is worse
+        # than one absent, because the manifest entry never gets written to explain it.
+        for path in written:
+            path.unlink(missing_ok=True)
+        raise
     return destination
+
+
+def _require_free_space(sources: Iterable[Path], destination_dir: Path) -> None:
+    """Refuse a copy the volume cannot hold, before a single byte is written.
+
+    Running out of space mid-copy is recoverable here (the partial file is removed) but it
+    wastes the whole transfer of a 500 MB bank to discover something knowable in advance.
+    """
+    needed = sum(path.stat().st_size for path in sources)
+    free = shutil.disk_usage(destination_dir).free
+    if free < needed + _FREE_SPACE_MARGIN_BYTES:
+        raise OSError(
+            f"not enough free space to copy into the phase: {_mb(needed)} needed "
+            f"(plus {_mb(_FREE_SPACE_MARGIN_BYTES)} headroom), {_mb(free)} free on "
+            f"{destination_dir}"
+        )
+
+
+def _copy_file(
+    source: Path,
+    destination: Path,
+    *,
+    done: int,
+    total: int,
+    progress: ProgressFn | None,
+    cancelled: Callable[[], bool] | None,
+) -> int:
+    """Copy one file in blocks; return the new cumulative byte count.
+
+    Written to ``<name>.partial`` and renamed on completion, so the destination name only
+    ever appears once the bytes are all there. ``os.replace`` is atomic within a filesystem,
+    which is the case here — the partial sits in the folder it is destined for.
+    """
+    partial = destination.with_name(destination.name + _PARTIAL_SUFFIX)
+    try:
+        with source.open("rb") as reader, partial.open("wb") as writer:
+            while chunk := reader.read(_CHUNK_BYTES):
+                if cancelled is not None and cancelled():
+                    raise CopyCancelled(f"copy of {source.name} was cancelled")
+                writer.write(chunk)
+                done += len(chunk)
+                if progress is not None:
+                    progress(done, total)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+    os.replace(partial, destination)
+    shutil.copystat(source, destination)  # mtime / mode, as shutil.copy2 did
+    return done
+
+
+def _mb(num_bytes: int) -> str:
+    return f"{num_bytes / (1024 * 1024):,.0f} MB"
 
 
 def _already_inside(path: Path, phase_dir: Path) -> bool:

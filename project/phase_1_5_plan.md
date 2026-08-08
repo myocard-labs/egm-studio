@@ -2,7 +2,7 @@
 
 **Repo:** egm-studio · **Phase:** 1.5
 **Phase design doc:** `intracardiac-platform/phases/phase_1_5/design.md`
-**Status:** in progress · **Progress:** 5/39 steps done
+**Status:** in progress · **Progress:** 6/39 steps done
 **Repo estimate:** **102–229 h active** (45 pts) — cold-start ranges, see [Estimates](#estimates--complexity).
 
 > **Second pass, 2026-07-28.** Every issue now broken to commit-sized steps against the actual code.
@@ -258,15 +258,43 @@ already tracks B17 · B19 as a single row. Folded into S5b rather than shipped a
   re-indexing copies once; scratch indexing stays absolute.
 - **Depends on:** S1.
 
-#### S5c — B17: large-artifact copy UX ☐ (3–6 h) *(was S5d)*
-- **Change:** banks are 100–500 MB, so the copy can't run on the UI thread — move it to a worker
-  with progress + cancel (the same coalesced-worker pattern Flow C's resolve uses, ADR-019
-  as-built), plus a **free-space pre-check** that refuses with a clear message rather than
-  half-copying, and cleanup of a partial file on cancel or failure.
+#### S5c — B17: large-artifact copy UX ✅ (3–6 h) *(was S5d)*
+- **Change:** banks are 100–500 MB, so the copy can't run on the UI thread — moved to a worker
+  with progress + cancel, plus a **free-space pre-check** that refuses with a clear message rather
+  than half-copying, and cleanup of a partial file on cancel or failure.
+  - `save/phase_storage.py` copies in 4 MiB blocks, reporting `(bytes_done, bytes_total)` across
+    the artifact **and its companions as one transfer**, and polling a cancel predicate once per
+    block. Every file is written to `<name>.partial` and `os.replace`d on completion, so a
+    destination name only ever appears once all its bytes are there.
+  - All three exits leave the folder holding whole files or nothing: cancel raises `CopyCancelled`
+    and unlinks what the set had already written; out-of-space raises **before** the first byte;
+    an unexpected failure cleans up the same way.
+  - `save/producer.py`'s four builders thread `progress` / `cancelled` through; on the scratch path
+    nothing is copied, so neither is ever called.
+  - `gui/shell.py` runs the index (and the promote copy) on `QThreadPool` behind an
+    application-modal `QProgressDialog`. Cancel is reported as a choice — a status line, no warning
+    box, no manifest entry.
+- **Deviation from the planned shape, deliberate.** The plan said "the same coalesced-worker
+  pattern Flow C's resolve uses". Flow C's is *fire-and-forget with coalescing* — right for a
+  preview that re-fires on every keystroke, wrong here: indexing walks a **multi-file selection**
+  and promote walks a **dependency closure**, both plain `for` loops that need each copy finished
+  before the next begins. So `_run_indexing` keeps the call synchronous and bridges to the worker
+  with a nested `QEventLoop`. Two things make that safe, and both are load-bearing: the dialog is
+  **application-modal**, so no menu action can re-enter the shell mid-copy; and the task's outcome
+  signals are **queued** across the thread boundary, so they can only be delivered inside `exec()`
+  and the loop can never be quit before it starts.
+- **Found: indexing a bank reads the whole bank.** `bank_entry` calls egm-data's
+  `load_classifier_bank` to get `.id` and `banks[]` — materialising every trace of a 500 MB file to
+  read a root attribute and one small group. That is why the load half, not the copy, dominates
+  indexing time. egm-data has no metadata-only reader; adding one is a small, clearly-scoped ask.
+  Running the work on the pool means this no longer *freezes* anything, so it is a performance
+  item, not a correctness one — logged rather than worked around here.
 - **Verify:** a large-fixture copy keeps the window responsive and can be cancelled; cancelling
-  leaves no partial file and no manifest entry; a simulated no-space condition reports rather than
-  corrupts; `git status` in `intracardiac-platform` shows nothing newly tracked after a bank copy
-  (the `*.h5` / `*.hdf5` ignore holds).
+  leaves no partial file and no manifest entry, including when it lands mid-companion (the bank
+  already copied goes back too); a simulated no-space condition reports rather than corrupts;
+  progress is one cumulative scale over the whole set, not one per file; `git status` in
+  `intracardiac-platform` shows nothing newly tracked after a bank copy (the `*.h5` / `*.hdf5`
+  ignore holds).
 - **Depends on:** S5b.
 
 #### S6 — B20: noise `bank_id` from the bank ☐ (2–4 h)
@@ -283,10 +311,12 @@ already tracks B17 · B19 as a single row. Folded into S5b rather than shipped a
   failure** and points at regenerating a perfectly good bank. `_index_producer` should report
   wrong-kind separately from id-less, and the run / noise loaders should raise one short sentence
   rather than a validation dump.
-- **Cross-repo question (not ours to change):** a *noise bank's* sidecar being named
-  `..._run_record.json` is what makes it look pickable under a training-run filter. B20 makes that
-  sidecar non-load-bearing for us, so renaming it at the source (iafdb-pipeline) is cheap now and
-  removes the collision. Worth a coordination-log entry before S6 lands.
+- **Root cause is upstream and out of phase scope → FB-26.** A *noise bank's* sidecar being named
+  `..._run_record.json` is what makes it look pickable under a training-run filter. That blocks no
+  functionality, so it is a naming-convention review in the backlog, not Phase 1.5 work; the
+  error-message half above stays ours regardless. If the rename ever happens,
+  `phase_storage._NOISE_RECORD_SUFFIX` needs the matching change or the sidecar silently stops
+  travelling into a phase.
 - **Verify:** indexing a v1.1 noise bank with no sidecar succeeds; the Noise view header shows the
   id read from the `.h5`; a wrong-kind pick reports the wrong kind, not a missing id.
 - **Depends on:** S1.

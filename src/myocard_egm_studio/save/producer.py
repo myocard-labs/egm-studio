@@ -19,7 +19,7 @@ Ids come from the file — a bank's ``.id``, a run's ``run_id`` — and a run al
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +29,7 @@ from myocard_egm_data.phases import EgmBankEntry, ModelEntry, NoiseBankEntry, Tr
 from myocard_egm_data.records import load_training_run_record
 
 from myocard_egm_studio.save.phase_storage import copy_into_phase, phase_relative
+from myocard_egm_studio.view_model.builder import ProgressFn
 from myocard_egm_studio.view_model.theta import LOCAL_SENTINEL
 
 __all__ = [
@@ -46,15 +47,25 @@ def store(
     phase_dir: Path | str | None,
     *,
     companions: Iterable[Path | str] = (),
+    progress: ProgressFn | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> Path:
     """Place ``path`` for indexing: copied into ``phase_dir`` when there is one (B17).
 
     ``phase_dir=None`` is the scratch case — scratch is a working area, not an archive, so
     an artifact stays where the producer left it and the entry points at it absolutely.
+    Nothing is copied, so ``progress`` / ``cancelled`` are never called on that path.
     """
     if phase_dir is None:
         return Path(path)
-    return copy_into_phase(path, phase_dir, role_of(artifact_id).name, companions=companions)
+    return copy_into_phase(
+        path,
+        phase_dir,
+        role_of(artifact_id).name,
+        companions=companions,
+        progress=progress,
+        cancelled=cancelled,
+    )
 
 
 def declared_companions(bank: ClassifierBank, path: Path | str) -> tuple[Path, ...]:
@@ -87,6 +98,8 @@ def _base(
     phase_dir: Path | str | None = None,
     *,
     companions: Iterable[Path | str] = (),
+    progress: ProgressFn | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> dict[str, str]:
     """The entry preamble: id + path. Provenance is left unset, not invented (B19).
 
@@ -94,7 +107,9 @@ def _base(
     records no producing package or version, so omitting them says "unknown" honestly,
     where the old ``"unknown"`` / ``"0"`` sentinels looked like recorded facts.
     """
-    stored = store(path, artifact_id, phase_dir, companions=companions)
+    stored = store(
+        path, artifact_id, phase_dir, companions=companions, progress=progress, cancelled=cancelled
+    )
     recorded = phase_relative(stored, Path(phase_dir)) if phase_dir is not None else str(stored)
     return {"id": artifact_id, "path": recorded}
 
@@ -109,34 +124,57 @@ def _read_json(path: Path | str) -> dict[str, Any]:
 
 
 def bank_entry(
-    path: Path | str, *, phase_dir: Path | str | None = None
+    path: Path | str,
+    *,
+    phase_dir: Path | str | None = None,
+    progress: ProgressFn | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> EgmBankEntry | NoiseBankEntry:
     """A manifest entry for a loaded bank — a NoiseBankEntry for ``nbank_`` ids, else EgmBank."""
     bank = load_classifier_bank(path)
     bank_id = bank.id
     if not bank_id:
         raise ValueError(f"bank at {path} has no stable id; cannot index it")
-    base = _base(bank_id, path, phase_dir, companions=declared_companions(bank, path))
+    base = _base(
+        bank_id,
+        path,
+        phase_dir,
+        companions=declared_companions(bank, path),
+        progress=progress,
+        cancelled=cancelled,
+    )
     if role_of(bank_id) is Role.noise_bank:
         return NoiseBankEntry.model_validate(base)
     return EgmBankEntry.model_validate(base)
 
 
-def run_entry(path: Path | str, *, phase_dir: Path | str | None = None) -> TrainingRunEntry:
+def run_entry(
+    path: Path | str,
+    *,
+    phase_dir: Path | str | None = None,
+    progress: ProgressFn | None = None,
+    cancelled: Callable[[], bool] | None = None,
+) -> TrainingRunEntry:
     """A manifest entry for a loaded training run — carries its ``trained_on_bank`` dependency."""
     record = load_training_run_record(path)
     if not record.run_id:
         raise ValueError(f"training run at {path} has no run_id; cannot index it")
     return TrainingRunEntry.model_validate(
         {
-            **_base(record.run_id, path, phase_dir),
+            **_base(record.run_id, path, phase_dir, progress=progress, cancelled=cancelled),
             "trained_on_bank": record.trained_on_bank_id,
             "produced_model": record.produced_model_id,
         }
     )
 
 
-def model_entry(path: Path | str, *, phase_dir: Path | str | None = None) -> ModelEntry:
+def model_entry(
+    path: Path | str,
+    *,
+    phase_dir: Path | str | None = None,
+    progress: ProgressFn | None = None,
+    cancelled: Callable[[], bool] | None = None,
+) -> ModelEntry:
     """A manifest entry for a model-metadata JSON — carries its ``trained_from_run`` dependency.
 
     Reads ``model_id`` (+ the run id, if any) straight from the JSON rather than the strict
@@ -149,7 +187,7 @@ def model_entry(path: Path | str, *, phase_dir: Path | str | None = None) -> Mod
     model_id = data.get("model_id")
     if not model_id:
         raise ValueError(f"model metadata at {path} has no model_id; cannot index it")
-    base = _base(str(model_id), path, phase_dir)
+    base = _base(str(model_id), path, phase_dir, progress=progress, cancelled=cancelled)
     provenance = data.get("training_provenance")
     run_id = provenance.get("run_id") if isinstance(provenance, dict) else None
     if run_id:
@@ -162,7 +200,13 @@ def model_entry(path: Path | str, *, phase_dir: Path | str | None = None) -> Mod
 _NOISE_RECORD_SUFFIX = "_run_record.json"
 
 
-def noise_bank_entry(path: Path | str, *, phase_dir: Path | str | None = None) -> NoiseBankEntry:
+def noise_bank_entry(
+    path: Path | str,
+    *,
+    phase_dir: Path | str | None = None,
+    progress: ProgressFn | None = None,
+    cancelled: Callable[[], bool] | None = None,
+) -> NoiseBankEntry:
     """A manifest entry for a noise-bank ``.h5`` (its segments). The ``.h5`` carries no id, so the
     stable ``bank_id`` is read from its **sibling run record** — ``<stem>_run_record.json`` next to
     it (the iafdb export convention). The entry points at the ``.h5`` (matching produced entries),
@@ -178,6 +222,6 @@ def noise_bank_entry(path: Path | str, *, phase_dir: Path | str | None = None) -
     bank_id = _read_json(record).get("bank_id")
     if not bank_id:
         raise ValueError(f"noise-bank record {record.name} has no bank_id; cannot index it")
-    return NoiseBankEntry.model_validate(
-        _base(str(bank_id), h5, phase_dir)
-    )  # entry points at the .h5
+    return NoiseBankEntry.model_validate(  # entry points at the .h5
+        _base(str(bank_id), h5, phase_dir, progress=progress, cancelled=cancelled)
+    )

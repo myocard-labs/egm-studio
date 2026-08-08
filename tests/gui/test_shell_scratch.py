@@ -518,7 +518,7 @@ def test_load_noise_bank_indexes_the_h5_into_the_phase(
     qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     window = _window(qtbot, tmp_path)
-    _open_phase(window, tmp_path)
+    phase = _open_phase(window, tmp_path)
     h5 = tmp_path / "nbank_iafdb.h5"
     h5.write_bytes(b"")  # picked file is the .h5...
     (tmp_path / "nbank_iafdb_run_record.json").write_text(
@@ -530,7 +530,12 @@ def test_load_noise_bank_indexes_the_h5_into_the_phase(
 
     assert window._phase_manifest is not None
     entry = entries_by_id(window._phase_manifest)["nbank_studio_fixture_2026-06-15"]
-    assert entry.path == str(h5)  # the entry points at the .h5 (so the segment viewer works)
+    # B17 copies the artifact in and records it relatively. What this test guards is *which*
+    # file the entry names — the .h5 where the segments live, not the sibling run record its
+    # id came from — and that has not changed.
+    assert entry.path == str(Path("banks") / "nbank_iafdb.h5")
+    assert (phase / entry.path).exists()
+    assert (phase / "banks" / "nbank_iafdb_run_record.json").exists()  # the sidecar travels
 
 
 def _noise_bank(n: int) -> object:
