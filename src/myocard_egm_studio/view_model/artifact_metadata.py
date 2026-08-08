@@ -27,9 +27,21 @@ from pathlib import Path
 from typing import Any
 
 from myocard_egm_contracts import Role
-from myocard_egm_data.banks import ClassifierBank, load_classifier_bank, read_noise_bank_hdf5
+from myocard_egm_data.banks import (
+    ClassifierBank,
+    load_classifier_bank,
+    read_noise_bank_hdf5,
+    read_synthetic_bank_hdf5,
+    simulation_configs,
+)
 from myocard_egm_data.phases import load_figure_spec, load_observation
 from myocard_egm_data.records import load_training_run_record
+
+from myocard_egm_studio.view_model.theta import (
+    THETA_PREFIXES,
+    declared_knob_paths,
+    theta_companion_ref,
+)
 
 
 def has_metadata_view(role: Role) -> bool:
@@ -73,7 +85,81 @@ def _classifier_summary(path: Path) -> str:
         lines.append(f"  • {meta.bank_id}  [{meta.bank_type}]")
         for key, value in meta.bank_metadata.items():
             lines.append(f"      {key}: {_render(value)}")
+    lines.extend(_generation_config_lines(bank, path))
     return "\n".join(lines)
+
+
+def _generation_config_lines(bank: ClassifierBank, path: Path) -> list[str]:
+    """The per-simulation generation config, read from the θ companion.
+
+    The ClassifierBank itself carries only five thin bank-level keys under
+    ``synthetic_bank`` 2.0 — the generation physics moved to the parallel bank — so the
+    interesting provenance is one file away. Rendering it here is what makes "Show
+    metadata" still answer *how was this generated?* after the restructure.
+
+    A bank with no companion contributes nothing (the IAFDB case). A companion that is
+    declared but unreadable degrades to a one-line note rather than raising: this is a
+    read-only inspector, and failing to open it should not stop the rest of the summary
+    from being shown.
+    """
+    try:
+        ref = theta_companion_ref(bank, bank_path=path)
+        if ref is None:
+            return []
+        companion = read_synthetic_bank_hdf5(ref.path)
+    except (OSError, ValueError) as exc:
+        return ["", f"generation config: unavailable ({exc})"]
+
+    configs = simulation_configs(companion)
+    lines = ["", f"generation config ({len(configs)} simulation(s)):"]
+
+    knobs = declared_knob_paths(companion)
+    lines.append(f"  θ-spec knobs: {', '.join(knobs) if knobs else '(none declared)'}")
+
+    for simulation_id in sorted(configs):
+        simulation = configs[simulation_id]
+        lines.append(f"  • simulation {simulation_id}  (seed {simulation.seed})")
+        for function in (*THETA_PREFIXES, "label_policy"):
+            obj = getattr(simulation, function, None)
+            if obj is None:
+                continue
+            lines.extend(_nested(function, obj, indent=6))
+    return lines
+
+
+def _nested(name: str, obj: object, *, indent: int) -> list[str]:
+    """``name`` and its fields as indented lines, recursing into nested structures.
+
+    The per-function objects are typed contracts models rather than dicts, and a flat
+    ``json.dumps`` of one is a single unreadable line — which is what this replaces. The
+    ``type`` discriminator is pulled onto the header, since it names the variant and
+    reading it first is what makes the rest of the block interpretable.
+    """
+    fields = _as_mapping(obj)
+    pad = " " * indent
+    variant = fields.pop("type", None) if isinstance(fields, dict) else None
+    header = f"{pad}{name}" + (f"  [{variant}]" if variant is not None else "")
+    lines = [header]
+    for key, value in fields.items():
+        if isinstance(value, dict):
+            lines.extend(_nested(key, value, indent=indent + 2))
+        elif isinstance(value, list) and value and isinstance(value[0], dict):
+            # e.g. electrodes.pairs — summarise rather than print N objects.
+            lines.append(f"{pad}  {key}: {len(value)} entries")
+        else:
+            lines.append(f"{pad}  {key}: {_render(value)}")
+    return lines
+
+
+def _as_mapping(obj: object) -> dict[str, Any]:
+    """A typed contracts model (or plain dict) as a plain mapping."""
+    if isinstance(obj, dict):
+        return dict(obj)
+    dump = getattr(obj, "model_dump", None)
+    if callable(dump):
+        result: dict[str, Any] = dump()
+        return result
+    return {}
 
 
 def _rate(bank: ClassifierBank) -> str:

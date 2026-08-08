@@ -2,7 +2,7 @@
 
 **Repo:** egm-studio · **Phase:** 1.5
 **Phase design doc:** `intracardiac-platform/phases/phase_1_5/design.md`
-**Status:** in progress · **Progress:** 3/40 steps done
+**Status:** in progress · **Progress:** 4/40 steps done
 **Repo estimate:** **101–228 h active** (44 pts) — cold-start ranges, see [Estimates](#estimates--complexity).
 
 > **Second pass, 2026-07-28.** Every issue now broken to commit-sized steps against the actual code.
@@ -187,7 +187,7 @@ no nesting at all. The only nested structure is the `SimulationConfig`, which ar
 loader, so this step could produce nothing on its own and is the display half of S4's deliverable.
 Number parked, not renumbered.
 
-#### S4 — STU6c: θ columns + per-sim provenance off the paired `SimulationConfig` ☐ (4–7 h) ♻ *reinstated, re-scoped, then absorbed S3*
+#### S4 — STU6c: θ columns + per-sim provenance off the paired `SimulationConfig` ✅ (4–7 h) ♻ *reinstated, re-scoped, then absorbed S3*
 - **Change:** consume the join **egm-data already ships** (`banks/joins.py`, in v0.6.0):
   `simulation_configs(synthetic_bank) -> {simulation_id: SimulationConfig}` and
   `join_traces_with_simulations(classifier_bank, synthetic_bank) -> [TraceWithSimulation]`. Project the
@@ -950,7 +950,56 @@ scope may change them anyway:
   showed the columns already ship.
 - **S12** — the `training-curve` recipe parity, arguably the second half of S11b.
 
+## S4 — findings before the code (2026-08-07)
+
+S4 is **paused pending representative Wave-1 artifacts** (Daniel is regenerating banks + runs across
+the repos). Everything below was measured against real files, so tomorrow starts from facts rather
+than re-deriving them. **No S4 code has been written.**
+
+**1 · The partner bank is discoverable from the artifact — no naming convention needed.** A synthetic
+ClassifierBank carries *several* `banks[]` entries, not one:
+
+| # | `bank_type` | `bank_path` | meaning |
+|---|---|---|---|
+| 0 | `synthetic_egm_pipeline` | `<local>` | the bank itself |
+| 1 | `synthetic_generation_params` | e.g. `synthegm_test_02_theta.synthetic.h5` (relative) | the **θ companion**, `bank_metadata.join_key = "simulation_id"` |
+| 2 | `mixer` | e.g. `noise/iafdb_noise_per.h5` | the noise bank, present only when mixed |
+
+So S4 finds the `SyntheticBank` by selecting the `synthetic_generation_params` entry and resolving its
+relative `bank_path`. This also means egm-data's correspondence check passes: it asks whether the
+synthetic bank's id is among the ClassifierBank's `banks[]` ids, and entry 1 *is* that id.
+
+**2 · `generation_params.knobs` is empty today, but the configs genuinely vary.** SEP12 shipped the
+θ-spec trivial (`"knobs": []`) — the sweep is SEP11, Wave 2. Yet in `synthegm_test_02_theta` the
+per-simulation configs differ in `substrate.density` and `electrodes.height_mm`. **A strictly
+knobs-driven θ projection would therefore emit zero columns on a bank that really does vary**, which
+is exactly what STU1's feature-vs-θ scatter needs. The design doc's own rule resolves it: *config is
+authoritative; the θ-spec is a derived view*. So project θ from the **per-simulation config's scalar
+leaves**, and use `knobs` (when populated) to mark which are declared-tuned rather than as the source.
+Skip `electrodes.pairs` — per-pair, keyed by `pair_index`, not a per-simulation fact.
+
+**3 · Shape of a per-function config.** Flat JSON with a `type` discriminator plus scalars, e.g.
+`substrate = {"type": "uniform_random_fibrosis", "density": 0.3}`,
+`geometry = {"type": "patch_2d", "size_mm": 40.0, "dr_mm": 0.25, "anisotropy_ratio": 3.0, ...}`.
+`regime` at bank level names the variant chosen per function. Only `electrodes` nests (`pairs`).
+
+**4 · A correction worth keeping.** I first read only `banks['bank_id'][0]`, saw the θ bank's id absent,
+and concluded the producer wrote a mismatched pair — nearly escalating it. There were two-to-three
+entries and the id was in the second. Same failure as S1's: sampling one element and generalising to
+the set. **Read the whole collection before claiming anything about it.** The artifacts involved were
+also gitignored dev scratch, which is a weak basis for a cross-repo claim regardless.
+
 ## Notes / decisions log
+
+- 2026-08-08 — **S4 built. Three things the artifacts decided, not the plan.** (a) The θ companion is
+  discoverable from the ClassifierBank's `banks[]` entries by `bank_type`, with a relative path — so
+  no filename convention. (b) `generation_params.knobs` ships **empty** while the per-simulation
+  configs genuinely vary, so θ is projected from the **config** and `knobs` only annotates; a
+  knobs-driven projection would emit zero columns on a bank that varies. (c) `(simulation_id,
+  pair_index)` is unique in every shipped bank, so the signal swap keys on it rather than position.
+  Also: `view_model` cannot import `loaders` (cycle), so the **pure discovery** half
+  (`theta_companion_ref`) lives in `view_model/theta.py` and the **I/O** half in
+  `loaders/synthetic_bank.py` — which is the right split anyway.
 
 - 2026-08-07 — **S1's re-pin broke 13 tests, not the 3 egm-data pre-swept.** Three classes, all
   mine to have caught: (a) six banks whose id role contradicted their content — `_feature_bank`

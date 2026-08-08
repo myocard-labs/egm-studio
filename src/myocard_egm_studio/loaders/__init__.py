@@ -50,6 +50,12 @@ from myocard_egm_studio.loaders.manifest import (
     bank_paths_from_phase,
     resolve_bank_paths,
 )
+from myocard_egm_studio.loaders.synthetic_bank import (
+    SignalSource,
+    load_theta_companion,
+    load_with_theta,
+    swap_in_synthetic_signals,
+)
 
 __all__ = [
     "LOADERS",
@@ -68,8 +74,10 @@ __all__ = [
     "load_feature_groups",
     "load_group_banks",
     "load_prediction_groups",
+    "load_theta_companion",
     "load_trace_pair_gallery",
     "load_training_curve",
+    "load_with_theta",
     "prediction_group_from_bank",
     "prediction_group_from_frame",
     "prediction_groups_by_source",
@@ -78,5 +86,6 @@ __all__ = [
     "resolve_recipe_data",
     "scatter_series_by_source",
     "scatter_series_from_frame",
+    "swap_in_synthetic_signals",
     "training_curve_from_run",
 ]

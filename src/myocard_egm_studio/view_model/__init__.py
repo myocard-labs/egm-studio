@@ -50,6 +50,11 @@ from myocard_egm_studio.view_model.similar import (
     within_class_neighborhood,
 )
 from myocard_egm_studio.view_model.summary import BankSummary, bank_summary
+from myocard_egm_studio.view_model.theta import (
+    THETA_PREFIXES,
+    declared_knob_paths,
+    theta_frame,
+)
 from myocard_egm_studio.view_model.trace_detail import DetailRow, TraceDetail, trace_detail
 
 __all__ = [
@@ -58,6 +63,7 @@ __all__ = [
     "IDENTITY_COLUMNS",
     "ML_COLUMNS",
     "ROW_ID",
+    "THETA_PREFIXES",
     "ArtifactGroup",
     "ArtifactRow",
     "BankSummary",
@@ -74,6 +80,7 @@ __all__ = [
     "bank_summary",
     "build_view_model",
     "combine_view_models",
+    "declared_knob_paths",
     "entries_by_id",
     "feature_units",
     "filter_columns",
@@ -81,6 +88,7 @@ __all__ = [
     "nearest_correct_pair",
     "phase_artifact_groups",
     "similar_in_other_sources",
+    "theta_frame",
     "trace_detail",
     "view_model_key",
     "within_class_neighborhood",

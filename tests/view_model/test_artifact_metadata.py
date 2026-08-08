@@ -138,3 +138,115 @@ def test_json_roles_pretty_print_the_record(
     monkeypatch.setattr(artifact_metadata, "load_figure_spec", lambda _path: _Stub())
     text = artifact_metadata_text(Role.figure, tmp_path / "f.json")
     assert '"recipe": "roc-curve-multi-line"' in text  # pretty JSON of the record
+
+
+# --- the per-simulation generation config (S4, absorbed from S3) ------------- #
+
+
+class _Sim:
+    """A SimulationConfig row view: typed per-function objects, as the join returns them."""
+
+    def __init__(self, simulation_id: int, density: float) -> None:
+        self.simulation_id = simulation_id
+        self.seed = 7
+        self.substrate = {"type": "uniform_random_fibrosis", "density": density}
+        self.geometry = {"type": "patch_2d", "size_mm": 40.0}
+        self.cell_model = {"type": "aliev_panfilov", "ap_time_unit_ms": 1.97}
+        self.activation = {"type": "planar_edge", "voltage": 1.0}
+        # Nested list-of-objects: summarised as a count, never printed in full.
+        self.electrodes = {
+            "type": "centered_grid_2d",
+            "height_mm": 0.5,
+            "pairs": [{"pair_index": i} for i in range(20)],
+        }
+        self.backend = {"type": "finitewave"}
+        self.label_policy = {"type": "global_density", "thresholds": [0.1]}
+
+
+def _companion(sims: list[_Sim], knob_paths: tuple[str, ...] = ()) -> object:
+    knobs = [types.SimpleNamespace(path=p) for p in knob_paths]
+    return types.SimpleNamespace(generation_params=types.SimpleNamespace(knobs=knobs))
+
+
+def _patch_companion(
+    monkeypatch: pytest.MonkeyPatch, sims: list[_Sim], knob_paths: tuple[str, ...] = ()
+) -> None:
+    """Stand in for the θ companion: discovery, the file read, and the row view."""
+    monkeypatch.setattr(
+        artifact_metadata,
+        "theta_companion_ref",
+        lambda _bank, bank_path: types.SimpleNamespace(bank_id="tbank_t", path=Path("t.h5")),
+    )
+    monkeypatch.setattr(
+        artifact_metadata, "read_synthetic_bank_hdf5", lambda _p: _companion(sims, knob_paths)
+    )
+    monkeypatch.setattr(
+        artifact_metadata, "simulation_configs", lambda _b: {s.simulation_id: s for s in sims}
+    )
+
+
+def test_the_generation_config_is_rendered_per_simulation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each per-function object reads as its own block, with the variant on the header.
+
+    This is what keeps "Show metadata" able to answer *how was this generated?* after the
+    2.0 restructure moved the physics off the ClassifierBank.
+    """
+    path = tmp_path / "demo.classifier.h5"
+    _write_bank(path)
+    _patch_companion(monkeypatch, [_Sim(0, 0.1), _Sim(1, 0.4)])
+
+    text = artifact_metadata_text(Role.training_bank, path)
+
+    assert "generation config (2 simulation(s)):" in text
+    assert "simulation 0  (seed 7)" in text
+    assert "substrate  [uniform_random_fibrosis]" in text  # variant pulled onto the header
+    assert "density: 0.1" in text
+    assert "label_policy  [global_density]" in text
+    # A list of objects is summarised, not dumped — 20 pairs would drown the block.
+    assert "pairs: 20 entries" in text
+    assert "pair_index" not in text
+
+
+def test_the_theta_spec_reports_when_no_knob_is_declared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ "(none declared)" is informative: the sweep has not run, not that nothing varies."""
+    path = tmp_path / "demo.classifier.h5"
+    _write_bank(path)
+    _patch_companion(monkeypatch, [_Sim(0, 0.1)])
+
+    assert "θ-spec knobs: (none declared)" in artifact_metadata_text(Role.training_bank, path)
+
+
+def test_a_bank_with_no_companion_renders_as_before(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The IAFDB case contributes nothing rather than an empty heading."""
+    path = tmp_path / "demo.classifier.h5"
+    _write_bank(path)
+    monkeypatch.setattr(artifact_metadata, "theta_companion_ref", lambda _b, bank_path: None)
+
+    text = artifact_metadata_text(Role.training_bank, path)
+
+    assert "generation config" not in text
+    assert "traces: 2" in text  # the rest of the summary is unaffected
+
+
+def test_an_unreadable_companion_degrades_to_a_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A read-only inspector must not blank the whole summary over one unopenable file."""
+    path = tmp_path / "demo.classifier.h5"
+    _write_bank(path)
+
+    def _boom(_bank: object, bank_path: object) -> object:
+        raise ValueError("companion id mismatch")
+
+    monkeypatch.setattr(artifact_metadata, "theta_companion_ref", _boom)
+
+    text = artifact_metadata_text(Role.training_bank, path)
+
+    assert "generation config: unavailable (companion id mismatch)" in text
+    assert "traces: 2" in text  # everything else still renders
