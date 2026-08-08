@@ -7,12 +7,12 @@ import json
 from pathlib import Path
 
 import pytest
-from myocard_egm_data.banks import ClassifierBank, write_classifier_bank
+from myocard_egm_data.banks import ClassifierBank, ClassifierBankMetaData, write_classifier_bank
 from myocard_egm_data.phases import EgmBankEntry, NoiseBankEntry, TrainingRunEntry
 from myocard_egm_data.records import TrainingRunRecord, write_training_run_record
 
 from myocard_egm_studio.save import bank_entry, model_entry, noise_bank_entry, producer, run_entry
-from myocard_egm_studio.save.producer import UNKNOWN_PRODUCER
+from myocard_egm_studio.save.producer import declared_companions
 
 
 def test_bank_entry_for_an_egm_bank(tiny_classifier_bank: ClassifierBank, tmp_path: Path) -> None:
@@ -23,7 +23,7 @@ def test_bank_entry_for_an_egm_bank(tiny_classifier_bank: ClassifierBank, tmp_pa
     assert isinstance(entry, EgmBankEntry)
     assert entry.id == "tbank_studio_fixture_2026-06-27"
     assert entry.path == str(path)  # an absolute pointer at the producer's file
-    assert entry.produced_by_package == UNKNOWN_PRODUCER  # sentinel provenance
+    assert entry.produced_by_package is None  # provenance omitted, not invented (B19)
 
 
 def test_bank_entry_routes_an_nbank_id_to_the_noise_section(
@@ -85,7 +85,7 @@ def test_run_entry_carries_its_dependency(tmp_path: Path) -> None:
     assert entry.id == "run_studio_fixture_2026-06-25"
     assert entry.trained_on_bank == "tbank_studio_fixture_2026-06-27"  # a real dependency edge
     assert entry.produced_model == "model_studio_fixture_2026-06-26"
-    assert entry.produced_by_package == UNKNOWN_PRODUCER
+    assert entry.produced_by_package is None
 
 
 def _write_json(path: Path, data: dict[str, object]) -> Path:
@@ -106,7 +106,7 @@ def test_model_entry_reads_id_and_run_from_raw_json(tmp_path: Path) -> None:
     entry = model_entry(path)
     assert entry.id == "model_studio_fixture_2026-06-26"
     assert entry.trained_from_run == "run_studio_2026-06-25"  # pulled from provenance
-    assert entry.produced_by_package == UNKNOWN_PRODUCER  # sentinel provenance
+    assert entry.produced_by_package is None  # provenance omitted, not invented (B19)
 
 
 def test_model_entry_without_a_run_id_leaves_it_unset(tmp_path: Path) -> None:
@@ -138,7 +138,7 @@ def test_noise_bank_entry_points_at_the_h5_with_id_from_the_sibling(tmp_path: Pa
     assert isinstance(entry, NoiseBankEntry)
     assert entry.id == "nbank_studio_fixture_2026-06-15"  # id from the sibling run record...
     assert entry.path == str(h5)  # ...but the entry points at the .h5 (where the segments live)
-    assert entry.produced_by_package == UNKNOWN_PRODUCER
+    assert entry.produced_by_package is None
 
 
 def test_noise_bank_entry_needs_a_sibling_record(tmp_path: Path) -> None:
@@ -152,3 +152,93 @@ def test_noise_bank_entry_needs_a_bank_id_in_the_record(tmp_path: Path) -> None:
     h5 = _noise_bank_with_record(tmp_path, bank_id=None)  # sibling exists but has no bank_id
     with pytest.raises(ValueError, match="no bank_id"):
         noise_bank_entry(h5)
+
+
+def test_indexing_into_a_phase_copies_the_file_and_records_it_relatively(
+    tiny_classifier_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    """B17: the phase takes its own copy, so the folder is self-contained and movable."""
+    source = tmp_path / "producer" / "bank.h5"
+    source.parent.mkdir(parents=True)
+    write_classifier_bank(
+        dataclasses.replace(tiny_classifier_bank, id="tbank_studio_fixture_2026-06-27"), source
+    )
+    phase = tmp_path / "phase_1_5"
+
+    entry = bank_entry(source, phase_dir=phase)
+
+    assert not Path(entry.path).is_absolute()
+    assert (phase / entry.path).exists()
+    assert source.exists()  # the producer's original is untouched
+
+
+def _source(bank_id: str, bank_type: str, bank_path: str) -> ClassifierBankMetaData:
+    return ClassifierBankMetaData(
+        bank_id=bank_id, bank_type=bank_type, bank_path=bank_path, bank_metadata={}
+    )
+
+
+def test_declared_companions_resolve_beside_the_bank(tiny_classifier_bank: ClassifierBank) -> None:
+    """Only *relative* source paths are companions: they resolve nowhere else.
+
+    ``<local>`` means "the bank you already have in hand", and an absolute path names
+    something that deliberately lives elsewhere and resolves from anywhere already.
+    """
+    bank = dataclasses.replace(
+        tiny_classifier_bank,
+        banks=[
+            _source("tbank_src_2026-08-08", "synthetic_egm_pipeline", "<local>"),
+            _source("tbank_theta_2026-08-08", "synthetic_generation_params", "run_theta.h5"),
+            _source("nbank_noise_2026-08-08", "mixer", "/elsewhere/noise.h5"),
+        ],
+    )
+
+    assert declared_companions(bank, Path("/data/banks/run.classifier.h5")) == (
+        Path("/data/banks/run_theta.h5"),
+    )
+
+
+def test_indexing_into_a_phase_brings_the_theta_companion(
+    tiny_classifier_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    """Otherwise the phase holds a bank whose θ cannot be found — caught on a real index.
+
+    B17's promise is a self-contained phase folder, and a synthetic bank is only half an
+    artifact: it points at its θ companion by a bare filename resolved beside the ``.h5``.
+    """
+    source = tmp_path / "producer" / "run.classifier.h5"
+    source.parent.mkdir(parents=True)
+    (source.parent / "run_theta.synthetic.h5").write_bytes(b"theta")
+    bank = dataclasses.replace(
+        tiny_classifier_bank,
+        id="tbank_studio_fixture_2026-06-27",
+        banks=[
+            *tiny_classifier_bank.banks,
+            _source(
+                "tbank_studio_theta_2026-06-27",
+                "synthetic_generation_params",
+                "run_theta.synthetic.h5",
+            ),
+        ],
+    )
+    write_classifier_bank(bank, source)
+    phase = tmp_path / "phase_1_5"
+
+    entry = bank_entry(source, phase_dir=phase)
+
+    assert (phase / entry.path).exists()
+    assert (phase / "banks" / "run_theta.synthetic.h5").read_bytes() == b"theta"
+
+
+def test_indexing_without_a_phase_keeps_an_absolute_pointer(
+    tiny_classifier_bank: ClassifierBank, tmp_path: Path
+) -> None:
+    """Scratch is a working area, not an archive — nothing is copied into it."""
+    path = tmp_path / "bank.h5"
+    write_classifier_bank(
+        dataclasses.replace(tiny_classifier_bank, id="tbank_studio_fixture_2026-06-27"), path
+    )
+
+    entry = bank_entry(path)
+
+    assert Path(entry.path).is_absolute()

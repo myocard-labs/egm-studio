@@ -96,6 +96,7 @@ from myocard_egm_studio.save import (
     update_observation,
     with_entry,
 )
+from myocard_egm_studio.save.phase_storage import copy_into_phase, phase_relative
 from myocard_egm_studio.view_model import (
     DiskCache,
     FrameStore,
@@ -1048,8 +1049,14 @@ class MainWindow(QtWidgets.QMainWindow):
             "model": model_entry,
             "noise": noise_bank_entry,
         }
+        # Into a phase: copy the file in and record it relatively (B17), so the folder stays
+        # self-contained. Into scratch: leave it where it is — scratch is a working area.
+        # Bound to a local rather than re-tested below, so the manifest stays narrowed.
+        phase_manifest = self._phase_manifest if target == "phase" else None
         try:
-            entry = builders[kind](path)
+            entry = builders[kind](
+                path, phase_dir=self._phase_dir if phase_manifest is not None else None
+            )
         except Exception as exc:  # unreadable / id-less file -> a visible warning, not a quiet line
             name = Path(path).name
             self.statusBar().showMessage(f"Could not index {name}: {exc}")
@@ -1061,8 +1068,8 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             return
         section = manifest_section(entry.id)
-        if target == "phase" and self._phase_manifest is not None:
-            save_manifest(with_entry(self._phase_manifest, section, entry), self._phase_dir)
+        if phase_manifest is not None:
+            save_manifest(with_entry(phase_manifest, section, entry), self._phase_dir)
             self._reindex_phase_after_write()
             added = self._auto_add_into_phase(entry_dependency_ids(entry))
             self.statusBar().showMessage(
@@ -1296,10 +1303,16 @@ class MainWindow(QtWidgets.QMainWindow):
         entry = entries_by_id(self._phase_manifest).get(artifact_id)
         if entry is None:
             return
+        # Under B17 an indexed producer file is *copied* into the phase, so the in-phase
+        # copy is ours to delete — the producer's original is untouched either way. A
+        # recorded absolute path means the artifact was never copied in (scratch, or a
+        # deliberate outside pointer), and that file is not ours to remove.
         authored = role_of(artifact_id) in (Role.observation, Role.figure)
+        in_phase_copy = not Path(entry.path).is_absolute()
+        deletes_file = authored or in_phase_copy
         detail = (
-            "This also deletes its file."
-            if authored
+            "This also deletes the phase's copy of the file."
+            if deletes_file
             else "The file stays on disk; only the manifest pointer is removed."
         )
         answer = QtWidgets.QMessageBox.question(
@@ -1308,8 +1321,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if answer != QtWidgets.QMessageBox.StandardButton.Yes:
             return
         section = manifest_section(artifact_id)
-        if authored:
-            (self._phase_dir / entry.path).unlink(missing_ok=True)  # the authored file goes too
+        if deletes_file:
+            (self._phase_dir / entry.path).unlink(missing_ok=True)
         save_manifest(remove_entry(self._phase_manifest, section, artifact_id), self._phase_dir)
         self._reindex_phase_after_write()  # tree drops it; validation preserved
         self.statusBar().showMessage(f"Removed {artifact_id} from the phase")
@@ -1701,9 +1714,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def _promote_entries(self, ids: list[str]) -> list[str]:
         """Move each scratch artifact in ``ids`` into the loaded phase (batch Promote core).
 
-        Producers are re-indexed pointers (no file move); authored artifacts have their file
-        rewritten into the phase folder and the scratch copy removed. Manifests are saved once
-        at the end, then the phase tree + scratch pane refresh. Returns the ids promoted.
+        Authored artifacts have their file rewritten into the phase folder and the scratch copy
+        removed. Producers are **copied in** under B17 — a scratch pointer is an absolute path to
+        the producer's file, and promoting it into a phase means the phase takes its own copy so
+        the folder stays self-contained. The producer's original is left where it is. Manifests are
+        saved once at the end, then the phase tree + scratch pane refresh. Returns the ids promoted.
         """
         assert self._phase_manifest is not None
         by_id = entries_by_id(self._scratch_manifest)
@@ -1730,8 +1745,14 @@ class MainWindow(QtWidgets.QMainWindow):
                     save_figure_spec(spec, self._phase_dir)
                     phase = with_entry(phase, section, figure_entry(spec))
                     authored_files.append(src)
-                else:  # a producer pointer — re-index the same entry, no file move
-                    phase = with_entry(phase, section, entry)
+                else:  # a producer file — copy it into the phase and record it relatively (B17)
+                    stored = copy_into_phase(
+                        Path(self._scratch_dir) / entry.path, self._phase_dir, role.name
+                    )
+                    relocated = entry.model_copy(
+                        update={"path": phase_relative(stored, Path(self._phase_dir))}
+                    )
+                    phase = with_entry(phase, section, relocated)
             except Exception as exc:  # unreadable / invalid file -> status, keep it in scratch
                 self.statusBar().showMessage(f"Could not promote {artifact_id}: {exc}")
                 continue

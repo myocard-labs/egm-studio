@@ -48,6 +48,7 @@ from myocard_egm_contracts import synthetic_bank as _synthetic_bank_models
 from myocard_egm_data.banks import ClassifierBank, join_traces_with_simulations
 
 __all__ = [
+    "LOCAL_SENTINEL",
     "SIMULATION_ID_KEY",
     "THETA_BANK_TYPE",
     "THETA_PREFIXES",
@@ -68,8 +69,10 @@ SIMULATION_ID_KEY = "simulation_id"
 THETA_BANK_TYPE = "synthetic_generation_params"
 
 #: ``bank_path`` sentinel meaning "this entry is the bank you already have in hand", not a
-#: resolvable path. Never treat it as a filename.
-_LOCAL_SENTINEL = "<local>"
+#: resolvable path. Never treat it as a filename. Public because ``save.producer`` walks the
+#: same ``banks[]`` source list when copying a bank into a phase, and the string must not be
+#: hand-mirrored in two modules (CL-144).
+LOCAL_SENTINEL = "<local>"
 
 
 @dataclass(frozen=True)
@@ -100,7 +103,7 @@ def theta_companion_ref(bank: ClassifierBank, *, bank_path: Path | str) -> Compa
         if entry.bank_type != THETA_BANK_TYPE:
             continue
         raw = (entry.bank_path or "").strip()
-        if not raw or raw == _LOCAL_SENTINEL:
+        if not raw or raw == LOCAL_SENTINEL:
             raise ValueError(
                 f"ClassifierBank source entry {entry.bank_id!r} is marked "
                 f"{THETA_BANK_TYPE!r} but records no usable path "

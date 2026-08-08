@@ -2,8 +2,8 @@
 
 **Repo:** egm-studio · **Phase:** 1.5
 **Phase design doc:** `intracardiac-platform/phases/phase_1_5/design.md`
-**Status:** in progress · **Progress:** 4/40 steps done
-**Repo estimate:** **101–228 h active** (44 pts) — cold-start ranges, see [Estimates](#estimates--complexity).
+**Status:** in progress · **Progress:** 5/39 steps done
+**Repo estimate:** **102–229 h active** (45 pts) — cold-start ranges, see [Estimates](#estimates--complexity).
 
 > **Second pass, 2026-07-28.** Every issue now broken to commit-sized steps against the actual code.
 > Three first-pass steps were too big for one commit and split into sub-ids (**S5→S5a–c**,
@@ -27,7 +27,7 @@
 | Phase item | What it needs from this repo | Steps |
 |---|---|---|
 | STU6 | Adapt to v2.0 **and** consume the typed `SyntheticBank` for T4 (θ + per-sim config) | S0–S2, S4 |
-| B17 · B19 | Phase-storage: sentinel removal, relative in-phase paths, copy-into-phase (all types) | S5b–S5d |
+| B17 · B19 | Phase-storage: provenance omitted, copy-into-phase with relative paths, large-file UX | S5b–S5c |
 | B20 | Noise bank's `bank_id` from the `.h5` attr, not the sidecar | S6 |
 | STU2 | Noise-bank frequency / statistics / outlier analysis + its Noise-mode read-out | S8–S10 |
 | STU3 (+ B18, P3) | Training-run viewer overhaul — train/val/test series, split-aware inspection, seed spread, saturation metrics, paired cross-arm test | S11a–S11e, S12 |
@@ -221,35 +221,44 @@ Was "drop the curator provenance sentinel" (B19). Measured surface: two constant
 `__all__` entries, one usage in `_base`, and four test assertions — under half an hour, and §6
 already tracks B17 · B19 as a single row. Folded into S5b rather than shipped as its own commit.
 
-#### S5b — B19 sentinel + B17 relative in-phase paths ☐ (3–7 h) *(absorbed S5a)*
-- **Change (was S5a, B19):** `save/producer.py` — remove the `UNKNOWN_PRODUCER` / `UNKNOWN_VERSION`
-  (`"unknown"` / `"0"`) stamp from `_base` now that P4 makes `produced_by_*` optional; delete both
-  constants, their `__all__` entries, and the four test assertions that pin the sentinel.
-- **Change (B17):** write manifest `path`s relative to the manifest for in-phase artifacts
-  (`save/artifacts.py:authored_path`, `save/figure.py`, `save/observation.py`), and resolve them
-  back against the phase dir on read (`loaders/manifest.py:bank_paths_from_phase`,
-  `view_model/phase_status.py`, `view_model/dependencies.py`, `view_model/figure_output.py`).
-  Out-of-phase pointers stay absolute.
-- **Verify:** a phase folder moved to a different parent directory still resolves every in-phase
-  artifact; `manifest.json` contains no absolute path for an in-phase entry; ADR-026 cross-scope
-  resolution tests stay green.
+#### S5b — B19 provenance + B17 phase-storage ✅ (6–13 h) *(absorbed S5a and S5c)*
+- **Change (B19):** `save/producer.py` **omits** `produced_by_package` / `produced_by_version`
+  rather than stamping `"unknown"` / `"0"`. egm-contracts v0.6.0 made them optional (P4, verified
+  shipped: no entry def lists them as required), and a sentinel reads as a *claim* about provenance
+  where absence states the truth.
+- **Change (B17):** new `save/phase_storage.py`. Indexing a producer artifact into a phase **copies
+  it** under `phases/phase_<N>/<type>/` and records a **relative** path; promoting from scratch does
+  the same; *Remove from phase* deletes the in-phase copy while leaving the producer's original.
+  Scratch keeps absolute pointers — it is a working area, not an archive. Sibling files travel (a
+  noise bank's `<stem>_run_record.json` carries the id its `.h5` lacks), and re-indexing an
+  already-resident file is idempotent so a 500 MB bank is never duplicated.
+- **Found on review, in the GUI (2026-08-08).** Two defects the suite could not see, both from the
+  fixtures being narrower than reality:
+  - *The Phase tree crashed on any entry indexed by this repo.* `phase_groups._row` interpolated
+    `produced_by_package` / `produced_by_version` out of a dump taken with `exclude_none=True` — so
+    the moment B19 stopped stamping them, every curator-indexed entry raised `KeyError` and the
+    phase could not be reopened. The fixture manifest stamps provenance on all ten entries, so no
+    test carried the shape B19 had just made the norm. Now reads off the model and renders
+    `not recorded`.
+  - *A synthetic bank arrived in the phase without its θ companion.* The bank names its sources in
+    `banks[]` by paths resolved **beside itself** — the θ bank, the noise bank it was mixed with —
+    so copying the `.h5` alone leaves a phase holding a bank whose θ cannot be found, which is the
+    opposite of what B17 promises. `save/producer.declared_companions` now reads those out and they
+    travel with it; `<local>` and absolute paths are skipped, and a companion missing beside the
+    source is skipped rather than blocking the index.
+- **Found already done:** authored entries (`figures/<id>.json`, `observations/<id>.json`) were
+  *already* relative, and `resolve_path` is `Path(base) / path` — where an absolute right-hand side
+  wins, which is exactly B17's rule. So the read side needed no change; what was missing was
+  anything **proving** it, which the movability test now does. `dependencies.py` was listed in the
+  plan in error — it has no path handling.
+- **Verify:** a phase folder moved to a different parent still resolves every in-phase artifact
+  (the regression test for reintroduced absolute paths); an indexed bank is copied and recorded
+  relatively while its source survives; a noise bank arrives with its sidecar; a synthetic bank
+  arrives with its θ companion; an entry with no provenance renders instead of raising;
+  re-indexing copies once; scratch indexing stays absolute.
 - **Depends on:** S1.
 
-#### S5c — B17: copy-into-phase on index + promote ☐ (3–6 h)
-- **Change:** *Add to phase* copies the artifact into `phases/phase_1_5/<type>/` instead of
-  recording a pointer (**all types, banks included** — settled below), and *Promote to phase*
-  (`gui/shell.py:_promote_scratch`) moves rather than re-points; *Remove from phase* deletes the
-  in-phase copy symmetrically, leaving any external original untouched. Two mechanics the JSON-only
-  path didn't need: **sibling files travel with their artifact** (a noise bank's
-  `<stem>_run_record.json`, which S6 still reads as a fallback and the metadata viewer opens), and
-  **re-indexing is idempotent** — an artifact already resident in the phase is re-pointed, not
-  re-copied.
-- **Verify:** index → move the phase folder → every copied artifact still opens; a noise bank
-  arrives with its sidecar; re-indexing the same file twice copies once; remove deletes only the
-  in-phase copy.
-- **Depends on:** S5b.
-
-#### S5d — B17: large-artifact copy UX ☐ (3–6 h)
+#### S5c — B17: large-artifact copy UX ☐ (3–6 h) *(was S5d)*
 - **Change:** banks are 100–500 MB, so the copy can't run on the UI thread — move it to a worker
   with progress + cancel (the same coalesced-worker pattern Flow C's resolve uses, ADR-019
   as-built), plus a **free-space pre-check** that refuses with a clear message rather than
@@ -258,15 +267,28 @@ already tracks B17 · B19 as a single row. Folded into S5b rather than shipped a
   leaves no partial file and no manifest entry; a simulated no-space condition reports rather than
   corrupts; `git status` in `intracardiac-platform` shows nothing newly tracked after a bank copy
   (the `*.h5` / `*.hdf5` ignore holds).
-- **Depends on:** S5c.
+- **Depends on:** S5b.
 
-#### S6 — B20: noise `bank_id` from the bank ☐ (1–3 h)
+#### S6 — B20: noise `bank_id` from the bank ☐ (2–4 h)
 - **Change:** `save/producer.py:noise_bank_entry` reads `bank_id` from the `noise_bank` root attr
   instead of the `<stem>_run_record.json` sidecar (sidecar kept as fallback for existing banks); and
   `view_model/noise.py:NoiseBankSegments` gains the `bank_id` its docstring currently says it can't
-  carry, so the Noise view stops depending on a caller-supplied id.
+  carry, so the Noise view stops depending on a caller-supplied id. Verified shipped: the regenerated
+  `iafdb_noise_per_id.h5` carries `bank_id = "nbank_iafdb_percentile_20"` as a root attr.
+- **Added 2026-08-08 (found in the GUI):** *indexing failures must name the actual failure.*
+  Selecting a noise bank's `<stem>_run_record.json` under **Training run…** puts the file through
+  `TrainingRunRecord`, which correctly refuses it — but the shell renders fifteen raw pydantic
+  errors in a message box under the fixed hint *"the file must carry its own stable id — if it
+  predates stable ids, re-generate it with the current pipeline"*, which is **wrong advice for this
+  failure** and points at regenerating a perfectly good bank. `_index_producer` should report
+  wrong-kind separately from id-less, and the run / noise loaders should raise one short sentence
+  rather than a validation dump.
+- **Cross-repo question (not ours to change):** a *noise bank's* sidecar being named
+  `..._run_record.json` is what makes it look pickable under a training-run filter. B20 makes that
+  sidecar non-load-bearing for us, so renaming it at the source (iafdb-pipeline) is cheap now and
+  removes the collision. Worth a coordination-log entry before S6 lands.
 - **Verify:** indexing a v1.1 noise bank with no sidecar succeeds; the Noise view header shows the
-  id read from the `.h5`.
+  id read from the `.h5`; a wrong-kind pick reports the wrong kind, not a missing id.
 - **Depends on:** S1.
 
 #### S7 — ⊘ **dropped (2026-08-07)**
@@ -687,8 +709,8 @@ project-lead 2026-07-28).
 | Issue / group | Steps | Cx | Estimate (active) |
 |---|---|---|---|
 | STU6 | S0–S2, S4 | M (3) | 9–18 h |
-| B17 · B19 | S5b–S5d | **L (5)** ↑ | 9–19 h |
-| B20 | S6 | XS (1) | 1–3 h |
+| B17 · B19 | S5b–S5c | **L (5)** | 9–19 h |
+| B20 | S6 | S (2) | 2–4 h |
 | STU2 | S8–S10 | M (3) | 7–15 h |
 | STU3 (+B18, P3) | S11a–S11e, S12 | **L (5)** | 11–25 h |
 | STU5 | S13, S14a–b | M (3) | 6–15 h |
@@ -701,7 +723,7 @@ project-lead 2026-07-28).
 | **STU4 composite** | | **13** | **43–97 h** |
 | **STU8** *(new, CL-074)* | S33–S34 | M (3) | 5–11 h |
 | Docs + phase exit | S32 | M (3) | 3–7 h |
-| **Repo total** | | **44** | **101–228 h** |
+| **Repo total** | | **45** | **102–229 h** |
 
 *The re-pointed **XL = STU4's estimation core** covers · A and · C too — ports, distances, and the
 adapters are the core's scaffolding, not independently-sized work — which is what makes STU4's
@@ -872,7 +894,7 @@ sentinel), **S5b–S5d** are B17. No change needed; noted so the two records agr
 |---|---|---|---|---|---|
 | STU6 | schema-migration | 9–18 h | | | |
 | B17 · B19 | feature | 9–19 h | | | |
-| B20 | schema-migration | 1–3 h | | | |
+| B20 | schema-migration | 2–4 h | | | |
 | STU2 | feature | 7–15 h | | | |
 | STU3 | GUI | 11–25 h | | | |
 | STU5 | feature | 6–15 h | | | |
@@ -881,7 +903,7 @@ sentinel), **S5b–S5d** are B17. No change needed; noted so the two records agr
 | STU4 · A · C · D · E | feature / GUI | 43–97 h | | | |
 | STU8 | feature | 5–11 h | | | |
 | Docs | docs | 3–7 h | | | |
-| **Repo total** | | **101–228 h** | | | |
+| **Repo total** | | **102–229 h** | | | |
 
 ## Coordination-log items applied
 
@@ -928,7 +950,7 @@ tell is that a step's description begins with *document* or *verify what the pre
 did* — that belongs in the step it describes.
 
 **Wave-1 sweep, 2026-08-07 (Daniel).** Reviewed every remaining Wave-1 step against the
-heuristic. Three went, **43 → 40 steps**, 103–232 h → 101–228 h:
+heuristic. Three went, **43 → 40 steps**, 103–232 h → 102–229 h:
 
 - **S3 → merged into S4.** Its premise was false, not just thin: it assumed v2.0 turned
   `bank_metadata` into a nested blob, but a real bank carries five flat scalars. The only nested

@@ -61,6 +61,48 @@ def test_row_details_capture_relationships_and_usage() -> None:
     assert "Path" not in run_details
 
 
+def test_a_stamped_entry_reads_package_then_version() -> None:
+    groups = {g.role: g for g in phase_artifact_groups(load_phase_dir(_FIXTURE_DIR))}
+    assert groups[Role.training_bank].rows[0].produced_by == "synthetic-egm-pipeline v0.3.0"
+
+
+def _manifest_with(**sections: object) -> PhaseManifest:
+    return PhaseManifest.model_validate(
+        {"schema_version": "1", "phase": 1.5, "status": "in_progress", **sections}
+    )
+
+
+def test_an_entry_without_provenance_renders_rather_than_raising() -> None:
+    """B19: ``produced_by_*`` are optional, and a curator-indexed artifact carries neither.
+
+    This is the shape of *every* producer artifact indexed through the GUI — ``save.producer``
+    omits the fields rather than stamping the old ``"unknown"`` / ``"0"`` sentinels. The
+    fixture manifest stamps provenance on all ten entries, so nothing in the suite saw the
+    absent case until it crashed the Phase tree on a real index.
+    """
+    manifest = _manifest_with(egm_banks=[{"id": "tbank_indexed_2026-08-08", "path": "banks/b.h5"}])
+
+    row = phase_artifact_groups(manifest)[0].rows[0]
+
+    assert row.produced_by == "not recorded"  # an absence, stated as one
+    assert row.details == ()  # and nothing invented into the detail rows either
+
+
+def test_a_half_stamped_provenance_shows_the_part_that_is_there() -> None:
+    """Either field may be absent independently, so neither can be assumed present."""
+    manifest = _manifest_with(
+        egm_banks=[
+            {
+                "id": "tbank_indexed_2026-08-08",
+                "path": "banks/b.h5",
+                "produced_by_package": "synthetic-egm-pipeline",
+            }
+        ]
+    )
+
+    assert phase_artifact_groups(manifest)[0].rows[0].produced_by == "synthetic-egm-pipeline"
+
+
 def test_empty_manifest_still_has_ten_groups() -> None:
     empty = PhaseManifest.model_validate(
         {"schema_version": "1", "phase": 2.0, "status": "in_progress"}

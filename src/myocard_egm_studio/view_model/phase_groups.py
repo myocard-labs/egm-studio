@@ -85,6 +85,18 @@ def _humanize(field_name: str) -> str:
     return field_name.replace("_", " ").capitalize()
 
 
+def _provenance(entry: _Entry) -> str:
+    """Who produced the artifact, for display — ``"not recorded"`` when it is unstamped.
+
+    ``produced_by_*`` became optional in egm-contracts v0.6.0 (B19), and a curator-indexed
+    producer artifact carries neither: the files record no producing package or version, so
+    ``save.producer`` omits the fields rather than stamping a sentinel. Read off the model
+    rather than the dump, which drops absent fields entirely.
+    """
+    stamped = [part for part in (entry.produced_by_package, entry.produced_by_version) if part]
+    return " ".join(stamped) or "not recorded"
+
+
 def _row(entry: _Entry) -> ArtifactRow:
     # mode="json" renders enums (usage_tag), URLs, and id lists as plain strings.
     dumped = entry.model_dump(mode="json", exclude_none=True)
@@ -96,7 +108,7 @@ def _row(entry: _Entry) -> ArtifactRow:
     return ArtifactRow(
         id=str(dumped["id"]),
         path=str(dumped["path"]),
-        produced_by=f"{dumped['produced_by_package']} {dumped['produced_by_version']}",
+        produced_by=_provenance(entry),
         details=details,
     )
 
