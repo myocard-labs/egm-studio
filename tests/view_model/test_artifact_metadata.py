@@ -109,9 +109,10 @@ def test_role_without_a_view_raises() -> None:
         artifact_metadata_text(Role.paper, "anything")  # papers (dirs) have no file view
 
 
-def test_noise_summary_reports_header(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    stub = types.SimpleNamespace(
-        schema_version="1.0",
+def _noise_stub(bank_id: str | None) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        bank_id=bank_id,
+        schema_version="1.1",
         created_utc="2026-01-01T00:00:00Z",
         source="iafdb",
         fs_hz=1000.0,
@@ -121,11 +122,24 @@ def test_noise_summary_reports_header(tmp_path: Path, monkeypatch: pytest.Monkey
             source_channel=["c1", "c2"],
         ),
     )
+
+
+def test_noise_summary_reports_header(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = _noise_stub("nbank_iafdb_percentile_20")
     monkeypatch.setattr(artifact_metadata, "read_noise_bank_hdf5", lambda _path: stub)
     text = artifact_metadata_text(Role.noise_bank, tmp_path / "n.h5")
+    assert "bank id: nbank_iafdb_percentile_20" in text  # the bank's own id (B20)
     assert "source: iafdb" in text
     assert "segments: 2" in text
     assert "1000 Hz" in text
+
+
+def test_noise_summary_says_a_pre_b20_bank_has_no_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An absent id reads as absent — a blank line would look like a rendering gap."""
+    monkeypatch.setattr(artifact_metadata, "read_noise_bank_hdf5", lambda _path: _noise_stub(None))
+    assert "bank id: (none" in artifact_metadata_text(Role.noise_bank, tmp_path / "n.h5")
 
 
 def test_json_roles_pretty_print_the_record(

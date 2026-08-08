@@ -5,9 +5,16 @@ from __future__ import annotations
 import dataclasses
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from myocard_egm_data.banks import ClassifierBank, ClassifierBankMetaData, write_classifier_bank
+from myocard_egm_contracts import noise_bank as noise_bank_models
+from myocard_egm_data.banks import (
+    ClassifierBank,
+    ClassifierBankMetaData,
+    write_classifier_bank,
+    write_noise_bank,
+)
 from myocard_egm_data.phases import EgmBankEntry, NoiseBankEntry, TrainingRunEntry
 from myocard_egm_data.records import TrainingRunRecord, write_training_run_record
 
@@ -122,36 +129,119 @@ def test_model_entry_needs_a_model_id(tmp_path: Path) -> None:
         model_entry(path)
 
 
-def _noise_bank_with_record(tmp_path: Path, *, bank_id: object) -> Path:
-    """A noise-bank .h5 (dummy) + its sibling ``<stem>_run_record.json`` (iafdb convention)."""
-    h5 = tmp_path / "nbank_iafdb.h5"
-    h5.write_bytes(b"")  # the entry only records the path; the id comes from the sibling record
-    _write_json(
-        tmp_path / "nbank_iafdb_run_record.json", {} if bank_id is None else {"bank_id": bank_id}
+def _write_noise_bank(path: Path, *, bank_id: str) -> Path:
+    """A real (tiny) noise-bank ``.h5`` through egm-data's writer.
+
+    Real rather than a dummy byte-string because B20 makes the ``.h5`` the *primary* id source,
+    so ``noise_bank_entry`` now opens it. egm-data's writer refuses to write without a
+    ``bank_id``, which is why the id-less cases below stub the reader instead — a pre-B20 bank
+    cannot be produced through the current API, and that file-format concern is egm-data's to
+    cover anyway. What this suite owns is the **precedence** between the two id sources.
+    """
+    bank = noise_bank_models.NoiseBank.model_validate(
+        {
+            "schema_version": "1.1",
+            "created_utc": "2026-08-08T00:00:00Z",
+            "bank_id": bank_id,
+            "source": "iafdb v1.0.0",
+            "fs_hz": 1000.0,
+            "traces": {
+                "signal": [[0.0] * 8, [0.1] * 8],
+                "source_record": ["r1", "r1"],
+                "source_channel": ["c1", "c2"],
+            },
+        }
     )
-    return h5
+    write_noise_bank(bank, path)
+    return path
 
 
-def test_noise_bank_entry_points_at_the_h5_with_id_from_the_sibling(tmp_path: Path) -> None:
-    h5 = _noise_bank_with_record(tmp_path, bank_id="nbank_studio_fixture_2026-06-15")
+def _sidecar(h5: Path, bank_id: object) -> Path:
+    """The ``<stem>_run_record.json`` beside ``h5`` (the iafdb export convention)."""
+    return _write_json(
+        h5.with_name(h5.stem + "_run_record.json"),
+        {} if bank_id is None else {"bank_id": bank_id},
+    )
+
+
+def _stub_bank_id(monkeypatch: pytest.MonkeyPatch, bank_id: str | None) -> None:
+    """Make the ``.h5`` read report ``bank_id`` — stands in for a bank written before B20."""
+    monkeypatch.setattr(
+        producer, "read_noise_bank_hdf5", lambda _p: SimpleNamespace(bank_id=bank_id)
+    )
+
+
+def test_noise_bank_entry_takes_the_id_from_the_bank_itself(tmp_path: Path) -> None:
+    """B20: the artifact carries its own identity; no sidecar is needed to index it."""
+    h5 = _write_noise_bank(tmp_path / "nbank_iafdb.h5", bank_id="nbank_studio_fixture_2026-06-15")
+
     entry = noise_bank_entry(h5)
+
     assert isinstance(entry, NoiseBankEntry)
-    assert entry.id == "nbank_studio_fixture_2026-06-15"  # id from the sibling run record...
-    assert entry.path == str(h5)  # ...but the entry points at the .h5 (where the segments live)
+    assert entry.id == "nbank_studio_fixture_2026-06-15"
+    assert entry.path == str(h5)  # the entry points at the .h5 (where the segments live)
     assert entry.produced_by_package is None
 
 
-def test_noise_bank_entry_needs_a_sibling_record(tmp_path: Path) -> None:
-    h5 = tmp_path / "lonely.h5"
-    h5.write_bytes(b"")  # no <stem>_run_record.json next to it
-    with pytest.raises(ValueError, match="no sibling run record"):
+def test_a_sidecar_without_an_id_no_longer_blocks_a_bank_that_has_one(tmp_path: Path) -> None:
+    """The sidecar is a fallback now, so its silence says nothing about the bank."""
+    h5 = _write_noise_bank(tmp_path / "nbank_iafdb.h5", bank_id="nbank_studio_fixture_2026-06-15")
+    _sidecar(h5, None)
+
+    assert noise_bank_entry(h5).id == "nbank_studio_fixture_2026-06-15"
+
+
+def test_a_pre_b20_bank_still_takes_its_id_from_the_sidecar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Banks written before the root attr existed are still indexable, not orphaned."""
+    h5 = _write_noise_bank(tmp_path / "nbank_iafdb.h5", bank_id="nbank_studio_fixture_2026-06-15")
+    _sidecar(h5, "nbank_legacy_fixture_2026-06-15")
+    _stub_bank_id(monkeypatch, None)
+
+    assert noise_bank_entry(h5).id == "nbank_legacy_fixture_2026-06-15"
+
+
+def test_a_bank_and_sidecar_naming_different_banks_are_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mis-paired provenance is worse than none: it reads as present while describing other data."""
+    h5 = _write_noise_bank(tmp_path / "nbank_iafdb.h5", bank_id="nbank_studio_fixture_2026-06-15")
+    _sidecar(h5, "nbank_someone_else_2026-06-15")
+    _stub_bank_id(monkeypatch, "nbank_studio_fixture_2026-06-15")
+
+    with pytest.raises(ValueError, match="does not match its run record"):
         noise_bank_entry(h5)
 
 
-def test_noise_bank_entry_needs_a_bank_id_in_the_record(tmp_path: Path) -> None:
-    h5 = _noise_bank_with_record(tmp_path, bank_id=None)  # sibling exists but has no bank_id
-    with pytest.raises(ValueError, match="no bank_id"):
+def test_noise_bank_entry_needs_an_id_from_one_side_or_the_other(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h5 = _write_noise_bank(tmp_path / "nbank_iafdb.h5", bank_id="nbank_studio_fixture_2026-06-15")
+    _stub_bank_id(monkeypatch, None)  # no root attr, and no sidecar beside it
+
+    with pytest.raises(ValueError, match="carries no bank_id"):
         noise_bank_entry(h5)
+
+
+def test_a_file_that_is_not_a_run_record_says_so_instead_of_dumping_validation_errors(
+    tmp_path: Path,
+) -> None:
+    """The mis-pick this exists for: a noise sidecar is *also* named ..._run_record.json (FB-26).
+
+    Letting the schema's complaints through produced fifteen pydantic errors about a file that
+    was never a training run, under advice to re-generate it.
+    """
+    sidecar = _write_json(
+        tmp_path / "nbank_iafdb_run_record.json",
+        {"bank_id": "nbank_studio_fixture_2026-06-15", "fs_hz": 1000.0},
+    )
+
+    with pytest.raises(ValueError, match="could not be read as a training-run record") as caught:
+        run_entry(sidecar)
+
+    assert "index the noise bank's .h5 instead" in str(caught.value)
+    assert caught.value.__cause__ is not None  # the underlying detail is chained, not discarded
 
 
 def test_indexing_into_a_phase_copies_the_file_and_records_it_relatively(

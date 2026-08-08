@@ -1192,12 +1192,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.statusBar().showMessage(f"Cancelled — {name} was not added")
             return
         except Exception as exc:  # unreadable / id-less file -> a visible warning, not a quiet line
+            # No fixed advice appended: the shell knows only that indexing failed, and the old
+            # "must carry its own stable id" tail was wrong for every other cause — it sent a
+            # mis-picked noise sidecar off to be re-generated. The builders own the remedy,
+            # because only they know which one applies.
             self.statusBar().showMessage(f"Could not index {name}: {exc}")
             QtWidgets.QMessageBox.warning(
-                self,
-                "Could not add to the manifest",
-                f"Could not index {name}:\n\n{exc}\n\nThe file must carry its own stable id — "
-                "if it predates stable ids, re-generate it with the current pipeline.",
+                self, "Could not add to the manifest", f"Could not index {name}:\n\n{exc}"
             )
             return
         section = manifest_section(entry.id)
@@ -2021,11 +2022,14 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         dialog.setLabelText("Building segment table…")  # the O(N) table fill reports progress
         try:
+            # bank_id here is the *manifest entry's* id, passed as a fallback: the bank names
+            # itself since noise_bank 1.1 (B20) and its own id wins when present.
             self._noise_controls.set_bank(bank, bank_id=bank_id, progress=self._pump(dialog))
         finally:
             dialog.close()
         self._show_mode(_MODE_NOISE)  # noise mode (also swaps the left rail to the noise controls)
-        self.statusBar().showMessage(f"{len(bank.segments):,} noise segment(s) — {bank_id}")
+        shown = bank.bank_id or bank_id
+        self.statusBar().showMessage(f"{len(bank.segments):,} noise segment(s) — {shown}")
 
     def _reveal(self, target: Path) -> None:
         """Open ``target`` (the artifact's folder) in the OS file browser."""

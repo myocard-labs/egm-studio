@@ -125,17 +125,22 @@ class NoiseControls(QtWidgets.QWidget):
         self,
         bank: NoiseBankSegments,
         *,
-        bank_id: str,
+        bank_id: str | None = None,
         progress: Callable[[int, int], None] | None = None,
     ) -> None:
         """Show a loaded noise bank: overview + filters + the full segment table.
+
+        The bank names itself (``noise_bank`` 1.1, B20), so ``bank_id`` is only a **fallback**
+        for one written before that attr existed — pass the manifest entry's id there. The
+        bank's own id wins when it has one: it is the artifact's identity, where the manifest's
+        is what a curator recorded about it.
 
         ``progress`` (the big-bank load) is called ``(rows_done, rows_total)`` while the
         table populates so the caller can drive a progress bar; None for small banks.
         """
         self._segments = bank.segments
         self._fs_hz = bank.fs_hz
-        self._overview.set_bank(bank_id, bank)
+        self._overview.set_bank(bank.bank_id or bank_id or "(no bank id)", bank)
         self._fill_filters(bank)
         self._fill_table(progress)
         self._apply_filter()  # sets the count + shows every row, then selects the first segment

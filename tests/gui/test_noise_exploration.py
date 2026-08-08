@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 from pytestqt.qtbot import QtBot
 
@@ -23,6 +25,26 @@ def _bank(records: list[str], channels: list[str]) -> NoiseBankSegments:
         for i, (rec, ch) in enumerate(zip(records, channels, strict=True))
     )
     return NoiseBankSegments(segments=segments, fs_hz=1000.0, source="iafdb")
+
+
+def test_the_banks_own_id_is_shown_in_preference_to_the_callers(qtbot: QtBot) -> None:
+    """B20: the bank names itself, so the manifest entry's id is only a pre-1.1 fallback."""
+    widget = NoiseControls()
+    qtbot.addWidget(widget)
+    bank = dataclasses.replace(_bank(["r"], ["c"]), bank_id="nbank_from_the_file_2026-08-08")
+
+    widget.set_bank(bank, bank_id="nbank_from_the_manifest_2026-06-15")
+
+    assert widget._overview._id.text() == "nbank_from_the_file_2026-08-08"
+
+
+def test_a_bank_with_no_id_of_its_own_falls_back_to_the_caller(qtbot: QtBot) -> None:
+    widget = NoiseControls()
+    qtbot.addWidget(widget)
+
+    widget.set_bank(_bank(["r"], ["c"]), bank_id="nbank_from_the_manifest_2026-06-15")
+
+    assert widget._overview._id.text() == "nbank_from_the_manifest_2026-06-15"
 
 
 def _controls(qtbot: QtBot, bank: NoiseBankSegments) -> tuple[NoiseControls, list[object]]:

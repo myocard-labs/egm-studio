@@ -514,16 +514,43 @@ def test_load_model_indexes_a_pointer_into_the_phase(
     assert "model_studio_fixture_2026-06-26" in entries_by_id(window._phase_manifest)
 
 
+def _write_noise_bank(path: Path, bank_id: str) -> Path:
+    """A real (tiny) noise-bank ``.h5`` through egm-data's writer, for the B20 id read."""
+    from myocard_egm_contracts import noise_bank as noise_bank_models
+    from myocard_egm_data.banks import write_noise_bank
+
+    write_noise_bank(
+        noise_bank_models.NoiseBank.model_validate(
+            {
+                "schema_version": "1.1",
+                "created_utc": "2026-08-08T00:00:00Z",
+                "bank_id": bank_id,
+                "source": "iafdb v1.0.0",
+                "fs_hz": 1000.0,
+                "traces": {
+                    "signal": [[0.0] * 8, [0.1] * 8],
+                    "source_record": ["r1", "r1"],
+                    "source_channel": ["c1", "c2"],
+                },
+            }
+        ),
+        path,
+    )
+    return path
+
+
 def test_load_noise_bank_indexes_the_h5_into_the_phase(
     qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     window = _window(qtbot, tmp_path)
     phase = _open_phase(window, tmp_path)
-    h5 = tmp_path / "nbank_iafdb.h5"
-    h5.write_bytes(b"")  # picked file is the .h5...
+    # A real bank, not a dummy byte-string: since B20 the id comes from the .h5's own root
+    # attr, so indexing opens it. The sidecar carries the same id (they must agree) and is
+    # here to prove it still travels into the phase alongside the bank.
+    h5 = _write_noise_bank(tmp_path / "nbank_iafdb.h5", "nbank_studio_fixture_2026-06-15")
     (tmp_path / "nbank_iafdb_run_record.json").write_text(
         '{"bank_id": "nbank_studio_fixture_2026-06-15"}'
-    )  # ...its stable id comes from the sibling run record
+    )
     _pick_files(monkeypatch, h5)
 
     window._load_noise_banks("phase")

@@ -199,6 +199,10 @@ def _noise_summary(path: Path) -> str:
     channels = sorted(set(bank.traces.source_channel))
     return "\n".join(
         [
+            # The bank's own id (noise_bank 1.1, B20) — the first thing to check when a manifest
+            # entry and a file are suspected of having drifted apart. "(none)" rather than a
+            # blank so a pre-1.1 bank reads as *absent*, not as a rendering gap.
+            f"bank id: {bank.bank_id or '(none — predates noise_bank 1.1)'}",
             f"schema version: {bank.schema_version}",
             f"created: {bank.created_utc}",
             f"source: {bank.source}",

@@ -31,13 +31,17 @@ class NoiseSegment:
 class NoiseBankSegments:
     """A whole noise bank's segments prepared for the Noise view (Block 12).
 
-    Holds *every* segment (the view filters + plots a selection); the stable ``bank_id`` is
-    not here — the ``.h5`` carries none, so the caller supplies it from the manifest entry.
+    Holds *every* segment (the view filters + plots a selection), plus the bank's own
+    ``bank_id``. That id used to be absent — the ``.h5`` carried none and the caller passed one
+    down from the manifest entry — but ``noise_bank`` 1.1 stamps it on the bank itself (B20), so
+    the display no longer has to be told what it is looking at. ``None`` for a bank written
+    before the attr existed; those still rely on a caller-supplied fallback.
     """
 
     segments: tuple[NoiseSegment, ...]
     fs_hz: float
     source: str
+    bank_id: str | None = None
 
     def records(self) -> list[str]:
         """The distinct source records, sorted (drives the view's record filter)."""
@@ -64,4 +68,9 @@ def load_noise_bank(path: Path | str) -> NoiseBankSegments:
         )
         for i in range(len(signals))
     )
-    return NoiseBankSegments(segments=segments, fs_hz=float(bank.fs_hz), source=str(bank.source))
+    return NoiseBankSegments(
+        segments=segments,
+        fs_hz=float(bank.fs_hz),
+        source=str(bank.source),
+        bank_id=bank.bank_id,
+    )

@@ -24,7 +24,12 @@ from pathlib import Path
 from typing import Any
 
 from myocard_egm_contracts import Role, role_of
-from myocard_egm_data.banks import ClassifierBank, load_classifier_bank
+from myocard_egm_data.banks import (
+    ClassifierBank,
+    check_noise_bank_id_agreement,
+    load_classifier_bank,
+    read_noise_bank_hdf5,
+)
 from myocard_egm_data.phases import EgmBankEntry, ModelEntry, NoiseBankEntry, TrainingRunEntry
 from myocard_egm_data.records import load_training_run_record
 
@@ -134,7 +139,10 @@ def bank_entry(
     bank = load_classifier_bank(path)
     bank_id = bank.id
     if not bank_id:
-        raise ValueError(f"bank at {path} has no stable id; cannot index it")
+        raise ValueError(
+            f"bank {Path(path).name} has no stable id; cannot index it. If it predates stable "
+            "ids, re-generate it with the current pipeline."
+        )
     base = _base(
         bank_id,
         path,
@@ -155,10 +163,23 @@ def run_entry(
     progress: ProgressFn | None = None,
     cancelled: Callable[[], bool] | None = None,
 ) -> TrainingRunEntry:
-    """A manifest entry for a loaded training run — carries its ``trained_on_bank`` dependency."""
-    record = load_training_run_record(path)
+    """A manifest entry for a loaded training run — carries its ``trained_on_bank`` dependency.
+
+    A file that will not parse as a run record is reported as *that*, in one sentence. The
+    common cause is a mis-pick: a **noise bank's** sidecar is also named ``..._run_record.json``
+    (FB-26), so it lands here easily, and letting the schema's validation errors through
+    produces a wall of complaints about a file that was never a training run.
+    """
+    try:
+        record = load_training_run_record(path)
+    except Exception as exc:
+        raise ValueError(
+            f"{Path(path).name} could not be read as a training-run record. If it is a noise "
+            "bank's sidecar (also named ..._run_record.json), index the noise bank's .h5 "
+            "instead — Add to phase ▸ Noise bank…"
+        ) from exc
     if not record.run_id:
-        raise ValueError(f"training run at {path} has no run_id; cannot index it")
+        raise ValueError(f"training run {Path(path).name} has no run_id; cannot index it")
     return TrainingRunEntry.model_validate(
         {
             **_base(record.run_id, path, phase_dir, progress=progress, cancelled=cancelled),
@@ -197,7 +218,22 @@ def model_entry(
 
 #: How the noise-bank exporter names the run-record sidecar (iafdb convention): the ``.h5``'s
 #: stem + this suffix, in the same folder — e.g. ``foo_noise.h5`` -> ``foo_noise_run_record.json``.
+#: Only a *fallback* id source since B20; see :func:`noise_bank_entry`. A rename upstream needs a
+#: matching change here or the sidecar stops travelling into phases (backlog FB-26).
 _NOISE_RECORD_SUFFIX = "_run_record.json"
+
+
+def _record_bank_id(h5: Path) -> str | None:
+    """The ``bank_id`` in the ``.h5``'s sibling run record, or ``None`` if there isn't one.
+
+    Read as raw JSON rather than through the typed loader so a sidecar at an older schema
+    version still yields the one field wanted here.
+    """
+    record = h5.with_name(h5.stem + _NOISE_RECORD_SUFFIX)
+    if not record.exists():
+        return None
+    value = _read_json(record).get("bank_id")
+    return str(value) if value else None
 
 
 def noise_bank_entry(
@@ -207,21 +243,29 @@ def noise_bank_entry(
     progress: ProgressFn | None = None,
     cancelled: Callable[[], bool] | None = None,
 ) -> NoiseBankEntry:
-    """A manifest entry for a noise-bank ``.h5`` (its segments). The ``.h5`` carries no id, so the
-    stable ``bank_id`` is read from its **sibling run record** — ``<stem>_run_record.json`` next to
-    it (the iafdb export convention). The entry points at the ``.h5`` (matching produced entries),
-    so the segment / metadata viewers, which read the ``.h5``, work. A missing sibling record or
-    ``bank_id`` is an error.
+    """A manifest entry for a noise-bank ``.h5`` (its segments).
+
+    The id comes from the bank's **own** ``bank_id`` root attr (``noise_bank`` 1.1, B20) — an
+    artifact should carry its own identity rather than borrow a neighbour's. Before that attr
+    existed the only copy lived in the sibling ``<stem>_run_record.json``, so that is still read
+    as a fallback, and when both are present egm-data checks they **agree**: a bank sitting
+    beside someone else's run record reads as provenance while describing different data, which
+    is worse than having none.
+
+    The entry points at the ``.h5`` (matching produced entries), so the segment and metadata
+    viewers — which read the ``.h5`` — work.
     """
     h5 = Path(path)
-    record = h5.with_name(h5.stem + _NOISE_RECORD_SUFFIX)
-    if not record.exists():
+    bank_id = read_noise_bank_hdf5(h5).bank_id
+    record_id = _record_bank_id(h5)
+    check_noise_bank_id_agreement(bank_id, record_id)
+    resolved = bank_id or record_id
+    if not resolved:
         raise ValueError(
-            f"noise bank {h5.name} has no sibling run record ({record.name}); cannot read its id"
+            f"noise bank {h5.name} carries no bank_id, and no sibling run record "
+            f"({h5.stem + _NOISE_RECORD_SUFFIX}) supplies one; cannot index it. "
+            "Re-generate it with the current pipeline, which stamps the id on the bank itself."
         )
-    bank_id = _read_json(record).get("bank_id")
-    if not bank_id:
-        raise ValueError(f"noise-bank record {record.name} has no bank_id; cannot index it")
     return NoiseBankEntry.model_validate(  # entry points at the .h5
-        _base(str(bank_id), h5, phase_dir, progress=progress, cancelled=cancelled)
+        _base(resolved, h5, phase_dir, progress=progress, cancelled=cancelled)
     )

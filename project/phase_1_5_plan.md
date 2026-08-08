@@ -2,7 +2,7 @@
 
 **Repo:** egm-studio · **Phase:** 1.5
 **Phase design doc:** `intracardiac-platform/phases/phase_1_5/design.md`
-**Status:** in progress · **Progress:** 6/39 steps done
+**Status:** in progress · **Progress:** 7/39 steps done
 **Repo estimate:** **102–229 h active** (45 pts) — cold-start ranges, see [Estimates](#estimates--complexity).
 
 > **Second pass, 2026-07-28.** Every issue now broken to commit-sized steps against the actual code.
@@ -297,20 +297,40 @@ already tracks B17 · B19 as a single row. Folded into S5b rather than shipped a
   ignore holds).
 - **Depends on:** S5b.
 
-#### S6 — B20: noise `bank_id` from the bank ☐ (2–4 h)
+#### S6 — B20: noise `bank_id` from the bank ✅ (2–4 h)
 - **Change:** `save/producer.py:noise_bank_entry` reads `bank_id` from the `noise_bank` root attr
   instead of the `<stem>_run_record.json` sidecar (sidecar kept as fallback for existing banks); and
-  `view_model/noise.py:NoiseBankSegments` gains the `bank_id` its docstring currently says it can't
-  carry, so the Noise view stops depending on a caller-supplied id. Verified shipped: the regenerated
+  `view_model/noise.py:NoiseBankSegments` gains the `bank_id` its docstring said it couldn't carry,
+  so the Noise view stops depending on a caller-supplied id. Verified shipped: the regenerated
   `iafdb_noise_per_id.h5` carries `bank_id = "nbank_iafdb_percentile_20"` as a root attr.
+  - **Precedence, and why:** the bank's own attr wins; the sidecar is the fallback for a pre-1.1
+    bank; when **both** are present egm-data's `check_noise_bank_id_agreement` refuses a mismatch.
+    A bank sitting beside someone else's run record reads as provenance while describing different
+    data — worse than having none. A sidecar that exists but carries no id is no longer an error.
+  - The Noise view resolves `bank.bank_id or <manifest id> or "(no bank id)"`, so the artifact's own
+    identity beats what a curator recorded about it, and a legacy bank still displays.
+  - **Show metadata** reports it too (Daniel, on review): it is the first thing to check when a
+    manifest entry and a file are suspected of having drifted apart, and the summary was the one
+    place the new id wasn't surfaced. Absent renders as `(none — predates noise_bank 1.1)` rather
+    than blank, so a pre-1.1 bank reads as *absent* and not as a rendering gap.
 - **Added 2026-08-08 (found in the GUI):** *indexing failures must name the actual failure.*
-  Selecting a noise bank's `<stem>_run_record.json` under **Training run…** puts the file through
-  `TrainingRunRecord`, which correctly refuses it — but the shell renders fifteen raw pydantic
-  errors in a message box under the fixed hint *"the file must carry its own stable id — if it
-  predates stable ids, re-generate it with the current pipeline"*, which is **wrong advice for this
-  failure** and points at regenerating a perfectly good bank. `_index_producer` should report
-  wrong-kind separately from id-less, and the run / noise loaders should raise one short sentence
-  rather than a validation dump.
+  Selecting a noise bank's `<stem>_run_record.json` under **Training run…** put the file through
+  `TrainingRunRecord`, which correctly refused it — but the shell rendered fifteen raw pydantic
+  errors under the fixed hint *"the file must carry its own stable id — if it predates stable ids,
+  re-generate it with the current pipeline"*: **wrong advice for that failure**, pointing at
+  regenerating a perfectly good bank.
+  - **Fix, and the factoring behind it:** the shell no longer appends any advice, because all it
+    knows is that indexing failed. The remedy moved to whoever knows which failure occurred — the
+    id-less bank message now carries the re-generate hint itself, and `run_entry` catches an
+    unparseable record and raises one sentence naming the likely mis-pick (chaining the original
+    so the detail survives in the log rather than the dialog).
+- **Measured, since it decided the design:** reading a noise bank's id through egm-data's sanctioned
+  `read_noise_bank_hdf5` costs **~2 s** on the real 58 MB / 66k-segment IAFDB bank (0.23 s array read
+  + 1.25 s `.tolist()` + ~0.4 s validate) against **3 ms** for the attr alone. Wasteful but fine
+  behind S5c's off-thread dialog, so ADR-001 stands and no direct h5py read was added. The same
+  pattern is far worse for `bank_entry`: 2.3 ms for the attrs + `banks` group versus **5.8 s just to
+  materialise the signals** of the 325 MB / 276k-trace IAFDB classifier bank, before per-trace model
+  construction. That is the concrete case for asking egm-data for metadata-only readers.
 - **Root cause is upstream and out of phase scope → FB-26.** A *noise bank's* sidecar being named
   `..._run_record.json` is what makes it look pickable under a training-run filter. That blocks no
   functionality, so it is a naming-convention review in the backlog, not Phase 1.5 work; the
