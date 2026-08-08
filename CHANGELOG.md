@@ -6,8 +6,45 @@ All notable changes to `myocard-egm-studio` are documented here. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- **A phase folder now owns its artifacts.** Indexing a bank, run or model into a phase
+  **copies the file in** under `phases/phase_<N>/<type>/` and records a path relative to
+  the phase, so the folder can be moved, archived or handed over whole. Promoting from
+  scratch does the same. Scratch still records absolute pointers — it is a working area,
+  not an archive. The producer's original is never moved or deleted, and removing an
+  artifact from a phase deletes only the phase's copy.
+- **A bank's companions travel with it.** A synthetic bank names its θ bank and the noise
+  bank it was mixed with by paths resolved beside its own `.h5`, so copying it alone left
+  a phase holding a bank whose θ could not be found. Those files are now copied alongside
+  it, as a noise bank's run-record sidecar already was.
+- **Large copies no longer freeze the window.** Copying a 100–500 MB bank into a phase runs
+  off the UI thread behind a progress dialog with a working Cancel. Free space is checked
+  before the first byte is written, and a cancelled or failed copy leaves nothing behind —
+  files land under their real name only once every byte is there.
+- **Show metadata reports how a synthetic bank was generated.** After the `synthetic_bank`
+  2.0 restructure moved the physics off the ClassifierBank, the summary reads the paired θ
+  bank and renders each simulation's geometry / cell model / substrate / activation /
+  electrodes / backend config, with the declared θ-spec knobs alongside. Banks with no
+  generation side (IAFDB) are unaffected.
+- **A noise bank's metadata shows its `bank_id`**, read from the bank itself.
+
 ### Changed
 
+- **A noise bank is identified by its own `bank_id`**, read from the `noise_bank` 1.1 root
+  attribute rather than from the sibling `_run_record.json`. The sidecar is still read as a
+  fallback for banks written before that attribute existed; when both are present and
+  disagree, the bank is refused rather than indexed under an id from someone else's run
+  record. A sidecar with no `bank_id` no longer blocks a bank that has one.
+- **Curator-indexed artifacts record no producer instead of a fake one.** Files indexed
+  into a phase or scratch previously carried `produced_by_package = "unknown"` /
+  `produced_by_version = "0"`, which reads as a claim about provenance. Those fields are
+  now simply absent, and the Phase tree shows *not recorded*.
+- **Indexing errors name the actual failure.** Every failure used to end with the same
+  advice — that the file must carry a stable id and should be re-generated — which was
+  wrong for every other cause. A file that will not parse as a training-run record now
+  says so in one sentence (and points at the noise-bank picker, the usual mis-pick),
+  instead of a wall of schema-validation errors.
 - **Predictions banks standardize on the `.classifier.h5` extension**, so a predictions
   bank and the source bank it was evaluated against are named the same way.
 - **A synthetic bank's per-trace metadata no longer carries generation parameters.**
